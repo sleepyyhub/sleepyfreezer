@@ -152,6 +152,7 @@ wss.on('connection', ws => {
           t: 'match_start',
           seed: (Math.random() * 1e9) | 0,
           mode: party.mode,
+          hostId: party.hostId, // the host's client simulates guardians (NPCs)
           players: lobbyPayload(party).players,
         });
         break;
@@ -173,6 +174,22 @@ wss.on('connection', ws => {
       case 'chest_open':
         if (party) broadcast(party, { t: 'chest_open', id: m.id, by: ws.id }, ws.id);
         break;
+      case 'pickup_taken': // a special weapon drop was claimed
+        if (party) broadcast(party, { t: 'pickup_taken', id: m.id }, ws.id);
+        break;
+      case 'npc_state':    // host's guardian snapshot -> everyone else
+        if (party && party.hostId === ws.id) broadcast(party, { t: 'npc_state', list: m.list }, ws.id);
+        break;
+      case 'npc_shoot':    // host's guardian fired -> everyone else
+        if (party && party.hostId === ws.id) broadcast(party, { t: 'npc_shoot', id: m.id, x: m.x, y: m.y, aim: m.aim }, ws.id);
+        break;
+      case 'npc_damage': { // someone hit a guardian -> route to the host (NPC authority)
+        if (!party) return;
+        const host = party.players.get(party.hostId);
+        if (host && party.hostId !== ws.id)
+          send(host.ws, { t: 'npc_damage', target: m.target, dmg: Math.min(100, Math.max(0, m.dmg | 0)), by: ws.id });
+        break;
+      }
       case 'damage': {   // route damage to the victim only; their client applies it
         if (!party) return;
         const victim = party.players.get(m.target);

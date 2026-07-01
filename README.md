@@ -36,8 +36,17 @@ All buttons are ≥ 56 px (above the 44 pt minimum); everything uses
 - **Movement & collision** — walls and rocks block, sliding along surfaces; floors give a
   small speed boost, ramps can be vaulted slowly.
 - **Combat** — pistol / SMG / shotgun with distinct damage, fire rate, spread and range;
-  muzzle flash, bullet trails, hit markers, floating damage numbers, kill feed.
+  muzzle flash, colored bullet tracers, hit markers, floating damage numbers, kill feed,
+  and screen shake on firing and taking hits.
+- **Ruined buildings** — 5 seeded run-down structures with destructible cracked walls,
+  door gaps, collapsed chunks, debris, and a broken roof that lifts when you walk inside.
+- **Guardians & special weapons** — each building is defended by a tough "Ruin Guardian"
+  (250 hp, red aura). Defeat it and it drops a special weapon beacon: the **Railgun**
+  (huge damage, long blue beam) or the **Minigun** (very high fire rate). In multiplayer
+  the party host's client simulates guardians and syncs them to everyone.
 - **Chests** — 14 per map, seeded loot (weapons, medkits, materials) with pop-open animation.
+- **Presentation** — textured grass, drop shadows, cinematic vignette, red hurt flash,
+  and a live minimap (buildings, chests, storm circle, you, teammates, guardians).
 - **Building** — grid-based wall/ramp/floor in 3 materials with per-piece HP; pieces are
   destructible and cost 10 material each (resource counters in the top-right HUD).
 - **Storm** — shrinking safe circle in 4 phases with escalating damage per second, drawn as
@@ -63,6 +72,34 @@ just connects to `location.host`. Messages are small JSON packets `{ t: <type>, 
 This is intentionally trust-the-client simple — perfect for playing with friends, easy to
 read and extend. To harden it later, move bullet simulation and hp onto the server and
 have clients send inputs instead of state.
+
+## Putting it online
+
+The game is two parts: a static page (`index.html`) and a small Node WebSocket server
+(`server.js`). Anything that can run Node can host the full multiplayer game.
+
+**Google Cloud Run (the "Google" way, free tier available):**
+1. Create a project at https://console.cloud.google.com and install the `gcloud` CLI.
+2. From this repo folder run:
+   ```bash
+   gcloud run deploy sleepy-royale --source . --region europe-west3 --allow-unauthenticated
+   ```
+   Cloud Run detects `package.json`, runs `npm start`, and gives you a public
+   `https://…run.app` URL. The server already reads `process.env.PORT` and the client
+   automatically upgrades to `wss://` on HTTPS, so WebSockets work out of the box.
+3. Open the URL on any iPad — parties, lobbies and matches all work over the internet.
+
+**Free alternatives that also run the Node server:** Render.com, Railway.app, Fly.io,
+or Glitch — connect the GitHub repo and set the start command to `npm start`.
+
+**GitHub Pages / Firebase Hosting (static-only):** these serve `index.html` for free and
+solo-vs-bots works perfectly, but they cannot run `server.js`, so party multiplayer
+would need the WebSocket server hosted elsewhere.
+
+**Getting found on Google Search:** put the game on a public URL first, then add the
+site at https://search.google.com/search-console and request indexing. Publishing on
+Google Play would require wrapping the page in a TWA (e.g. with Bubblewrap) — a separate
+project.
 
 ## Extending
 

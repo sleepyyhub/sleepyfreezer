@@ -23,7 +23,8 @@ canvas#game{position:fixed;inset:0;display:block;touch-action:none}
 .screen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
   gap:14px;background:radial-gradient(circle at 50% 30%,#25334a,#101418 75%);z-index:50;padding:20px;overflow-y:auto}
 .screen.active{display:flex}
-h1{font-size:44px;letter-spacing:2px;text-shadow:0 4px 0 #0007}
+@keyframes titleGlow{0%,100%{text-shadow:0 4px 0 #0007,0 0 22px #7b3fd966}50%{text-shadow:0 4px 0 #0007,0 0 46px #b46bffcc}}
+h1{font-size:46px;letter-spacing:3px;animation:titleGlow 3s ease-in-out infinite}
 h2{font-size:26px}
 .sub{color:#9db2c9;font-size:15px;text-align:center;max-width:520px}
 
@@ -88,7 +89,10 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 /* top HUD info */
 #topHud{position:absolute;top:calc(10px + env(safe-area-inset-top));left:0;right:0;display:flex;
   justify-content:space-between;padding:0 18px;pointer-events:none;align-items:flex-start}
-#hpWrap{width:240px}
+/* glassy panels behind the HUD readouts */
+#hpWrap,#stormInfo,#matInfo{background:rgba(8,14,24,.55);border:1px solid #ffffff22;
+  border-radius:12px;padding:8px 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#hpWrap{width:250px}
 #hpOuter{height:22px;background:#0008;border-radius:11px;overflow:hidden;border:2px solid #fff5}
 #hpFill{height:100%;width:100%;background:linear-gradient(#5dff7a,#25a03e);transition:width .15s}
 #hpText{font-size:13px;margin-top:3px;color:#cfe3ff;text-shadow:0 1px 2px #000}
@@ -97,7 +101,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #weaponInfo{position:absolute;right:calc(24px + env(safe-area-inset-right));
   bottom:calc(38px + env(safe-area-inset-bottom));font-size:16px;font-weight:800;color:#ffe9a8;
   text-shadow:0 1px 3px #000;pointer-events:none}
-#killFeed{position:absolute;top:calc(60px + env(safe-area-inset-top));right:18px;text-align:right;
+#killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:164px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
 
 /* customization preview */
@@ -230,12 +234,15 @@ const CFG = {
   maxHp: 100,
   buildRange: 3,          // max grid cells from player you may build
   buildCost: 10,          // material cost per piece
-  buildHp: { wood: 150, brick: 300, metal: 450 },
+  buildHp: { wood: 150, brick: 300, metal: 450, ruin: 200 },
   startMats: { wood: 60, brick: 30, metal: 15 },
   chestCount: 14,
   treeCount: 34,
   rockCount: 18,
   botCount: 7,            // opponents in solo mode
+  buildingCount: 5,       // run-down buildings with guardians inside
+  guardHp: 250,           // special-enemy health
+  guardAggro: 340,        // how far from home a guardian notices/chases you
   netHz: 15,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
   stormPhases: [
@@ -244,10 +251,15 @@ const CFG = {
 };
 
 // Weapon table. range = how far a bullet travels before despawning.
+// col/len/wid style the tracer; kick = screen shake when YOU fire it.
+// railgun + minigun are "special" weapons dropped only by guardians.
 const WEAPONS = {
-  pistol:  { name: 'Pistol',  dmg: 20, rof: 2.5, range: 520, spread: 0.03, pellets: 1, speed: 900 },
-  smg:     { name: 'SMG',     dmg: 12, rof: 8.0, range: 430, spread: 0.09, pellets: 1, speed: 900 },
-  shotgun: { name: 'Shotgun', dmg: 9,  rof: 1.1, range: 270, spread: 0.26, pellets: 5, speed: 800 },
+  pistol:  { name: 'Pistol',  icon: '🔫', dmg: 20, rof: 2.5, range: 520, spread: 0.03, pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
+  smg:     { name: 'SMG',     icon: '🔫', dmg: 12, rof: 8.0, range: 430, spread: 0.09, pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 1.5 },
+  shotgun: { name: 'Shotgun', icon: '💥', dmg: 9,  rof: 1.1, range: 270, spread: 0.26, pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
+  railgun: { name: 'Railgun', icon: '⚡', dmg: 60, rof: 0.9, range: 900, spread: 0.005, pellets: 1, speed: 1600, col: '#8fdcff', len: 34, wid: 4, kick: 6, big: true },
+  minigun: { name: 'Minigun', icon: '🌀', dmg: 8,  rof: 13,  range: 520, spread: 0.12, pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2 },
+  guard:   { name: 'Guard Blaster', icon: '👁', dmg: 10, rof: 2.4, range: 400, spread: 0.14, pellets: 1, speed: 700, col: '#ff7bd0', len: 14, wid: 3 },
 };
 
 const EYES    = ['Dot', 'Wide', 'Sleepy'];
@@ -463,8 +475,24 @@ const net = {
       case 'peer_build':  if (game) placeBuild(m.gx, m.gy, m.piece, m.mat, false); break;
       case 'build_hit':   if (game) damageBuild(m.gx, m.gy, m.dmg, false); break;
       case 'chest_open':  if (game) openChestById(m.id, m.by, false); break;
+      case 'pickup_taken': if (game) takePickup(m.id, false); break;
       case 'damage':      // someone's bullet hit US — apply to our authoritative self
         if (game && game.me.alive) hurtLocal(game.me, m.dmg, m.by); break;
+      case 'npc_state':   // host's snapshot of all guardians
+        if (game && !game.npcAuthority) m.list.forEach(u => {
+          const p = game.players[u.id]; if (!p) return;
+          p.tx = u.x; p.ty = u.y; p.taim = u.aim; p.hp = u.hp;
+          if (p.alive && !u.alive) { p.alive = false; guardianDied(p); }
+        });
+        break;
+      case 'npc_shoot':   // host's guardian fired — replay the bullet locally
+        if (game) { const p = game.players[m.id];
+          if (p) { p.x = m.x; p.y = m.y; p.aim = m.aim; fireBullets(p, m.aim, false); } }
+        break;
+      case 'npc_damage':  // a peer hit a guardian; we're the authority, apply it
+        if (game && game.npcAuthority) { const p = game.players[m.target];
+          if (p && p.guard && p.alive) hurtLocal(p, m.dmg, m.by); }
+        break;
       case 'peer_left':   if (game && game.players[m.id]) { game.players[m.id].alive = false; addKillFeed(game.players[m.id].name + ' left'); } break;
       case 'error':       toast(m.msg); break;
     }
@@ -473,34 +501,115 @@ const net = {
 
 /* ═══════════ 6. MATCH SETUP ═══════════ */
 const canvas = $('game'), ctx = canvas.getContext('2d');
-let W = 0, H = 0, DPR = 1;
+let W = 0, H = 0, DPR = 1, vignette = null, hurtVignette = null;
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * DPR; canvas.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // cached full-screen gradients: cinematic edge darkening + red hurt flash
+  vignette = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.45, W / 2, H / 2, Math.max(W, H) * 0.72);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,0.42)');
+  hurtVignette = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
+  hurtVignette.addColorStop(0, 'rgba(255,30,30,0)'); hurtVignette.addColorStop(1, 'rgba(255,30,30,0.55)');
 }
 window.addEventListener('resize', resize); resize();
 
+// Pre-rendered grass tile (blotches + speckles) used as a repeating
+// pattern aligned to world coordinates — much richer than flat green.
+const grassPattern = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), rng = seededRng(7);
+  g.fillStyle = '#3d7a3f'; g.fillRect(0, 0, 256, 256);
+  const shades = ['#437f45', '#38713a', '#468a48', '#356b37'];
+  for (let i = 0; i < 70; i++) {
+    g.fillStyle = shades[(rng() * shades.length) | 0];
+    g.beginPath(); g.arc(rng() * 256, rng() * 256, 5 + rng() * 16, 0, 7); g.fill();
+  }
+  g.fillStyle = '#2e5f30';
+  for (let i = 0; i < 130; i++) g.fillRect(rng() * 256, rng() * 256, 2, 2);
+  return ctx.createPattern(c, 'repeat');
+})();
+
+// soft drop shadow under any round entity
+function drawShadow(x, y, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(x, y + r * 0.45, r * 1.05, r * 0.5, 0, 0, 7); ctx.fill();
+}
+
 let game = null; // the whole match state lives here
 
-// Generate obstacles + chests from a shared seed so all clients agree.
+// Generate buildings, obstacles + chests from a shared seed so all clients agree.
 function generateMap(seed) {
-  const rng = seededRng(seed), w = CFG.world;
+  const rng = seededRng(seed), w = CFG.world, G = CFG.grid;
+
+  /* --- run-down buildings: rectangular ruins made of wall cells with
+         door gaps, missing chunks, interior rubble and a broken roof.
+         Each holds one guardian who drops a special weapon. --- */
+  const buildings = [];
+  let attempts = 0;
+  while (buildings.length < CFG.buildingCount && attempts++ < 80) {
+    const wc = 5 + (rng() * 4 | 0), hc = 5 + (rng() * 4 | 0);      // size in cells
+    const gx0 = 4 + (rng() * (w / G - wc - 8) | 0);
+    const gy0 = 4 + (rng() * (w / G - hc - 8) | 0);
+    const b = { gx0, gy0, wc, hc, x0: gx0 * G, y0: gy0 * G, x1: (gx0 + wc) * G, y1: (gy0 + hc) * G };
+    if (buildings.some(o => b.x0 < o.x1 + 160 && b.x1 > o.x0 - 160 && b.y0 < o.y1 + 160 && b.y1 > o.y0 - 160)) continue;
+    // perimeter wall cells, skipping doors and "collapsed" gaps
+    const doors = new Set();
+    const sides = [[1, 0, gy0, 'h'], [1, 0, gy0 + hc - 1, 'h'], [0, 1, gx0, 'v'], [0, 1, gx0 + wc - 1, 'v']];
+    sides.forEach(([, , fixed, dir], si) => {
+      if (rng() < 0.7 || si === 0) { // most sides get a door; side 0 always does
+        const off = 1 + (rng() * ((dir === 'h' ? wc : hc) - 2) | 0);
+        doors.add(dir === 'h' ? buildKey(gx0 + off, fixed) : buildKey(fixed, gy0 + off));
+      }
+    });
+    b.wallCells = [];
+    for (let i = 0; i < wc; i++) for (let j = 0; j < hc; j++) {
+      if (i !== 0 && i !== wc - 1 && j !== 0 && j !== hc - 1) continue; // perimeter only
+      const gx = gx0 + i, gy = gy0 + j, key = buildKey(gx, gy);
+      if (doors.has(key)) continue;
+      if (rng() < 0.12) continue;                     // collapsed chunk: extra hole
+      const hp = (CFG.buildHp.ruin * (0.4 + rng() * 0.6)) | 0;  // pre-damaged, rundown
+      b.wallCells.push({ gx, gy, hp });
+    }
+    // interior rubble + roof holes (purely decorative, seeded)
+    b.rubble = []; b.holes = [];
+    for (let i = 0; i < 6; i++)
+      b.rubble.push({ x: b.x0 + G + rng() * (b.x1 - b.x0 - 2 * G), y: b.y0 + G + rng() * (b.y1 - b.y0 - 2 * G), r: 5 + rng() * 10 });
+    for (let i = 0; i < 4; i++)
+      b.holes.push({ x: b.x0 + G + rng() * (b.x1 - b.x0 - 2 * G), y: b.y0 + G + rng() * (b.y1 - b.y0 - 2 * G), r: 18 + rng() * 26 });
+    b.drop = buildings.length % 2 ? 'minigun' : 'railgun';   // guardian's reward
+    buildings.push(b);
+  }
+
+  // helper so nothing else spawns inside a building footprint
+  const inBuilding = (x, y, m) => buildings.some(b => x > b.x0 - m && x < b.x1 + m && y > b.y0 - m && y < b.y1 + m);
+  const place = (min, max, margin) => {
+    for (let t = 0; t < 12; t++) {
+      const x = min + rng() * (max - min), y = min + rng() * (max - min);
+      if (!inBuilding(x, y, margin)) return { x, y };
+    }
+    return { x: min, y: min }; // pathological seeds fall back to a corner
+  };
+
   const trees = [], rocks = [], chests = [];
-  for (let i = 0; i < CFG.treeCount; i++)
-    trees.push({ x: 100 + rng() * (w - 200), y: 100 + rng() * (w - 200), r: 26 + rng() * 14 });
-  for (let i = 0; i < CFG.rockCount; i++)
-    rocks.push({ x: 100 + rng() * (w - 200), y: 100 + rng() * (w - 200), r: 20 + rng() * 18 });
-  for (let i = 0; i < CFG.chestCount; i++)
-    chests.push({ id: i, x: 160 + rng() * (w - 320), y: 160 + rng() * (w - 320), opened: false, anim: 0 });
-  return { trees, rocks, chests };
+  for (let i = 0; i < CFG.treeCount; i++) { const p = place(100, w - 100, 20); trees.push({ ...p, r: 26 + rng() * 14 }); }
+  for (let i = 0; i < CFG.rockCount; i++) { const p = place(100, w - 100, 40); rocks.push({ ...p, r: 20 + rng() * 18 }); }
+  for (let i = 0; i < CFG.chestCount; i++) { const p = place(160, w - 160, 40); chests.push({ id: i, ...p, opened: false, anim: 0 }); }
+  return { trees, rocks, chests, buildings };
+}
+
+// building whose (expanded) footprint contains the point, else null
+function buildingRectAt(map, x, y, m = 0) {
+  for (const b of map.buildings)
+    if (x > b.x0 - m && x < b.x1 + m && y > b.y0 - m && y < b.y1 + m) return b;
+  return null;
 }
 
 function makePlayer(id, name, look, team, x, y, isBot) {
   return {
     id, name, look, team, isBot,
-    x, y, aim: -Math.PI / 2, hp: CFG.maxHp, alive: true,
+    x, y, aim: -Math.PI / 2, hp: CFG.maxHp, maxHp: CFG.maxHp, alive: true,
     weapon: 'pistol', lastShot: 0, hurtFlash: 0,
     // remote interpolation targets
     tx: x, ty: y, taim: -Math.PI / 2,
@@ -515,51 +624,82 @@ function baseGame(seed, mode) {
     map: generateMap(seed),
     builds: new Map(),      // "gx,gy" -> { piece, mat, hp, maxHp }
     bullets: [], effects: [], dmgNums: [],
-    players: {},            // id -> player (me, peers, bots)
+    pickups: [],            // special weapons dropped by dead guardians
+    players: {},            // id -> player (me, peers, bots, guardians)
     me: null,
     mats: { ...CFG.startMats },
     storm: makeStorm(seed),
     startTime: performance.now(),
-    lastNetSend: 0, nearChest: null,
+    lastNetSend: 0, nearAction: null,
     buildMode: false, piece: 'wall', mat: 'wood',
-    camX: 0, camY: 0, placement: 0,
+    camX: 0, camY: 0, shake: 0,
+    npcAuthority: true,     // who simulates guardians (solo: me; MP: host)
   };
+  // ruin walls go straight into the normal build grid, so they collide,
+  // block bullets and are destructible for free (maxHp = hp: rundown
+  // pieces don't show damage bars for their "natural" decay)
+  for (const b of g.map.buildings)
+    for (const wc of b.wallCells)
+      g.builds.set(buildKey(wc.gx, wc.gy), { gx: wc.gx, gy: wc.gy, piece: 'wall', mat: 'ruin', hp: wc.hp, maxHp: wc.hp });
   return g;
 }
 
-// Spawn positions on a ring around the map center, one slot per player.
-function spawnPos(seed, index, total) {
+// one guardian per building — a tough special enemy guarding its drop
+function spawnGuardians(g) {
+  g.map.buildings.forEach((b, i) => {
+    const gu = makePlayer('guard' + i, 'Ruin Guardian', { eye: 1, hair: 0, outfit: 1 }, 'G',
+      (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, true);
+    gu.guard = true; gu.weapon = 'guard';
+    gu.hp = gu.maxHp = CFG.guardHp;
+    gu.home = { x: gu.x, y: gu.y }; gu.drop = b.drop;
+    g.players[gu.id] = gu;
+  });
+}
+
+// Spawn positions on a ring around the map center, one slot per player,
+// nudged sideways if the slot lands inside a building or rock.
+function spawnPos(seed, index, total, map) {
   const rng = seededRng(seed + 777);
   const baseA = rng() * Math.PI * 2;
   const a = baseA + (index / Math.max(total, 1)) * Math.PI * 2;
   const r = CFG.world * 0.36;
-  return { x: CFG.world / 2 + Math.cos(a) * r, y: CFG.world / 2 + Math.sin(a) * r };
+  let x = CFG.world / 2 + Math.cos(a) * r, y = CFG.world / 2 + Math.sin(a) * r;
+  for (let t = 0; t < 20 && map &&
+       (buildingRectAt(map, x, y, 40) || map.rocks.some(k => dist2(x, y, k.x, k.y) < (k.r + 30) ** 2)); t++) {
+    x = clamp(x + 70, 60, CFG.world - 60); y = clamp(y + 35, 60, CFG.world - 60);
+  }
+  return { x, y };
 }
 
 function startSoloMatch() {
   const seed = (Math.random() * 1e9) | 0;
   const g = baseGame(seed, 'solo');
   const total = CFG.botCount + 1;
-  const p0 = spawnPos(seed, 0, total);
+  const p0 = spawnPos(seed, 0, total, g.map);
   g.me = makePlayer('me', myName, myLook, 'S', p0.x, p0.y, false);
   g.players.me = g.me;
   const rng = seededRng(seed + 42);
   for (let i = 0; i < CFG.botCount; i++) {
-    const p = spawnPos(seed, i + 1, total);
+    const p = spawnPos(seed, i + 1, total, g.map);
     const look = { eye: (rng() * 3) | 0, hair: (rng() * 3) | 0, outfit: (rng() * 4) | 0 };
     g.players['bot' + i] = makePlayer('bot' + i, 'Bot ' + (i + 1), look, 'S', p.x, p.y, true);
   }
+  spawnGuardians(g);
   game = g; showScreen(null); resetHudState();
 }
 
 function startNetworkMatch(m) {
   const g = baseGame(m.seed, m.mode);
+  // in multiplayer only the HOST simulates guardians; everyone else
+  // receives their state like any other remote player
+  g.npcAuthority = m.hostId === net.selfId;
   m.players.forEach((pl, i) => {
-    const pos = spawnPos(m.seed, i, m.players.length);
+    const pos = spawnPos(m.seed, i, m.players.length, g.map);
     const p = makePlayer(pl.id, pl.name, pl.look, pl.team, pos.x, pos.y, false);
     g.players[pl.id] = p;
     if (pl.id === net.selfId) g.me = p;
   });
+  spawnGuardians(g);
   game = g; showScreen(null); resetHudState();
 }
 
@@ -666,7 +806,11 @@ press($('buildBtn'), () => {
   $('buildBtn').classList.toggle('on', game.buildMode);
   $('buildMenu').classList.toggle('show', game.buildMode);
 });
-press($('chestBtn'), () => { if (game && game.nearChest) openChestById(game.nearChest.id, game.me.id, true); });
+press($('chestBtn'), () => {
+  if (!game || !game.nearAction) return;
+  if (game.nearAction.kind === 'chest') openChestById(game.nearAction.id, game.me.id, true);
+  else takePickup(game.nearAction.id, true);
+});
 document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => {
   game.piece = b.dataset.piece;
   document.querySelectorAll('.pieceBtn').forEach(x => x.classList.toggle('sel', x === b));
@@ -730,9 +874,12 @@ function fireBullets(p, aim, mine) {
       dx: Math.cos(a), dy: Math.sin(a), speed: w.speed,
       dist: 0, maxDist: w.range, dmg: w.dmg,
       owner: p.id, team: p.team, mine,
+      npc: !!p.guard,                        // guardian bullets: self-authoritative hits
+      col: w.col, len: w.len, wid: w.wid,    // tracer style
     });
   }
-  addEffect('muzzle', p.x + Math.cos(aim) * (CFG.playerR + 10), p.y + Math.sin(aim) * (CFG.playerR + 10));
+  addEffect('muzzle', p.x + Math.cos(aim) * (CFG.playerR + 10), p.y + Math.sin(aim) * (CFG.playerR + 10), w.big);
+  if (p === game.me) game.shake = Math.min(9, game.shake + (w.kick || 2));
 }
 // a peer fired: replay it locally as a purely visual/simulated event
 function applyPeerShoot(m) {
@@ -776,13 +923,20 @@ function updateBullets(dt) {
           addEffect('hit', b.x, b.y);
           addDmgNum(p.x, p.y, b.dmg);
           // Damage authority (avoid double-hits since everyone simulates
-          // every bullet): bots are always local; in multiplayer, hits on
-          // ME arrive only via the shooter's 'damage' message, and hits I
-          // land on peers are reported to the server by MY client only.
-          if (p.isBot) {
+          // every bullet):
+          //  - guardians: their owner (solo me / MP host) applies damage;
+          //    other clients report hits via npc_damage
+          //  - bots: always local (solo only)
+          //  - ME: solo takes bot hits directly; guardian (npc) bullets
+          //    are self-authoritative like the storm; PvP hits arrive
+          //    only via the shooter's 'damage' message
+          //  - peers: reported to the server by MY client only
+          if (p.guard && !g.npcAuthority) {
+            if (b.mine) net.send({ t: 'npc_damage', target: id, dmg: b.dmg });
+          } else if (p.isBot) {
             hurtLocal(p, b.dmg, b.owner);
           } else if (id === g.me.id) {
-            if (game.mode === 'solo') hurtLocal(p, b.dmg, b.owner);
+            if (game.mode === 'solo' || b.npc) hurtLocal(p, b.dmg, b.owner);
           } else if (b.mine) {
             net.send({ t: 'damage', target: id, dmg: b.dmg });
           }
@@ -795,16 +949,38 @@ function updateBullets(dt) {
 
 function hurtLocal(p, dmg, by) {
   p.hp -= dmg; p.hurtFlash = 0.25;
+  if (p === game.me) game.shake = Math.min(12, game.shake + 6);
   if (p.hp <= 0 && p.alive) {
     p.alive = false; p.hp = 0;
     addEffect('break', p.x, p.y);
     const killer = game.players[by];
     addKillFeed((killer ? killer.name : 'Storm') + ' ⚔ ' + p.name);
+    if (p.guard) guardianDied(p);
+  }
+}
+
+// A guardian fell: drop its special weapon where it stood. Runs once per
+// guardian on every client (authority via hurtLocal, peers via npc_state).
+function guardianDied(p) {
+  if (p.dropDone) return;
+  p.dropDone = true;
+  game.pickups.push({ id: 'drop_' + p.id, x: p.x, y: p.y, weapon: p.drop, taken: false });
+  addEffect('break', p.x, p.y);
+}
+
+function takePickup(id, mine) {
+  const pk = game.pickups.find(p => p.id === id);
+  if (!pk || pk.taken) return;
+  pk.taken = true;
+  if (mine) {
+    game.me.weapon = pk.weapon;
+    toast(WEAPONS[pk.weapon].icon + ' ' + WEAPONS[pk.weapon].name + ' acquired!');
+    net.send({ t: 'pickup_taken', id });
   }
 }
 
 function addDmgNum(x, y, n) { game.dmgNums.push({ x, y: y - 20, n, life: 0.8 }); }
-function addEffect(kind, x, y) { game.effects.push({ kind, x, y, life: kind === 'muzzle' ? 0.07 : 0.3 }); }
+function addEffect(kind, x, y, big) { game.effects.push({ kind, x, y, big, life: kind === 'muzzle' ? 0.07 : 0.3 }); }
 function addKillFeed(txt) {
   const d = document.createElement('div'); d.textContent = txt;
   $('killFeed').prepend(d);
@@ -884,6 +1060,43 @@ function updateBots(dt) {
   }
 }
 
+/* Guardians: tough special enemies that defend their ruined building.
+   They aggro anyone near their home, strafe while shooting, and never
+   wander far. Simulated only by the NPC authority (solo: you; MP: host). */
+function updateGuardians(dt) {
+  const g = game;
+  for (const id in g.players) {
+    const gu = g.players[id];
+    if (!gu.guard || !gu.alive) continue;
+    // nearest living non-guardian near this guardian's home
+    let target = null, best = CFG.guardAggro ** 2;
+    for (const oid in g.players) {
+      const o = g.players[oid];
+      if (o.guard || !o.alive) continue;
+      const d = dist2(gu.home.x, gu.home.y, o.x, o.y);
+      if (d < best) { best = d; target = o; }
+    }
+    let mx = 0, my = 0;
+    if (target) {
+      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * 0.18;
+      // strafe sideways around the intruder, but stay near home
+      const side = (id.charCodeAt(5) % 2 ? 1 : -1);
+      mx = -Math.sin(gu.aim) * side; my = Math.cos(gu.aim) * side;
+      const w = WEAPONS[gu.weapon], now = performance.now();
+      if (now - gu.lastShot > 1000 / w.rof) {
+        gu.lastShot = now;
+        fireBullets(gu, gu.aim, false);
+        if (g.mode !== 'solo') net.send({ t: 'npc_shoot', id, x: gu.x, y: gu.y, aim: gu.aim });
+      }
+    }
+    // leash back toward home
+    if (dist2(gu.x, gu.y, gu.home.x, gu.home.y) > 200 * 200) {
+      mx = gu.home.x - gu.x; my = gu.home.y - gu.y;
+    }
+    movePlayer(gu, mx, my, dt, 0.5);
+  }
+}
+
 /* ═══════════ 11. STORM ═══════════
    Runs deterministically from the shared seed + match clock, so all
    clients agree without extra network traffic. */
@@ -923,10 +1136,12 @@ function updateStorm(dt) {
     if (k >= 1) { s.holding = true; s.t = 0; s.phase++; }
   }
   s.dps = dps;
-  // storm damage: each client damages only entities it owns (self + bots)
+  // storm damage: each client damages only entities it owns
+  // (self always; bots/guardians only on the NPC-authority client)
   for (const id in game.players) {
     const p = game.players[id];
-    if (!p.alive || (!p.isBot && id !== game.me.id)) continue;
+    const owned = id === game.me.id || (p.isBot && game.npcAuthority);
+    if (!p.alive || !owned) continue;
     if (dist2(p.x, p.y, s.x, s.y) > s.r * s.r) {
       p.stormAcc = (p.stormAcc || 0) + s.dps * dt;
       if (p.stormAcc >= 1) { hurtLocal(p, Math.floor(p.stormAcc), 'storm'); p.stormAcc %= 1; }
@@ -966,13 +1181,14 @@ function applyPeerState(m) {
   if (p.alive && !m.alive) { p.alive = false; addEffect('break', p.x, p.y); }
 }
 
+// guardians are scenery-monsters: they never count toward win conditions
 function countAlive() {
-  let n = 0; for (const id in game.players) if (game.players[id].alive) n++;
+  let n = 0; for (const id in game.players) { const p = game.players[id]; if (p.alive && !p.guard) n++; }
   return n;
 }
 function aliveTeams() {
   const t = new Set();
-  for (const id in game.players) { const p = game.players[id]; if (p.alive) t.add(p.team === 'S' ? p.id : p.team); }
+  for (const id in game.players) { const p = game.players[id]; if (p.alive && !p.guard) t.add(p.team === 'S' ? p.id : p.team); }
   return t;
 }
 
@@ -984,22 +1200,34 @@ function update(dt) {
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
   }
 
-  // chest proximity -> contextual OPEN button
-  g.nearChest = null;
+  // proximity -> contextual interact button (chests + weapon drops)
+  g.nearAction = null;
   for (const c of g.map.chests) {
-    if (!c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70) { g.nearChest = c; break; }
     if (c.anim > 0) c.anim -= dt;
+    if (!g.nearAction && !c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70)
+      g.nearAction = { kind: 'chest', id: c.id };
   }
-  $('chestBtn').classList.toggle('show', !!g.nearChest && g.me.alive);
+  if (!g.nearAction)
+    for (const pk of g.pickups)
+      if (!pk.taken && dist2(g.me.x, g.me.y, pk.x, pk.y) < 70 * 70) {
+        g.nearAction = { kind: 'pickup', id: pk.id, weapon: pk.weapon }; break;
+      }
+  const btn = $('chestBtn');
+  btn.classList.toggle('show', !!g.nearAction && g.me.alive);
+  if (g.nearAction)
+    btn.textContent = g.nearAction.kind === 'chest' ? '📦 OPEN CHEST'
+      : WEAPONS[g.nearAction.weapon].icon + ' TAKE ' + WEAPONS[g.nearAction.weapon].name.toUpperCase();
 
   updateBullets(dt);
   updateStorm(dt);
   if (g.mode === 'solo') updateBots(dt);
+  if (g.npcAuthority) updateGuardians(dt);
 
-  // smooth remote players toward their latest network position
+  // smooth remote players (and remote-simulated guardians) toward
+  // their latest network position
   for (const id in g.players) {
     const p = g.players[id];
-    if (p === g.me || p.isBot) continue;
+    if (p === g.me || (p.isBot && g.npcAuthority)) continue;
     p.x += (p.tx - p.x) * Math.min(1, dt * 12);
     p.y += (p.ty - p.y) * Math.min(1, dt * 12);
     p.aim = p.taim;
@@ -1016,12 +1244,19 @@ function update(dt) {
     if (now - g.lastNetSend > 1000 / CFG.netHz) {
       g.lastNetSend = now;
       net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon });
+      if (g.npcAuthority) { // host also ships a guardian snapshot
+        const list = [];
+        for (const id in g.players) { const p = g.players[id];
+          if (p.guard) list.push({ id, x: p.x, y: p.y, aim: p.aim, hp: p.hp, alive: p.alive }); }
+        if (list.length) net.send({ t: 'npc_state', list });
+      }
     }
   }
 
   // win / lose detection (a 1-player lobby never auto-wins)
   if (!g.over) {
-    const alive = countAlive(), total = Object.keys(g.players).length;
+    const alive = countAlive();
+    const total = Object.values(g.players).filter(p => !p.guard).length;
     if (!g.me.alive) {
       g.over = true; endMatch(false, alive + 1);
     } else if (total > 1) {
@@ -1045,13 +1280,18 @@ function endMatch(won, placement) {
 /* ---------- rendering ---------- */
 function render() {
   const g = game;
-  // camera follows the player, clamped to world bounds
+  // camera follows the player, clamped to world bounds, plus decaying
+  // screen shake from firing and taking hits
   g.camX = clamp(g.me.x - W / 2, 0, CFG.world - W);
   g.camY = clamp(g.me.y - H / 2, 0, CFG.world - H);
-  const cx = g.camX, cy = g.camY;
+  g.shake *= 0.86;
+  const cx = g.camX + (Math.random() - 0.5) * g.shake;
+  const cy = g.camY + (Math.random() - 0.5) * g.shake;
 
-  // ground
-  ctx.fillStyle = '#3d7a3f'; ctx.fillRect(0, 0, W, H);
+  // ground: repeating grass texture aligned to world coordinates
+  ctx.save(); ctx.translate(-cx, -cy);
+  ctx.fillStyle = grassPattern; ctx.fillRect(cx, cy, W + 1, H + 1);
+  ctx.restore();
   // faint grid (also doubles as the build grid guide)
   ctx.strokeStyle = g.buildMode ? '#ffffff40' : '#ffffff12'; ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1061,6 +1301,20 @@ function render() {
   // world border
   ctx.strokeStyle = '#173017'; ctx.lineWidth = 8;
   ctx.strokeRect(-cx, -cy, CFG.world, CFG.world);
+
+  // building floors + rubble (walls come from the build grid; the
+  // broken roof is drawn later, above players, unless you're inside)
+  for (const b of g.map.buildings) {
+    const x = b.x0 - cx, y = b.y0 - cy, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
+    if (x > W || y > H || x + bw < 0 || y + bh < 0) continue;
+    ctx.fillStyle = '#4a3b2c'; ctx.fillRect(x, y, bw, bh);          // worn plank floor
+    ctx.strokeStyle = '#00000022'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let px = x + 30; px < x + bw; px += 30) { ctx.moveTo(px, y); ctx.lineTo(px, y + bh); }
+    ctx.stroke();
+    ctx.fillStyle = '#00000038';                                     // debris piles
+    for (const r of b.rubble) { ctx.beginPath(); ctx.arc(r.x - cx, r.y - cy, r.r, 0, 7); ctx.fill(); }
+  }
 
   // build-range highlight in build mode
   if (g.buildMode && g.me.alive) {
@@ -1074,11 +1328,18 @@ function render() {
   for (const [, b] of g.builds) {
     const x = b.gx * CFG.grid - cx, y = b.gy * CFG.grid - cy;
     if (x < -CFG.grid || y < -CFG.grid || x > W || y > H) continue;
-    const col = b.mat === 'wood' ? '#9c6b30' : b.mat === 'brick' ? '#b34a3a' : '#7d8a99';
+    const col = b.mat === 'wood' ? '#9c6b30' : b.mat === 'brick' ? '#b34a3a' : b.mat === 'metal' ? '#7d8a99' : '#7a7264';
     ctx.fillStyle = col;
     if (b.piece === 'wall') {
       ctx.fillRect(x + 2, y + 2, CFG.grid - 4, CFG.grid - 4);
       ctx.strokeStyle = '#0005'; ctx.lineWidth = 3; ctx.strokeRect(x + 2, y + 2, CFG.grid - 4, CFG.grid - 4);
+      if (b.mat === 'ruin') { // cracked, weathered look for building walls
+        ctx.strokeStyle = '#00000055'; ctx.lineWidth = 2;
+        const j = (b.gx * 7 + b.gy * 13) % 20; // deterministic crack per cell
+        ctx.beginPath();
+        ctx.moveTo(x + 8 + j, y + 6); ctx.lineTo(x + 20 + j / 2, y + 28); ctx.lineTo(x + 12 + j, y + CFG.grid - 8);
+        ctx.stroke();
+      }
     } else if (b.piece === 'ramp') {
       ctx.beginPath(); ctx.moveTo(x + 4, y + CFG.grid - 4); ctx.lineTo(x + CFG.grid - 4, y + CFG.grid - 4);
       ctx.lineTo(x + CFG.grid - 4, y + 4); ctx.closePath(); ctx.fill();
@@ -1100,6 +1361,7 @@ function render() {
     const x = c.x - cx, y = c.y - cy;
     if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
     const pop = c.opened ? Math.max(0, c.anim) : 0;
+    drawShadow(x, y + 6, 16);
     ctx.save(); ctx.translate(x, y); ctx.scale(1 + pop, 1 + pop);
     ctx.fillStyle = c.opened ? '#6b5a2a' : '#e0a52a';
     ctx.fillRect(-16, -12, 32, 24);
@@ -1112,19 +1374,37 @@ function render() {
     ctx.restore();
   }
 
+  // special weapon drops from defeated guardians (pulsing beacon)
+  for (const pk of g.pickups) {
+    if (pk.taken) continue;
+    const x = pk.x - cx, y = pk.y - cy;
+    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    const w = WEAPONS[pk.weapon], pulse = 1 + Math.sin(performance.now() / 200) * 0.12;
+    drawShadow(x, y + 4, 14);
+    ctx.strokeStyle = w.col; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 22 * pulse, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#1c2434'; ctx.fillRect(x - 13, y - 13, 26, 26);
+    ctx.strokeStyle = w.col; ctx.lineWidth = 2; ctx.strokeRect(x - 13, y - 13, 26, 26);
+    ctx.font = '15px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(w.icon, x, y + 5);
+    ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = w.col;
+    ctx.fillText(w.name.toUpperCase(), x, y - 26);
+  }
+
   // trees & rocks
   for (const r of g.map.rocks) {
     const x = r.x - cx, y = r.y - cy;
     if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    drawShadow(x, y + r.r * 0.35, r.r);
     ctx.fillStyle = '#8a8f96'; ctx.beginPath(); ctx.arc(x, y, r.r, 0, 7); ctx.fill();
     ctx.fillStyle = '#a9aeb5'; ctx.beginPath(); ctx.arc(x - r.r * 0.25, y - r.r * 0.25, r.r * 0.5, 0, 7); ctx.fill();
   }
 
-  // bullets + trails
+  // bullets: per-weapon tracer color/length (railgun = long blue beam)
+  ctx.lineCap = 'round';
   for (const b of g.bullets) {
-    ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.strokeStyle = b.col; ctx.lineWidth = b.wid;
     ctx.beginPath();
-    ctx.moveTo(b.x - b.dx * 14 - cx, b.y - b.dy * 14 - cy);
+    ctx.moveTo(b.x - b.dx * b.len - cx, b.y - b.dy * b.len - cy);
     ctx.lineTo(b.x - cx, b.y - cy); ctx.stroke();
   }
 
@@ -1133,8 +1413,12 @@ function render() {
     const p = g.players[id];
     const x = p.x - cx, y = p.y - cy;
     if (!p.alive || x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
-    // team ring
-    if (p.team !== 'S') {
+    drawShadow(x, y + 4, CFG.playerR);
+    if (p.guard) { // menacing pulsing red aura on special enemies
+      const pulse = 4 + Math.sin(performance.now() / 180) * 3;
+      ctx.strokeStyle = '#ff3838aa'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, CFG.playerR + pulse + 4, 0, 7); ctx.stroke();
+    } else if (p.team !== 'S' && p.team !== 'G') { // team ring
       ctx.strokeStyle = p.team === 'A' ? '#2a6de0' : '#d93030'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 5, 0, 7); ctx.stroke();
     }
@@ -1143,12 +1427,13 @@ function render() {
       ctx.fillStyle = `rgba(255,40,40,${p.hurtFlash * 2})`;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 2, 0, 7); ctx.fill();
     }
-    // name + mini health bar
+    // name + mini health bar (guardians have more max hp)
     ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillStyle = id === g.me.id ? '#ffd94d' : '#fff';
+    ctx.fillStyle = id === g.me.id ? '#ffd94d' : p.guard ? '#ff8a8a' : '#fff';
     ctx.fillText(p.name, x, y - 28);
     ctx.fillStyle = '#000a'; ctx.fillRect(x - 18, y - 25, 36, 4);
-    ctx.fillStyle = '#5dff7a'; ctx.fillRect(x - 18, y - 25, 36 * p.hp / CFG.maxHp, 4);
+    ctx.fillStyle = p.guard ? '#ff5f5f' : '#5dff7a';
+    ctx.fillRect(x - 18, y - 25, 36 * p.hp / (p.maxHp || CFG.maxHp), 4);
   }
 
   // tree canopies on top so players can hide under them
@@ -1164,7 +1449,7 @@ function render() {
     const x = e.x - cx, y = e.y - cy;
     if (e.kind === 'muzzle') {
       ctx.fillStyle = '#ffec8a';
-      ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, e.big ? 15 : 9, 0, 7); ctx.fill();
     } else if (e.kind === 'hit') {
       ctx.strokeStyle = `rgba(255,255,255,${e.life * 3})`; ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1174,6 +1459,23 @@ function render() {
       ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.5})`; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, (0.3 - e.life) * 120 + 8, 0, 7); ctx.stroke();
     }
+  }
+
+  // broken roofs: cover building interiors (players, loot, guardians)
+  // unless YOU are inside — walking in reveals the interior
+  const myBuilding = buildingRectAt(g.map, g.me.x, g.me.y, 20);
+  for (const b of g.map.buildings) {
+    if (b === myBuilding) continue;
+    const x = b.x0 - cx, y = b.y0 - cy, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
+    if (x > W || y > H || x + bw < 0 || y + bh < 0) continue;
+    ctx.fillStyle = 'rgba(34,27,20,0.9)'; ctx.fillRect(x, y, bw, bh);
+    ctx.strokeStyle = '#00000055'; ctx.lineWidth = 2;      // roof planks
+    ctx.beginPath();
+    for (let py = y + 22; py < y + bh; py += 22) { ctx.moveTo(x, py); ctx.lineTo(x + bw, py); }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';                     // caved-in holes
+    for (const h of b.holes) { ctx.beginPath(); ctx.arc(h.x - cx, h.y - cy, h.r, 0, 7); ctx.fill(); }
+    ctx.strokeStyle = '#171310'; ctx.lineWidth = 4; ctx.strokeRect(x, y, bw, bh);
   }
 
   // damage numbers
@@ -1192,6 +1494,14 @@ function render() {
   ctx.fill('evenodd');
   ctx.strokeStyle = '#b46bff'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(s.x - cx, s.y - cy, s.r, 0, 7); ctx.stroke();
+
+  // cinematic vignette + red flash when recently hurt
+  ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
+  if (g.me.hurtFlash > 0) {
+    ctx.globalAlpha = clamp(g.me.hurtFlash * 3, 0, 0.8);
+    ctx.fillStyle = hurtVignette; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
 
   // aim indicator: dashed line + reticle in current aim direction
   if (g.me.alive && !g.buildMode) {
@@ -1212,13 +1522,52 @@ function render() {
     ctx.beginPath(); ctx.arc(input.joyPos.x, input.joyPos.y, 26, 0, 7); ctx.fill();
   }
 
+  drawMinimap();
+
   // HUD text refresh
   $('hpFill').style.width = (g.me.hp / CFG.maxHp * 100) + '%';
   $('hpText').textContent = `${Math.ceil(g.me.hp)} / ${CFG.maxHp}`;
   $('stormInfo').textContent = s.label;
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
   $('aliveInfo').textContent = countAlive() + ' alive';
-  $('weaponInfo').textContent = WEAPONS[g.me.weapon].name;
+  const wpn = WEAPONS[g.me.weapon];
+  $('weaponInfo').textContent = wpn.icon + ' ' + wpn.name;
+}
+
+// Minimap (top-right): buildings, chests, storm circle, you, teammates,
+// and guardians — so ruins with special loot are easy to find.
+function drawMinimap() {
+  const g = game, M = 132, pad = 14, mx = W - M - pad, my = 62, sc = M / CFG.world;
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,14,24,0.68)';
+  ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 2;
+  ctx.fillRect(mx, my, M, M); ctx.strokeRect(mx, my, M, M);
+  ctx.beginPath(); ctx.rect(mx, my, M, M); ctx.clip();
+  ctx.fillStyle = '#8a6d4a';
+  for (const b of g.map.buildings)
+    ctx.fillRect(mx + b.x0 * sc, my + b.y0 * sc, (b.x1 - b.x0) * sc, (b.y1 - b.y0) * sc);
+  ctx.fillStyle = '#ffd94d';
+  for (const c of g.map.chests)
+    if (!c.opened) ctx.fillRect(mx + c.x * sc - 1, my + c.y * sc - 1, 2.5, 2.5);
+  const s = g.storm;                              // storm ring + outside tint
+  ctx.fillStyle = 'rgba(120,40,190,0.28)';
+  ctx.beginPath(); ctx.rect(mx, my, M, M);
+  ctx.arc(mx + s.x * sc, my + s.y * sc, s.r * sc, 0, Math.PI * 2);
+  ctx.fill('evenodd');
+  ctx.strokeStyle = '#b46bff'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(mx + s.x * sc, my + s.y * sc, s.r * sc, 0, 7); ctx.stroke();
+  for (const id in g.players) {                   // dots: red guards, green team, white you
+    const p = g.players[id];
+    if (!p.alive) continue;
+    let col = null;
+    if (p.guard) col = '#ff5f5f';
+    else if (id === g.me.id) col = '#ffffff';
+    else if (p.team !== 'S' && p.team === g.me.team) col = '#5dff7a';
+    if (!col) continue;                           // enemies stay hidden
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(mx + p.x * sc, my + p.y * sc, id === g.me.id ? 3 : 2.2, 0, 7); ctx.fill();
+  }
+  ctx.restore();
 }
 
 let lastT = performance.now();
