@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- iPad: lock scaling, use full screen, landscape two-thumb layout -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+<title>Sleepy Royale — 2D Battle Royale</title>
+<style>
+/* ============================================================
+   GLOBAL STYLES
+   - touch-action:none disables browser panning/zooming so all
+     touches go to the game.
+   - Every tap target is >= 56px (well above the 44pt minimum).
+   ============================================================ */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#101418;touch-action:none;
+  font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#fff}
+canvas#game{position:fixed;inset:0;display:block;touch-action:none}
+
+/* ---------- generic overlay screens (menu / party / lobby / etc.) ---------- */
+.screen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;background:radial-gradient(circle at 50% 30%,#25334a,#101418 75%);z-index:50;padding:20px;overflow-y:auto}
+.screen.active{display:flex}
+h1{font-size:44px;letter-spacing:2px;text-shadow:0 4px 0 #0007}
+h2{font-size:26px}
+.sub{color:#9db2c9;font-size:15px;text-align:center;max-width:520px}
+
+/* ---------- touch-friendly buttons ---------- */
+.btn{min-width:230px;min-height:58px;padding:14px 26px;font-size:20px;font-weight:700;color:#fff;
+  background:linear-gradient(#3f8cff,#2a6de0);border:none;border-radius:14px;box-shadow:0 4px 0 #1b4aa5;
+  cursor:pointer;touch-action:manipulation}
+.btn:active{transform:translateY(3px);box-shadow:none}
+.btn.green{background:linear-gradient(#3ecf5a,#25a03e);box-shadow:0 4px 0 #187030}
+.btn.red{background:linear-gradient(#ff5f5f,#d93030);box-shadow:0 4px 0 #8f1f1f}
+.btn.gray{background:linear-gradient(#5a6b80,#425062);box-shadow:0 4px 0 #2b3542}
+.btn.small{min-width:110px;min-height:52px;font-size:17px}
+.btn.sel{outline:4px solid #ffd94d}
+.row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;align-items:center}
+input.code{width:230px;height:58px;font-size:28px;text-align:center;letter-spacing:8px;text-transform:uppercase;
+  border-radius:12px;border:2px solid #3f8cff;background:#182234;color:#fff;outline:none}
+input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radius:12px;border:2px solid #44546b;
+  background:#182234;color:#fff;outline:none}
+.codebox{font-size:46px;letter-spacing:12px;font-weight:800;color:#ffd94d;background:#182234;
+  padding:12px 30px;border-radius:14px;border:2px dashed #ffd94d}
+
+/* ---------- lobby player list ---------- */
+#lobbyList{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow-y:auto;width:min(560px,90vw)}
+.lobbyRow{display:flex;align-items:center;gap:12px;background:#1b2739;border-radius:12px;padding:8px 14px;
+  min-height:56px;cursor:pointer}
+.lobbyRow canvas{width:44px;height:44px}
+.lobbyRow .nm{flex:1;font-size:19px;font-weight:600}
+.teamTag{font-size:15px;font-weight:800;padding:6px 14px;border-radius:10px;background:#333}
+.teamA{background:#2a6de0}.teamB{background:#d93030}.teamS{background:#6b7b92}
+.hostStar{color:#ffd94d;font-size:20px}
+
+/* ============================================================
+   IN-GAME HUD (DOM layer above the canvas)
+   Layout: joystick zone bottom-left (canvas drawn), fire/aim
+   bottom-right, build column on right edge above the fire
+   button, contextual chest button bottom-center.
+   ============================================================ */
+#hud{position:fixed;inset:0;z-index:10;display:none;pointer-events:none}
+#hud.active{display:block}
+#hud .hbtn{position:absolute;pointer-events:auto;display:flex;align-items:center;justify-content:center;
+  font-weight:800;color:#fff;border:none;border-radius:50%;touch-action:none}
+#fireBtn{right:calc(24px + env(safe-area-inset-right));bottom:calc(110px + env(safe-area-inset-bottom));
+  width:110px;height:110px;font-size:20px;background:radial-gradient(#ff7b5f,#d93030);box-shadow:0 0 0 6px #ffffff22}
+#fireBtn:active{background:radial-gradient(#ffb35f,#e05a2a)}
+#buildBtn{right:calc(150px + env(safe-area-inset-right));bottom:calc(150px + env(safe-area-inset-bottom));
+  width:76px;height:76px;font-size:15px;background:radial-gradient(#8ac6ff,#2a6de0);box-shadow:0 0 0 5px #ffffff22}
+#buildBtn.on{background:radial-gradient(#ffe28a,#e0a52a)}
+#chestBtn{left:50%;transform:translateX(-50%);bottom:calc(30px + env(safe-area-inset-bottom));
+  width:auto;height:64px;padding:0 30px;border-radius:16px;font-size:20px;
+  background:linear-gradient(#ffd94d,#e0a52a);color:#3a2b00;display:none}
+#chestBtn.show{display:flex}
+
+/* build menu: vertical strip on right edge, clear of the aim zone thumb arc */
+#buildMenu{position:absolute;right:calc(16px + env(safe-area-inset-right));top:50%;transform:translateY(-70%);
+  display:none;flex-direction:column;gap:10px;pointer-events:auto}
+#buildMenu.show{display:flex}
+#buildMenu button{min-width:96px;min-height:56px;border-radius:12px;border:none;font-size:15px;font-weight:800;
+  color:#fff;background:#2b3a52;touch-action:manipulation}
+#buildMenu button.sel{background:#3f8cff;outline:3px solid #ffd94d}
+#buildMenu .matBtn.sel{background:#25a03e}
+
+/* top HUD info */
+#topHud{position:absolute;top:calc(10px + env(safe-area-inset-top));left:0;right:0;display:flex;
+  justify-content:space-between;padding:0 18px;pointer-events:none;align-items:flex-start}
+#hpWrap{width:240px}
+#hpOuter{height:22px;background:#0008;border-radius:11px;overflow:hidden;border:2px solid #fff5}
+#hpFill{height:100%;width:100%;background:linear-gradient(#5dff7a,#25a03e);transition:width .15s}
+#hpText{font-size:13px;margin-top:3px;color:#cfe3ff;text-shadow:0 1px 2px #000}
+#stormInfo{text-align:center;font-size:15px;font-weight:700;color:#d9b6ff;text-shadow:0 1px 3px #000}
+#matInfo{text-align:right;font-size:15px;font-weight:700;text-shadow:0 1px 3px #000;line-height:1.5}
+#weaponInfo{position:absolute;right:calc(24px + env(safe-area-inset-right));
+  bottom:calc(38px + env(safe-area-inset-bottom));font-size:16px;font-weight:800;color:#ffe9a8;
+  text-shadow:0 1px 3px #000;pointer-events:none}
+#killFeed{position:absolute;top:calc(60px + env(safe-area-inset-top));right:18px;text-align:right;
+  font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
+
+/* customization preview */
+#custPrev{background:#182234;border-radius:16px}
+.custRow{display:flex;align-items:center;gap:10px}
+.custRow .lab{width:90px;text-align:right;font-size:18px;font-weight:700;color:#9db2c9}
+#toast{position:fixed;left:50%;top:14%;transform:translateX(-50%);background:#000c;color:#ffd94d;
+  padding:12px 26px;border-radius:12px;font-size:18px;font-weight:700;z-index:200;display:none}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- ================= MAIN MENU ================= -->
+<div class="screen active" id="scrMenu">
+  <h1>🛡️ SLEEPY ROYALE</h1>
+  <div class="sub">2D battle royale for iPad — left thumb walks, right thumb aims &amp; fires. Loot chests, build cover, outlive the storm.</div>
+  <input class="name" id="nameInput" placeholder="Your name" maxlength="12" autocomplete="off">
+  <button class="btn green" id="btnSolo">▶ PLAY SOLO (vs bots)</button>
+  <button class="btn" id="btnParty">👥 PARTY / CUSTOM MATCH</button>
+  <button class="btn gray" id="btnCustomize">🎨 CUSTOMIZE CHARACTER</button>
+</div>
+
+<!-- ================= CHARACTER CUSTOMIZATION ================= -->
+<div class="screen" id="scrCustomize">
+  <h2>Customize</h2>
+  <canvas id="custPrev" width="180" height="180"></canvas>
+  <div class="custRow"><span class="lab">Eyes</span>
+    <button class="btn small gray custBtn" data-k="eye" data-d="-1">◀</button>
+    <span id="eyeName" style="width:110px;text-align:center;font-size:18px">Dot</span>
+    <button class="btn small gray custBtn" data-k="eye" data-d="1">▶</button></div>
+  <div class="custRow"><span class="lab">Hair</span>
+    <button class="btn small gray custBtn" data-k="hair" data-d="-1">◀</button>
+    <span id="hairName" style="width:110px;text-align:center;font-size:18px">Spiky</span>
+    <button class="btn small gray custBtn" data-k="hair" data-d="1">▶</button></div>
+  <div class="custRow"><span class="lab">Outfit</span>
+    <button class="btn small gray custBtn" data-k="outfit" data-d="-1">◀</button>
+    <span id="outfitName" style="width:110px;text-align:center;font-size:18px">Blue</span>
+    <button class="btn small gray custBtn" data-k="outfit" data-d="1">▶</button></div>
+  <button class="btn green" id="btnCustDone">✔ DONE</button>
+</div>
+
+<!-- ================= PARTY: CREATE / JOIN ================= -->
+<div class="screen" id="scrParty">
+  <h2>Party &amp; Custom Matches</h2>
+  <div class="sub">Create a party to get a share code, or type a friend's code to join their lobby. The party host picks the mode (Solos / 2v2 / 4v4) and assigns teams.</div>
+  <button class="btn green" id="btnCreateParty">➕ CREATE PARTY</button>
+  <div class="row">
+    <input class="code" id="joinCode" placeholder="CODE" maxlength="4" autocomplete="off">
+    <button class="btn" id="btnJoinParty">JOIN</button>
+  </div>
+  <button class="btn gray" id="btnPartyBack">◀ BACK</button>
+  <div class="sub" id="netStatus"></div>
+</div>
+
+<!-- ================= LOBBY (party + custom match host controls) ================= -->
+<div class="screen" id="scrLobby">
+  <h2>Lobby — code <span class="codebox" id="lobbyCode" style="font-size:30px;letter-spacing:6px;padding:6px 18px">----</span></h2>
+  <div class="sub" id="lobbyHint">Share the code so friends can join.</div>
+  <div class="row" id="modeRow">
+    <button class="btn small gray modeBtn" data-mode="solos">SOLOS</button>
+    <button class="btn small gray modeBtn" data-mode="2v2">2v2</button>
+    <button class="btn small gray modeBtn" data-mode="4v4">4v4</button>
+  </div>
+  <div id="lobbyList"></div>
+  <div class="row">
+    <button class="btn green" id="btnStartMatch">🚀 START MATCH</button>
+    <button class="btn red" id="btnLeaveLobby">LEAVE</button>
+  </div>
+</div>
+
+<!-- ================= GAME OVER ================= -->
+<div class="screen" id="scrOver">
+  <h1 id="overTitle">VICTORY!</h1>
+  <div class="sub" id="overSub"></div>
+  <button class="btn green" id="btnAgain">PLAY AGAIN</button>
+  <button class="btn gray" id="btnToMenu">MAIN MENU</button>
+</div>
+
+<!-- ================= IN-GAME HUD ================= -->
+<div id="hud">
+  <div id="topHud">
+    <div id="hpWrap"><div id="hpOuter"><div id="hpFill"></div></div><div id="hpText">100 / 100</div></div>
+    <div id="stormInfo">storm</div>
+    <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
+  </div>
+  <div id="killFeed"></div>
+  <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
+  <button class="hbtn" id="fireBtn">🔥 FIRE</button>
+  <div id="weaponInfo">Pistol</div>
+  <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
+  <div id="buildMenu">
+    <button class="pieceBtn sel" data-piece="wall">▮ WALL</button>
+    <button class="pieceBtn" data-piece="ramp">◢ RAMP</button>
+    <button class="pieceBtn" data-piece="floor">▦ FLOOR</button>
+    <button class="matBtn sel" data-mat="wood">🪵 WOOD</button>
+    <button class="matBtn" data-mat="brick">🧱 BRICK</button>
+    <button class="matBtn" data-mat="metal">⛓️ METAL</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ══════════════════════════════════════════════════════════════════
+   SLEEPY ROYALE — single-file 2D battle royale client
+   Sections:
+     1. CONFIG           tunable numbers for every system
+     2. UTILITIES        seeded RNG, math helpers, toast
+     3. CHARACTER ART    procedural player sprite (eyes/hair/outfit)
+     4. SCREENS / UI     menu, customization, party, lobby wiring
+     5. NETWORKING       WebSocket client (party codes, lobby, sync)
+     6. MATCH SETUP      seeded map generation (obstacles, chests)
+     7. TOUCH INPUT      joystick, aim zone, build-tap placement
+     8. BUILDING         grid pieces, materials, HP, destruction
+     9. COMBAT           weapons, bullets, muzzle flash, hit FX
+    10. BOTS             simple AI opponents for solo play
+    11. STORM            shrinking safe zone
+    12. GAME LOOP        update + render + camera + HUD
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════ 1. CONFIG ═══════════ */
+const CFG = {
+  world: 2400,            // square world size in px
+  grid: 60,               // build grid cell size
+  playerR: 16,            // player collision radius
+  playerSpeed: 220,       // px per second
+  maxHp: 100,
+  buildRange: 3,          // max grid cells from player you may build
+  buildCost: 10,          // material cost per piece
+  buildHp: { wood: 150, brick: 300, metal: 450 },
+  startMats: { wood: 60, brick: 30, metal: 15 },
+  chestCount: 14,
+  treeCount: 34,
+  rockCount: 18,
+  botCount: 7,            // opponents in solo mode
+  netHz: 15,              // state sync rate (multiplayer)
+  // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
+  stormPhases: [
+    [18, 22, 0.62, 1], [14, 18, 0.38, 2], [12, 14, 0.20, 4], [10, 12, 0.06, 8],
+  ],
+};
+
+// Weapon table. range = how far a bullet travels before despawning.
+const WEAPONS = {
+  pistol:  { name: 'Pistol',  dmg: 20, rof: 2.5, range: 520, spread: 0.03, pellets: 1, speed: 900 },
+  smg:     { name: 'SMG',     dmg: 12, rof: 8.0, range: 430, spread: 0.09, pellets: 1, speed: 900 },
+  shotgun: { name: 'Shotgun', dmg: 9,  rof: 1.1, range: 270, spread: 0.26, pellets: 5, speed: 800 },
+};
+
+const EYES    = ['Dot', 'Wide', 'Sleepy'];
+const HAIRS   = ['Spiky', 'Bowl', 'Cap'];
+const OUTFITS = ['Blue', 'Red', 'Green', 'Purple'];
+const OUTFIT_COLORS = ['#2a6de0', '#d93030', '#25a03e', '#8a3fd9'];
+
+/* ═══════════ 2. UTILITIES ═══════════ */
+// mulberry32: tiny seeded PRNG so every client generates the same map
+function seededRng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const dist2 = (ax, ay, bx, by) => (ax - bx) ** 2 + (ay - by) ** 2;
+const $ = id => document.getElementById(id);
+let toastTimer = 0;
+function toast(msg, ms = 1800) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', ms);
+}
+
+/* ═══════════ 3. CHARACTER ART ═══════════
+   Players are drawn procedurally from a "look" object
+   { eye:0-2, hair:0-2, outfit:0-3 } — no image assets needed. */
+function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
+  ctx.save(); ctx.translate(x, y);
+  const oc = OUTFIT_COLORS[look.outfit % OUTFIT_COLORS.length];
+  // body (outfit)
+  ctx.fillStyle = oc; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = '#0006'; ctx.stroke();
+  // gun barrel showing facing direction
+  ctx.save(); ctx.rotate(angle);
+  ctx.fillStyle = '#333'; ctx.fillRect(r - 4, -3.5, 16, 7);
+  ctx.restore();
+  // head (skin tone)
+  ctx.fillStyle = '#ffd9a8'; ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill();
+  // hair styles
+  ctx.fillStyle = '#4a2f18';
+  if (look.hair === 0) {            // spiky: three triangles on top
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 7 - 4, -r * 0.45); ctx.lineTo(i * 7 + 4, -r * 0.45); ctx.lineTo(i * 7, -r * 1.05);
+      ctx.fill();
+    }
+  } else if (look.hair === 1) {     // bowl cut: arc over the head
+    ctx.beginPath(); ctx.arc(0, -2, r * 0.62, Math.PI, 2 * Math.PI); ctx.fill();
+  } else {                          // cap: colored beanie band
+    ctx.fillStyle = oc;
+    ctx.beginPath(); ctx.arc(0, -3, r * 0.6, Math.PI, 2 * Math.PI); ctx.fill();
+    ctx.fillRect(-r * 0.6, -5, r * 1.2, 4);
+  }
+  // eye styles
+  ctx.fillStyle = '#222';
+  if (look.eye === 0) {             // dots
+    ctx.beginPath(); ctx.arc(-4, 1, 2, 0, 7); ctx.arc(4, 1, 2, 0, 7); ctx.fill();
+  } else if (look.eye === 1) {      // wide: white rings + pupils
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-4, 1, 4, 0, 7); ctx.arc(4, 1, 4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.beginPath(); ctx.arc(-4, 1, 1.8, 0, 7); ctx.arc(4, 1, 1.8, 0, 7); ctx.fill();
+  } else {                          // sleepy: half-closed lines
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-7, 1); ctx.lineTo(-2, 1); ctx.moveTo(2, 1); ctx.lineTo(7, 1); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ═══════════ 4. SCREENS / UI ═══════════ */
+let myName = 'Player' + (100 + Math.floor(Math.random() * 900));
+let myLook = { eye: 0, hair: 0, outfit: 0 };
+// restore saved look/name across sessions
+try {
+  const s = JSON.parse(localStorage.getItem('sleepyRoyale') || '{}');
+  if (s.look) myLook = s.look;
+  if (s.name) myName = s.name;
+} catch (e) { /* ignore corrupt storage */ }
+$('nameInput').value = myName;
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  if (id) $(id).classList.add('active');
+  $('hud').classList.toggle('active', id === null); // HUD only during a match
+}
+function saveProfile() {
+  myName = $('nameInput').value.trim().slice(0, 12) || myName;
+  try { localStorage.setItem('sleepyRoyale', JSON.stringify({ look: myLook, name: myName })); } catch (e) {}
+}
+
+// --- customization screen ---
+const custCtx = $('custPrev').getContext('2d');
+function renderCustPreview() {
+  custCtx.clearRect(0, 0, 180, 180);
+  custCtx.fillStyle = '#223148'; custCtx.fillRect(0, 0, 180, 180);
+  drawCharacter(custCtx, 90, 95, -Math.PI / 2, myLook, 42);
+  $('eyeName').textContent = EYES[myLook.eye];
+  $('hairName').textContent = HAIRS[myLook.hair];
+  $('outfitName').textContent = OUTFITS[myLook.outfit];
+}
+document.querySelectorAll('.custBtn').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.k, d = +b.dataset.d;
+  const n = k === 'eye' ? EYES.length : k === 'hair' ? HAIRS.length : OUTFITS.length;
+  myLook[k] = (myLook[k] + d + n) % n;
+  renderCustPreview();
+  net.send({ t: 'set_look', look: myLook }); // live-sync new look to party
+}));
+$('btnCustomize').addEventListener('click', () => { saveProfile(); renderCustPreview(); showScreen('scrCustomize'); });
+$('btnCustDone').addEventListener('click', () => { saveProfile(); showScreen(net.party ? 'scrLobby' : 'scrMenu'); });
+
+// --- menu / party navigation ---
+$('btnSolo').addEventListener('click', () => { saveProfile(); startSoloMatch(); });
+$('btnParty').addEventListener('click', () => { saveProfile(); showScreen('scrParty'); });
+$('btnPartyBack').addEventListener('click', () => { net.disconnect(); showScreen('scrMenu'); });
+$('btnCreateParty').addEventListener('click', () => net.connect(() => net.send({ t: 'create_party', name: myName, look: myLook })));
+$('btnJoinParty').addEventListener('click', () => {
+  const code = $('joinCode').value.trim().toUpperCase();
+  if (code.length < 4) return toast('Enter the 4-letter code');
+  net.connect(() => net.send({ t: 'join_party', code, name: myName, look: myLook }));
+});
+$('btnLeaveLobby').addEventListener('click', () => { net.disconnect(); showScreen('scrMenu'); });
+$('btnStartMatch').addEventListener('click', () => net.send({ t: 'start_match' }));
+document.querySelectorAll('.modeBtn').forEach(b => b.addEventListener('click', () => {
+  net.send({ t: 'set_mode', mode: b.dataset.mode });
+}));
+$('btnToMenu').addEventListener('click', () => { game = null; net.disconnect(); showScreen('scrMenu'); });
+$('btnAgain').addEventListener('click', () => {
+  game = null;
+  if (net.party) showScreen('scrLobby'); else startSoloMatch();
+});
+
+// --- lobby rendering (shared party lobby + host custom-match controls) ---
+function renderLobby() {
+  const p = net.party; if (!p) return;
+  $('lobbyCode').textContent = p.code;
+  const isHost = p.hostId === net.selfId;
+  $('lobbyHint').textContent = isHost
+    ? (p.mode === 'solos' ? 'Solos: everyone for themselves. Tap START when ready.'
+       : `Mode ${p.mode}: tap a player to switch their team.`)
+    : 'Waiting for the host to start the match…';
+  $('btnStartMatch').style.display = isHost ? '' : 'none';
+  document.querySelectorAll('.modeBtn').forEach(b => {
+    b.classList.toggle('sel', b.dataset.mode === p.mode);
+    b.style.pointerEvents = isHost ? 'auto' : 'none';
+    b.style.opacity = isHost || b.dataset.mode === p.mode ? 1 : 0.4;
+  });
+  const list = $('lobbyList'); list.innerHTML = '';
+  p.players.forEach(pl => {
+    const row = document.createElement('div'); row.className = 'lobbyRow';
+    const cv = document.createElement('canvas'); cv.width = 44; cv.height = 44;
+    drawCharacter(cv.getContext('2d'), 22, 24, -Math.PI / 2, pl.look, 13);
+    const nm = document.createElement('span'); nm.className = 'nm';
+    nm.textContent = pl.name + (pl.id === net.selfId ? ' (you)' : '');
+    const tag = document.createElement('span');
+    if (p.mode === 'solos') { tag.className = 'teamTag teamS'; tag.textContent = 'SOLO'; }
+    else { tag.className = 'teamTag team' + pl.team; tag.textContent = 'TEAM ' + pl.team; }
+    row.appendChild(cv); row.appendChild(nm);
+    if (pl.id === p.hostId) { const st = document.createElement('span'); st.className = 'hostStar'; st.textContent = '★'; row.appendChild(st); }
+    row.appendChild(tag);
+    // host taps a player row to flip them between team A and B
+    if (isHost && p.mode !== 'solos') {
+      row.addEventListener('click', () => net.send({ t: 'assign_team', playerId: pl.id, team: pl.team === 'A' ? 'B' : 'A' }));
+    }
+    list.appendChild(row);
+  });
+}
+
+/* ═══════════ 5. NETWORKING ═══════════
+   Thin WebSocket wrapper. All messages are JSON: { t: <type>, ... }.
+   When the page is served by server.js, the socket uses the same
+   host/port; when opened as a local file it targets localhost:8080.
+   Solo mode never touches the network. */
+const net = {
+  ws: null, selfId: null, party: null, connecting: false,
+  url() {
+    if (location.protocol.startsWith('http'))
+      return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+    return 'ws://localhost:8080';
+  },
+  connect(onOpen) {
+    if (this.ws && this.ws.readyState === 1) { onOpen(); return; }
+    if (this.connecting) return;
+    this.connecting = true;
+    $('netStatus').textContent = 'Connecting…';
+    const ws = new WebSocket(this.url());
+    this.ws = ws;
+    ws.onopen = () => { this.connecting = false; $('netStatus').textContent = ''; onOpen(); };
+    ws.onmessage = e => { try { this.onMessage(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+    ws.onerror = () => { $('netStatus').textContent = '⚠️ Cannot reach server. Run: node server.js'; };
+    ws.onclose = () => {
+      this.connecting = false;
+      if (this.party) { toast('Disconnected from party'); this.party = null; if (!game) showScreen('scrMenu'); }
+      this.ws = null;
+    };
+  },
+  disconnect() { this.party = null; if (this.ws) { this.ws.close(); this.ws = null; } },
+  send(obj) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj)); },
+  onMessage(m) {
+    switch (m.t) {
+      case 'joined':        // we created or joined a party
+        this.selfId = m.selfId; this.party = m.party;
+        renderLobby(); showScreen('scrLobby'); break;
+      case 'lobby':         // roster / mode / team change
+        if (this.party) { this.party = m.party; renderLobby(); } break;
+      case 'match_start':   // everyone builds the same map from m.seed
+        startNetworkMatch(m); break;
+      case 'peer_state':  if (game) applyPeerState(m); break;
+      case 'peer_shoot':  if (game) applyPeerShoot(m); break;
+      case 'peer_build':  if (game) placeBuild(m.gx, m.gy, m.piece, m.mat, false); break;
+      case 'build_hit':   if (game) damageBuild(m.gx, m.gy, m.dmg, false); break;
+      case 'chest_open':  if (game) openChestById(m.id, m.by, false); break;
+      case 'damage':      // someone's bullet hit US — apply to our authoritative self
+        if (game && game.me.alive) hurtLocal(game.me, m.dmg, m.by); break;
+      case 'peer_left':   if (game && game.players[m.id]) { game.players[m.id].alive = false; addKillFeed(game.players[m.id].name + ' left'); } break;
+      case 'error':       toast(m.msg); break;
+    }
+  },
+};
+
+/* ═══════════ 6. MATCH SETUP ═══════════ */
+const canvas = $('game'), ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize); resize();
+
+let game = null; // the whole match state lives here
+
+// Generate obstacles + chests from a shared seed so all clients agree.
+function generateMap(seed) {
+  const rng = seededRng(seed), w = CFG.world;
+  const trees = [], rocks = [], chests = [];
+  for (let i = 0; i < CFG.treeCount; i++)
+    trees.push({ x: 100 + rng() * (w - 200), y: 100 + rng() * (w - 200), r: 26 + rng() * 14 });
+  for (let i = 0; i < CFG.rockCount; i++)
+    rocks.push({ x: 100 + rng() * (w - 200), y: 100 + rng() * (w - 200), r: 20 + rng() * 18 });
+  for (let i = 0; i < CFG.chestCount; i++)
+    chests.push({ id: i, x: 160 + rng() * (w - 320), y: 160 + rng() * (w - 320), opened: false, anim: 0 });
+  return { trees, rocks, chests };
+}
+
+function makePlayer(id, name, look, team, x, y, isBot) {
+  return {
+    id, name, look, team, isBot,
+    x, y, aim: -Math.PI / 2, hp: CFG.maxHp, alive: true,
+    weapon: 'pistol', lastShot: 0, hurtFlash: 0,
+    // remote interpolation targets
+    tx: x, ty: y, taim: -Math.PI / 2,
+    // bot AI state
+    ai: isBot ? { mode: 'wander', wx: x, wy: y, think: 0 } : null,
+  };
+}
+
+function baseGame(seed, mode) {
+  const g = {
+    seed, mode, over: false,
+    map: generateMap(seed),
+    builds: new Map(),      // "gx,gy" -> { piece, mat, hp, maxHp }
+    bullets: [], effects: [], dmgNums: [],
+    players: {},            // id -> player (me, peers, bots)
+    me: null,
+    mats: { ...CFG.startMats },
+    storm: makeStorm(seed),
+    startTime: performance.now(),
+    lastNetSend: 0, nearChest: null,
+    buildMode: false, piece: 'wall', mat: 'wood',
+    camX: 0, camY: 0, placement: 0,
+  };
+  return g;
+}
+
+// Spawn positions on a ring around the map center, one slot per player.
+function spawnPos(seed, index, total) {
+  const rng = seededRng(seed + 777);
+  const baseA = rng() * Math.PI * 2;
+  const a = baseA + (index / Math.max(total, 1)) * Math.PI * 2;
+  const r = CFG.world * 0.36;
+  return { x: CFG.world / 2 + Math.cos(a) * r, y: CFG.world / 2 + Math.sin(a) * r };
+}
+
+function startSoloMatch() {
+  const seed = (Math.random() * 1e9) | 0;
+  const g = baseGame(seed, 'solo');
+  const total = CFG.botCount + 1;
+  const p0 = spawnPos(seed, 0, total);
+  g.me = makePlayer('me', myName, myLook, 'S', p0.x, p0.y, false);
+  g.players.me = g.me;
+  const rng = seededRng(seed + 42);
+  for (let i = 0; i < CFG.botCount; i++) {
+    const p = spawnPos(seed, i + 1, total);
+    const look = { eye: (rng() * 3) | 0, hair: (rng() * 3) | 0, outfit: (rng() * 4) | 0 };
+    g.players['bot' + i] = makePlayer('bot' + i, 'Bot ' + (i + 1), look, 'S', p.x, p.y, true);
+  }
+  game = g; showScreen(null); resetHudState();
+}
+
+function startNetworkMatch(m) {
+  const g = baseGame(m.seed, m.mode);
+  m.players.forEach((pl, i) => {
+    const pos = spawnPos(m.seed, i, m.players.length);
+    const p = makePlayer(pl.id, pl.name, pl.look, pl.team, pos.x, pos.y, false);
+    g.players[pl.id] = p;
+    if (pl.id === net.selfId) g.me = p;
+  });
+  game = g; showScreen(null); resetHudState();
+}
+
+function resetHudState() {
+  input.fire = false; input.joyId = input.aimId = null; input.joyVec = { x: 0, y: 0 };
+  $('buildMenu').classList.remove('show'); $('buildBtn').classList.remove('on');
+  $('killFeed').innerHTML = '';
+}
+
+/* ═══════════ 7. TOUCH INPUT ═══════════
+   Left ~45% of screen  -> dynamic virtual joystick (walk).
+   Right side           -> aim zone: drag to rotate an aim reticle.
+   In build mode a TAP on the right side places a piece instead.
+   DOM buttons (fire/build/chest) sit above the canvas and swallow
+   their own touches, so the canvas never sees them. */
+const input = {
+  joyId: null, joyOrigin: { x: 0, y: 0 }, joyPos: { x: 0, y: 0 }, joyVec: { x: 0, y: 0 },
+  aimId: null, aimStart: 0, aimMoved: 0, aimPos: { x: 0, y: 0 },
+  fire: false,
+};
+const JOY_MAX = 60; // knob travel radius in px
+
+function screenToWorld(sx, sy) { return { x: sx + game.camX, y: sy + game.camY }; }
+
+function handleTouchStart(e) {
+  e.preventDefault();
+  if (!game || !game.me.alive) return;
+  for (const t of e.changedTouches) {
+    if (t.clientX < W * 0.45 && input.joyId === null) {
+      // joystick appears wherever the left thumb lands
+      input.joyId = t.identifier;
+      input.joyOrigin = { x: t.clientX, y: t.clientY };
+      input.joyPos = { x: t.clientX, y: t.clientY };
+    } else if (t.clientX >= W * 0.45 && input.aimId === null) {
+      input.aimId = t.identifier;
+      input.aimStart = performance.now(); input.aimMoved = 0;
+      input.aimPos = { x: t.clientX, y: t.clientY };
+      aimFromTouch(t);
+    }
+  }
+}
+function handleTouchMove(e) {
+  e.preventDefault();
+  if (!game) return;
+  for (const t of e.changedTouches) {
+    if (t.identifier === input.joyId) {
+      input.joyPos = { x: t.clientX, y: t.clientY };
+      let dx = t.clientX - input.joyOrigin.x, dy = t.clientY - input.joyOrigin.y;
+      const d = Math.hypot(dx, dy);
+      if (d > JOY_MAX) { dx *= JOY_MAX / d; dy *= JOY_MAX / d; }
+      input.joyVec = { x: dx / JOY_MAX, y: dy / JOY_MAX };
+      input.joyPos = { x: input.joyOrigin.x + dx, y: input.joyOrigin.y + dy };
+    } else if (t.identifier === input.aimId) {
+      input.aimMoved += Math.hypot(t.clientX - input.aimPos.x, t.clientY - input.aimPos.y);
+      input.aimPos = { x: t.clientX, y: t.clientY };
+      aimFromTouch(t);
+    }
+  }
+}
+function handleTouchEnd(e) {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === input.joyId) { input.joyId = null; input.joyVec = { x: 0, y: 0 }; }
+    else if (t.identifier === input.aimId) {
+      // In build mode a quick, still tap places a piece at the touched cell.
+      if (game && game.buildMode && performance.now() - input.aimStart < 260 && input.aimMoved < 14) {
+        const w = screenToWorld(t.clientX, t.clientY);
+        tryPlaceAt(w.x, w.y);
+      }
+      input.aimId = null;
+    }
+  }
+}
+// Aim direction = vector from the player's on-screen position to the touch.
+function aimFromTouch(t) {
+  if (!game || game.buildMode) return; // build mode taps shouldn't spin the aim
+  const px = game.me.x - game.camX, py = game.me.y - game.camY;
+  game.me.aim = Math.atan2(t.clientY - py, t.clientX - px);
+}
+canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+// Desktop debug fallback ONLY (mouse pretends to be a single touch so you
+// can test in a normal browser). Real gameplay targets touch events above.
+let mouseDown = false;
+function fakeTouch(e) { return { changedTouches: [{ identifier: 'mouse', clientX: e.clientX, clientY: e.clientY }], preventDefault: () => {} }; }
+canvas.addEventListener('mousedown', e => { mouseDown = true; handleTouchStart(fakeTouch(e)); });
+canvas.addEventListener('mousemove', e => { if (mouseDown) handleTouchMove(fakeTouch(e)); });
+canvas.addEventListener('mouseup', e => { mouseDown = false; handleTouchEnd(fakeTouch(e)); });
+
+// --- HUD buttons (touchstart/touchend, with click fallback for desktop) ---
+function press(el, down, up) {
+  el.addEventListener('touchstart', e => { e.preventDefault(); down(); }, { passive: false });
+  if (up) el.addEventListener('touchend', e => { e.preventDefault(); up(); }, { passive: false });
+  el.addEventListener('mousedown', down);
+  if (up) el.addEventListener('mouseup', up);
+}
+press($('fireBtn'), () => input.fire = true, () => input.fire = false);
+press($('buildBtn'), () => {
+  if (!game) return;
+  game.buildMode = !game.buildMode;
+  $('buildBtn').classList.toggle('on', game.buildMode);
+  $('buildMenu').classList.toggle('show', game.buildMode);
+});
+press($('chestBtn'), () => { if (game && game.nearChest) openChestById(game.nearChest.id, game.me.id, true); });
+document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => {
+  game.piece = b.dataset.piece;
+  document.querySelectorAll('.pieceBtn').forEach(x => x.classList.toggle('sel', x === b));
+}));
+document.querySelectorAll('.matBtn').forEach(b => press(b, () => {
+  game.mat = b.dataset.mat;
+  document.querySelectorAll('.matBtn').forEach(x => x.classList.toggle('sel', x === b));
+}));
+
+/* ═══════════ 8. BUILDING ═══════════
+   Pieces live on a grid keyed "gx,gy".
+   - wall : blocks movement and bullets
+   - ramp : blocks bullets, players can vault over it (walk through slowly)
+   - floor: decorative tile, gives a small speed boost while on it       */
+function buildKey(gx, gy) { return gx + ',' + gy; }
+
+function tryPlaceAt(wx, wy) {
+  const g = game, gx = Math.floor(wx / CFG.grid), gy = Math.floor(wy / CFG.grid);
+  const pgx = Math.floor(g.me.x / CFG.grid), pgy = Math.floor(g.me.y / CFG.grid);
+  if (Math.abs(gx - pgx) > CFG.buildRange || Math.abs(gy - pgy) > CFG.buildRange)
+    return toast('Too far away');
+  if (g.builds.has(buildKey(gx, gy))) return toast('Occupied');
+  if (g.mats[g.mat] < CFG.buildCost) return toast('Not enough ' + g.mat);
+  // don't trap yourself inside your own wall
+  if (g.piece === 'wall' && gx === pgx && gy === pgy) return toast('You are standing there');
+  g.mats[g.mat] -= CFG.buildCost;
+  placeBuild(gx, gy, g.piece, g.mat, true);
+}
+
+function placeBuild(gx, gy, piece, mat, mine) {
+  const hp = CFG.buildHp[mat];
+  game.builds.set(buildKey(gx, gy), { gx, gy, piece, mat, hp, maxHp: hp });
+  addEffect('place', gx * CFG.grid + CFG.grid / 2, gy * CFG.grid + CFG.grid / 2);
+  if (mine) net.send({ t: 'build', gx, gy, piece, mat });
+}
+
+function damageBuild(gx, gy, dmg, mine) {
+  const b = game.builds.get(buildKey(gx, gy));
+  if (!b) return;
+  b.hp -= dmg;
+  if (b.hp <= 0) { game.builds.delete(buildKey(gx, gy)); addEffect('break', gx * CFG.grid + 30, gy * CFG.grid + 30); }
+  if (mine) net.send({ t: 'build_hit', gx, gy, dmg });
+}
+
+function buildAt(x, y) { return game.builds.get(buildKey(Math.floor(x / CFG.grid), Math.floor(y / CFG.grid))); }
+
+/* ═══════════ 9. COMBAT ═══════════ */
+function tryShoot(p, mine) {
+  const w = WEAPONS[p.weapon], now = performance.now();
+  if (now - p.lastShot < 1000 / w.rof) return;
+  p.lastShot = now;
+  fireBullets(p, p.aim, mine);
+  if (mine) net.send({ t: 'shoot', x: p.x, y: p.y, aim: p.aim, weapon: p.weapon });
+}
+function fireBullets(p, aim, mine) {
+  const w = WEAPONS[p.weapon];
+  for (let i = 0; i < w.pellets; i++) {
+    const a = aim + (Math.random() - 0.5) * 2 * w.spread;
+    game.bullets.push({
+      x: p.x + Math.cos(a) * (CFG.playerR + 8), y: p.y + Math.sin(a) * (CFG.playerR + 8),
+      dx: Math.cos(a), dy: Math.sin(a), speed: w.speed,
+      dist: 0, maxDist: w.range, dmg: w.dmg,
+      owner: p.id, team: p.team, mine,
+    });
+  }
+  addEffect('muzzle', p.x + Math.cos(aim) * (CFG.playerR + 10), p.y + Math.sin(aim) * (CFG.playerR + 10));
+}
+// a peer fired: replay it locally as a purely visual/simulated event
+function applyPeerShoot(m) {
+  const p = game.players[m.by]; if (!p) return;
+  p.x = m.x; p.y = m.y; p.aim = m.aim; p.weapon = m.weapon;
+  fireBullets(p, m.aim, false);
+}
+
+function updateBullets(dt) {
+  const g = game, step = 8;
+  outer: for (let bi = g.bullets.length - 1; bi >= 0; bi--) {
+    const b = g.bullets[bi];
+    let travel = b.speed * dt;
+    while (travel > 0) {
+      const s = Math.min(step, travel); travel -= s;
+      b.x += b.dx * s; b.y += b.dy * s; b.dist += s;
+      // out of range or out of world
+      if (b.dist >= b.maxDist || b.x < 0 || b.y < 0 || b.x > CFG.world || b.y > CFG.world) {
+        g.bullets.splice(bi, 1); continue outer;
+      }
+      // builds: walls and ramps stop bullets (floors don't)
+      const bd = buildAt(b.x, b.y);
+      if (bd && bd.piece !== 'floor') {
+        // Every client simulates every bullet, so only ONE authority may
+        // apply damage: the bullet's owner in multiplayer (who then
+        // broadcasts build_hit), or this client in solo. Peers just see
+        // the bullet stop and wait for the build_hit message.
+        if (b.mine || game.mode === 'solo') damageBuild(bd.gx, bd.gy, b.dmg, b.mine);
+        addEffect('hit', b.x, b.y);
+        g.bullets.splice(bi, 1); continue outer;
+      }
+      // rocks block bullets (trees are canopy — bullets fly under them)
+      for (const r of g.map.rocks)
+        if (dist2(b.x, b.y, r.x, r.y) < r.r * r.r) { addEffect('hit', b.x, b.y); g.bullets.splice(bi, 1); continue outer; }
+      // players
+      for (const id in g.players) {
+        const p = g.players[id];
+        if (!p.alive || id === b.owner) continue;
+        if (p.team !== 'S' && p.team === b.team) continue; // no friendly fire
+        if (dist2(b.x, b.y, p.x, p.y) < (CFG.playerR + 2) ** 2) {
+          addEffect('hit', b.x, b.y);
+          addDmgNum(p.x, p.y, b.dmg);
+          // Damage authority (avoid double-hits since everyone simulates
+          // every bullet): bots are always local; in multiplayer, hits on
+          // ME arrive only via the shooter's 'damage' message, and hits I
+          // land on peers are reported to the server by MY client only.
+          if (p.isBot) {
+            hurtLocal(p, b.dmg, b.owner);
+          } else if (id === g.me.id) {
+            if (game.mode === 'solo') hurtLocal(p, b.dmg, b.owner);
+          } else if (b.mine) {
+            net.send({ t: 'damage', target: id, dmg: b.dmg });
+          }
+          g.bullets.splice(bi, 1); continue outer;
+        }
+      }
+    }
+  }
+}
+
+function hurtLocal(p, dmg, by) {
+  p.hp -= dmg; p.hurtFlash = 0.25;
+  if (p.hp <= 0 && p.alive) {
+    p.alive = false; p.hp = 0;
+    addEffect('break', p.x, p.y);
+    const killer = game.players[by];
+    addKillFeed((killer ? killer.name : 'Storm') + ' ⚔ ' + p.name);
+  }
+}
+
+function addDmgNum(x, y, n) { game.dmgNums.push({ x, y: y - 20, n, life: 0.8 }); }
+function addEffect(kind, x, y) { game.effects.push({ kind, x, y, life: kind === 'muzzle' ? 0.07 : 0.3 }); }
+function addKillFeed(txt) {
+  const d = document.createElement('div'); d.textContent = txt;
+  $('killFeed').prepend(d);
+  while ($('killFeed').children.length > 4) $('killFeed').lastChild.remove();
+  setTimeout(() => d.remove(), 5000);
+}
+
+/* ---------- chests ---------- */
+const LOOT = [
+  { kind: 'weapon', v: 'smg',     label: '🔫 SMG!' },
+  { kind: 'weapon', v: 'shotgun', label: '💥 Shotgun!' },
+  { kind: 'heal',   v: 40,        label: '❤️ Medkit +40' },
+  { kind: 'mat',    v: 'wood',    label: '🪵 +40 wood' },
+  { kind: 'mat',    v: 'brick',   label: '🧱 +40 brick' },
+  { kind: 'mat',    v: 'metal',   label: '⛓️ +40 metal' },
+];
+function openChestById(id, by, mine) {
+  const c = game.map.chests.find(c => c.id === id);
+  if (!c || c.opened) return;
+  c.opened = true; c.anim = 0.6; // pop-open animation timer
+  if (by === game.me.id) {
+    // Loot is seeded per chest so it's fair but deterministic.
+    const loot = LOOT[(seededRng(game.seed + id * 31)() * LOOT.length) | 0];
+    if (loot.kind === 'weapon') game.me.weapon = loot.v;
+    if (loot.kind === 'heal') game.me.hp = Math.min(CFG.maxHp, game.me.hp + loot.v);
+    if (loot.kind === 'mat') game.mats[loot.v] += 40;
+    toast(loot.label);
+  }
+  addEffect('place', c.x, c.y);
+  if (mine) net.send({ t: 'chest_open', id });
+}
+
+/* ═══════════ 10. BOTS (solo mode) ═══════════
+   Tiny state machine: wander to random points; if the player (or
+   another bot) is close and alive, chase and shoot with poor aim. */
+function updateBots(dt) {
+  const g = game, rngNow = Math.random;
+  for (const id in g.players) {
+    const b = g.players[id];
+    if (!b.isBot || !b.alive) continue;
+    b.ai.think -= dt;
+    // find nearest living enemy
+    let target = null, best = 1e18;
+    for (const oid in g.players) {
+      const o = g.players[oid];
+      if (oid === id || !o.alive) continue;
+      const d = dist2(b.x, b.y, o.x, o.y);
+      if (d < best) { best = d; target = o; }
+    }
+    const inStorm = dist2(b.x, b.y, g.storm.x, g.storm.y) > g.storm.r * g.storm.r;
+    if (b.ai.think <= 0) {
+      b.ai.think = 0.6 + rngNow() * 0.8;
+      if (inStorm) { // run to safety first
+        b.ai.mode = 'wander'; b.ai.wx = g.storm.x + (rngNow() - 0.5) * g.storm.r; b.ai.wy = g.storm.y + (rngNow() - 0.5) * g.storm.r;
+      } else if (target && best < 380 * 380) b.ai.mode = 'fight';
+      else if (rngNow() < 0.4) {
+        b.ai.mode = 'wander';
+        b.ai.wx = clamp(b.x + (rngNow() - 0.5) * 500, 60, CFG.world - 60);
+        b.ai.wy = clamp(b.y + (rngNow() - 0.5) * 500, 60, CFG.world - 60);
+      }
+    }
+    let mx = 0, my = 0;
+    if (b.ai.mode === 'fight' && target) {
+      b.aim = Math.atan2(target.y - b.y, target.x - b.x);
+      // keep mid distance
+      const d = Math.sqrt(best);
+      if (d > 240) { mx = Math.cos(b.aim); my = Math.sin(b.aim); }
+      else if (d < 140) { mx = -Math.cos(b.aim); my = -Math.sin(b.aim); }
+      b.aim += (rngNow() - 0.5) * 0.22; // bots are not snipers
+      tryShoot(b, false);
+      if (d > 420) b.ai.mode = 'wander';
+    } else {
+      const dx = b.ai.wx - b.x, dy = b.ai.wy - b.y, d = Math.hypot(dx, dy);
+      if (d > 12) { mx = dx / d; my = dy / d; b.aim = Math.atan2(dy, dx); }
+    }
+    movePlayer(b, mx, my, dt, 0.82); // bots slightly slower than you
+  }
+}
+
+/* ═══════════ 11. STORM ═══════════
+   Runs deterministically from the shared seed + match clock, so all
+   clients agree without extra network traffic. */
+function makeStorm(seed) {
+  const rng = seededRng(seed + 9);
+  return {
+    x: CFG.world / 2, y: CFG.world / 2, r: CFG.world * 0.62,
+    phase: 0, t: 0, holding: true,
+    fromX: CFG.world / 2, fromY: CFG.world / 2, fromR: CFG.world * 0.62,
+    toX: 0, toY: 0, toR: 0, rng,
+    dps: 0, label: '',
+  };
+}
+function updateStorm(dt) {
+  const s = game.storm;
+  if (s.phase >= CFG.stormPhases.length) { s.label = 'Storm closed!'; return; }
+  const [hold, shrink, frac, dps] = CFG.stormPhases[s.phase];
+  s.t += dt;
+  if (s.holding) {
+    s.label = `⛈ Storm shrinks in ${Math.max(0, hold - s.t).toFixed(0)}s`;
+    if (s.t >= hold) {
+      // pick the next circle: smaller, centered somewhere inside the current one
+      s.holding = false; s.t = 0;
+      s.fromX = s.x; s.fromY = s.y; s.fromR = s.r;
+      s.toR = CFG.world * frac * 0.5;
+      const maxOff = Math.max(0, s.fromR - s.toR) * 0.7;
+      const a = s.rng() * Math.PI * 2, d = s.rng() * maxOff;
+      s.toX = clamp(s.fromX + Math.cos(a) * d, s.toR, CFG.world - s.toR);
+      s.toY = clamp(s.fromY + Math.sin(a) * d, s.toR, CFG.world - s.toR);
+    }
+  } else {
+    const k = Math.min(1, s.t / shrink);
+    s.x = s.fromX + (s.toX - s.fromX) * k;
+    s.y = s.fromY + (s.toY - s.fromY) * k;
+    s.r = s.fromR + (s.toR - s.fromR) * k;
+    s.label = '⛈ Storm is shrinking!';
+    if (k >= 1) { s.holding = true; s.t = 0; s.phase++; }
+  }
+  s.dps = dps;
+  // storm damage: each client damages only entities it owns (self + bots)
+  for (const id in game.players) {
+    const p = game.players[id];
+    if (!p.alive || (!p.isBot && id !== game.me.id)) continue;
+    if (dist2(p.x, p.y, s.x, s.y) > s.r * s.r) {
+      p.stormAcc = (p.stormAcc || 0) + s.dps * dt;
+      if (p.stormAcc >= 1) { hurtLocal(p, Math.floor(p.stormAcc), 'storm'); p.stormAcc %= 1; }
+    }
+  }
+}
+
+/* ═══════════ 12. GAME LOOP ═══════════ */
+// Movement with collision. Resolves x and y separately so you slide
+// along walls instead of sticking to them.
+function movePlayer(p, mx, my, dt, speedMul = 1) {
+  const len = Math.hypot(mx, my);
+  if (len > 1) { mx /= len; my /= len; }
+  let speed = CFG.playerSpeed * speedMul;
+  const under = buildAt(p.x, p.y);
+  if (under) {
+    if (under.piece === 'floor') speed *= 1.18;  // floors: small speed boost
+    if (under.piece === 'ramp') speed *= 0.55;   // vaulting a ramp is slow
+  }
+  const tryAxis = (nx, ny) => {
+    if (nx < CFG.playerR || ny < CFG.playerR || nx > CFG.world - CFG.playerR || ny > CFG.world - CFG.playerR) return false;
+    const bd = game.builds.get(buildKey(Math.floor(nx / CFG.grid), Math.floor(ny / CFG.grid)));
+    if (bd && bd.piece === 'wall') return false;             // walls block
+    for (const r of game.map.rocks)
+      if (dist2(nx, ny, r.x, r.y) < (r.r + CFG.playerR - 4) ** 2) return false;
+    return true;
+  };
+  const nx = p.x + mx * speed * dt, ny = p.y + my * speed * dt;
+  if (tryAxis(nx, p.y)) p.x = nx;
+  if (tryAxis(p.x, ny)) p.y = ny;
+}
+
+function applyPeerState(m) {
+  const p = game.players[m.id]; if (!p) return;
+  p.tx = m.x; p.ty = m.y; p.taim = m.aim;
+  p.hp = m.hp; p.weapon = m.weapon;
+  if (p.alive && !m.alive) { p.alive = false; addEffect('break', p.x, p.y); }
+}
+
+function countAlive() {
+  let n = 0; for (const id in game.players) if (game.players[id].alive) n++;
+  return n;
+}
+function aliveTeams() {
+  const t = new Set();
+  for (const id in game.players) { const p = game.players[id]; if (p.alive) t.add(p.team === 'S' ? p.id : p.team); }
+  return t;
+}
+
+function update(dt) {
+  const g = game;
+
+  if (g.me.alive) {
+    movePlayer(g.me, input.joyVec.x, input.joyVec.y, dt);
+    if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
+  }
+
+  // chest proximity -> contextual OPEN button
+  g.nearChest = null;
+  for (const c of g.map.chests) {
+    if (!c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70) { g.nearChest = c; break; }
+    if (c.anim > 0) c.anim -= dt;
+  }
+  $('chestBtn').classList.toggle('show', !!g.nearChest && g.me.alive);
+
+  updateBullets(dt);
+  updateStorm(dt);
+  if (g.mode === 'solo') updateBots(dt);
+
+  // smooth remote players toward their latest network position
+  for (const id in g.players) {
+    const p = g.players[id];
+    if (p === g.me || p.isBot) continue;
+    p.x += (p.tx - p.x) * Math.min(1, dt * 12);
+    p.y += (p.ty - p.y) * Math.min(1, dt * 12);
+    p.aim = p.taim;
+  }
+
+  // decay timers
+  for (const id in g.players) g.players[id].hurtFlash = Math.max(0, g.players[id].hurtFlash - dt);
+  g.effects = g.effects.filter(e => (e.life -= dt) > 0);
+  g.dmgNums = g.dmgNums.filter(d => { d.y -= 40 * dt; return (d.life -= dt) > 0; });
+
+  // send our state to the party at CFG.netHz
+  if (g.mode !== 'solo') {
+    const now = performance.now();
+    if (now - g.lastNetSend > 1000 / CFG.netHz) {
+      g.lastNetSend = now;
+      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon });
+    }
+  }
+
+  // win / lose detection (a 1-player lobby never auto-wins)
+  if (!g.over) {
+    const alive = countAlive(), total = Object.keys(g.players).length;
+    if (!g.me.alive) {
+      g.over = true; endMatch(false, alive + 1);
+    } else if (total > 1) {
+      if (g.mode === 'solo' || g.mode === 'solos') {
+        if (alive <= 1) { g.over = true; endMatch(true, 1); }
+      } else if (aliveTeams().size <= 1) { // team modes: last team standing
+        g.over = true; endMatch(true, 1);
+      }
+    }
+  }
+}
+
+function endMatch(won, placement) {
+  setTimeout(() => {
+    $('overTitle').textContent = won ? '🏆 VICTORY ROYALE!' : '💀 ELIMINATED';
+    $('overSub').textContent = won ? 'Last one standing. GG!' : `You placed #${placement}. Better luck next drop!`;
+    showScreen('scrOver');
+  }, 900);
+}
+
+/* ---------- rendering ---------- */
+function render() {
+  const g = game;
+  // camera follows the player, clamped to world bounds
+  g.camX = clamp(g.me.x - W / 2, 0, CFG.world - W);
+  g.camY = clamp(g.me.y - H / 2, 0, CFG.world - H);
+  const cx = g.camX, cy = g.camY;
+
+  // ground
+  ctx.fillStyle = '#3d7a3f'; ctx.fillRect(0, 0, W, H);
+  // faint grid (also doubles as the build grid guide)
+  ctx.strokeStyle = g.buildMode ? '#ffffff40' : '#ffffff12'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = -cx % CFG.grid; x < W; x += CFG.grid) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = -cy % CFG.grid; y < H; y += CFG.grid) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+  // world border
+  ctx.strokeStyle = '#173017'; ctx.lineWidth = 8;
+  ctx.strokeRect(-cx, -cy, CFG.world, CFG.world);
+
+  // build-range highlight in build mode
+  if (g.buildMode && g.me.alive) {
+    const pgx = Math.floor(g.me.x / CFG.grid), pgy = Math.floor(g.me.y / CFG.grid);
+    ctx.fillStyle = '#ffe28a22';
+    ctx.fillRect((pgx - CFG.buildRange) * CFG.grid - cx, (pgy - CFG.buildRange) * CFG.grid - cy,
+      (CFG.buildRange * 2 + 1) * CFG.grid, (CFG.buildRange * 2 + 1) * CFG.grid);
+  }
+
+  // builds
+  for (const [, b] of g.builds) {
+    const x = b.gx * CFG.grid - cx, y = b.gy * CFG.grid - cy;
+    if (x < -CFG.grid || y < -CFG.grid || x > W || y > H) continue;
+    const col = b.mat === 'wood' ? '#9c6b30' : b.mat === 'brick' ? '#b34a3a' : '#7d8a99';
+    ctx.fillStyle = col;
+    if (b.piece === 'wall') {
+      ctx.fillRect(x + 2, y + 2, CFG.grid - 4, CFG.grid - 4);
+      ctx.strokeStyle = '#0005'; ctx.lineWidth = 3; ctx.strokeRect(x + 2, y + 2, CFG.grid - 4, CFG.grid - 4);
+    } else if (b.piece === 'ramp') {
+      ctx.beginPath(); ctx.moveTo(x + 4, y + CFG.grid - 4); ctx.lineTo(x + CFG.grid - 4, y + CFG.grid - 4);
+      ctx.lineTo(x + CFG.grid - 4, y + 4); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#0005'; ctx.lineWidth = 3; ctx.stroke();
+    } else { // floor
+      ctx.globalAlpha = 0.65; ctx.fillRect(x + 2, y + 2, CFG.grid - 4, CFG.grid - 4); ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#0003'; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 8, y + 8, CFG.grid - 16, CFG.grid - 16);
+    }
+    // damage bar on hurt pieces
+    if (b.hp < b.maxHp) {
+      ctx.fillStyle = '#000a'; ctx.fillRect(x + 8, y - 6, CFG.grid - 16, 5);
+      ctx.fillStyle = '#5dff7a'; ctx.fillRect(x + 8, y - 6, (CFG.grid - 16) * b.hp / b.maxHp, 5);
+    }
+  }
+
+  // chests
+  for (const c of g.map.chests) {
+    const x = c.x - cx, y = c.y - cy;
+    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    const pop = c.opened ? Math.max(0, c.anim) : 0;
+    ctx.save(); ctx.translate(x, y); ctx.scale(1 + pop, 1 + pop);
+    ctx.fillStyle = c.opened ? '#6b5a2a' : '#e0a52a';
+    ctx.fillRect(-16, -12, 32, 24);
+    ctx.strokeStyle = '#5a3d00'; ctx.lineWidth = 3; ctx.strokeRect(-16, -12, 32, 24);
+    ctx.fillStyle = '#5a3d00'; ctx.fillRect(-16, -3, 32, 4);
+    if (!c.opened) { // glow so chests are easy to spot
+      ctx.strokeStyle = '#ffd94d88'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, 26 + Math.sin(performance.now() / 300) * 3, 0, 7); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // trees & rocks
+  for (const r of g.map.rocks) {
+    const x = r.x - cx, y = r.y - cy;
+    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    ctx.fillStyle = '#8a8f96'; ctx.beginPath(); ctx.arc(x, y, r.r, 0, 7); ctx.fill();
+    ctx.fillStyle = '#a9aeb5'; ctx.beginPath(); ctx.arc(x - r.r * 0.25, y - r.r * 0.25, r.r * 0.5, 0, 7); ctx.fill();
+  }
+
+  // bullets + trails
+  for (const b of g.bullets) {
+    ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(b.x - b.dx * 14 - cx, b.y - b.dy * 14 - cy);
+    ctx.lineTo(b.x - cx, b.y - cy); ctx.stroke();
+  }
+
+  // players (draw dead ones as ghosts fading is skipped — just skip them)
+  for (const id in g.players) {
+    const p = g.players[id];
+    const x = p.x - cx, y = p.y - cy;
+    if (!p.alive || x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    // team ring
+    if (p.team !== 'S') {
+      ctx.strokeStyle = p.team === 'A' ? '#2a6de0' : '#d93030'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 5, 0, 7); ctx.stroke();
+    }
+    drawCharacter(ctx, x, y, p.aim, p.look);
+    if (p.hurtFlash > 0) { // red flash when hit
+      ctx.fillStyle = `rgba(255,40,40,${p.hurtFlash * 2})`;
+      ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 2, 0, 7); ctx.fill();
+    }
+    // name + mini health bar
+    ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = id === g.me.id ? '#ffd94d' : '#fff';
+    ctx.fillText(p.name, x, y - 28);
+    ctx.fillStyle = '#000a'; ctx.fillRect(x - 18, y - 25, 36, 4);
+    ctx.fillStyle = '#5dff7a'; ctx.fillRect(x - 18, y - 25, 36 * p.hp / CFG.maxHp, 4);
+  }
+
+  // tree canopies on top so players can hide under them
+  for (const t of g.map.trees) {
+    const x = t.x - cx, y = t.y - cy;
+    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    ctx.fillStyle = '#5a3d1e'; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2c5e2eE0'; ctx.beginPath(); ctx.arc(x, y, t.r, 0, 7); ctx.fill();
+  }
+
+  // effects (muzzle flash / impacts / build dust)
+  for (const e of g.effects) {
+    const x = e.x - cx, y = e.y - cy;
+    if (e.kind === 'muzzle') {
+      ctx.fillStyle = '#ffec8a';
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill();
+    } else if (e.kind === 'hit') {
+      ctx.strokeStyle = `rgba(255,255,255,${e.life * 3})`; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6);
+      ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+    } else { // place / break dust ring
+      ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.5})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, (0.3 - e.life) * 120 + 8, 0, 7); ctx.stroke();
+    }
+  }
+
+  // damage numbers
+  ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+  for (const d of g.dmgNums) {
+    ctx.fillStyle = `rgba(255,235,140,${clamp(d.life * 2, 0, 1)})`;
+    ctx.fillText(d.n, d.x - cx, d.y - cy);
+  }
+
+  // storm overlay: purple donut (evenodd fill = full rect minus safe circle)
+  const s = g.storm;
+  ctx.fillStyle = 'rgba(120,40,190,0.32)';
+  ctx.beginPath();
+  ctx.rect(0, 0, W, H);
+  ctx.arc(s.x - cx, s.y - cy, s.r, 0, Math.PI * 2);
+  ctx.fill('evenodd');
+  ctx.strokeStyle = '#b46bff'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(s.x - cx, s.y - cy, s.r, 0, 7); ctx.stroke();
+
+  // aim indicator: dashed line + reticle in current aim direction
+  if (g.me.alive && !g.buildMode) {
+    const px = g.me.x - cx, py = g.me.y - cy;
+    const ex = px + Math.cos(g.me.aim) * 170, ey = py + Math.sin(g.me.aim) * 170;
+    ctx.setLineDash([8, 8]); ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(px + Math.cos(g.me.aim) * 26, py + Math.sin(g.me.aim) * 26); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(ex, ey, 10, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ex - 5, ey); ctx.lineTo(ex + 5, ey); ctx.moveTo(ex, ey - 5); ctx.lineTo(ex, ey + 5); ctx.stroke();
+  }
+
+  // virtual joystick (only while touched)
+  if (input.joyId !== null) {
+    ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(input.joyOrigin.x, input.joyOrigin.y, JOY_MAX, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#ffffffaa';
+    ctx.beginPath(); ctx.arc(input.joyPos.x, input.joyPos.y, 26, 0, 7); ctx.fill();
+  }
+
+  // HUD text refresh
+  $('hpFill').style.width = (g.me.hp / CFG.maxHp * 100) + '%';
+  $('hpText').textContent = `${Math.ceil(g.me.hp)} / ${CFG.maxHp}`;
+  $('stormInfo').textContent = s.label;
+  $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
+  $('aliveInfo').textContent = countAlive() + ' alive';
+  $('weaponInfo').textContent = WEAPONS[g.me.weapon].name;
+}
+
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  if (game) { update(dt); render(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+renderCustPreview();
+</script>
+</body>
+</html>

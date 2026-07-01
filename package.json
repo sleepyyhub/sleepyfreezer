@@ -1,0 +1,12 @@
+{
+  "name": "sleepy-royale",
+  "version": "1.0.0",
+  "description": "2D battle-royale game optimized for iPad touch, with WebSocket party/lobby multiplayer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
