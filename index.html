@@ -17,7 +17,10 @@
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 html,body{width:100%;height:100%;overflow:hidden;background:#101418;touch-action:none;
   font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#fff}
-canvas#game{position:fixed;inset:0;display:block;touch-action:none}
+/* width/height 100% is REQUIRED: inset:0 alone does not stretch a canvas
+   (replaced elements keep their intrinsic size), so on 2x Retina iPads
+   the canvas laid out at double size and the whole game drew off-center */
+canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
 
 /* ---------- generic overlay screens (menu / party / lobby / etc.) ---------- */
 .screen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
