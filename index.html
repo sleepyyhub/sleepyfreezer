@@ -110,6 +110,8 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .custRow .lab{width:90px;text-align:right;font-size:18px;font-weight:700;color:#9db2c9}
 #toast{position:fixed;left:50%;top:14%;transform:translateX(-50%);background:#000c;color:#ffd94d;
   padding:12px 26px;border-radius:12px;font-size:18px;font-weight:700;z-index:200;display:none}
+#rotateHint{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:12px;background:#101418f2;font-size:30px;font-weight:800;text-align:center;padding:24px}
 </style>
 </head>
 <body>
@@ -205,6 +207,9 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 </div>
 
 <div id="toast"></div>
+
+<!-- shown while the device is held in portrait -->
+<div id="rotateHint"><div style="font-size:56px">🔄</div>Rotate to landscape<div class="sub">Sleepy Royale is built for two-handed landscape play</div></div>
 
 <script>
 'use strict';
@@ -512,8 +517,16 @@ function resize() {
   vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,0.42)');
   hurtVignette = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
   hurtVignette.addColorStop(0, 'rgba(255,30,30,0)'); hurtVignette.addColorStop(1, 'rgba(255,30,30,0.55)');
+  // the game is designed for two-handed landscape; nudge portrait users
+  $('rotateHint').style.display = H > W ? 'flex' : 'none';
 }
-window.addEventListener('resize', resize); resize();
+// iOS Safari quirk: after rotating, innerWidth/innerHeight can be stale
+// when 'resize' fires (or it doesn't fire at all in some cases). Listen
+// broadly AND re-check actual dimensions every frame (see frame()).
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+resize();
 
 // Pre-rendered grass tile (blotches + speckles) used as a repeating
 // pattern aligned to world coordinates — much richer than flat green.
@@ -1578,6 +1591,9 @@ function drawMinimap() {
 let lastT = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  // catch missed/late iOS rotation + toolbar show/hide: if the real
+  // viewport no longer matches the canvas, rebuild it immediately
+  if (W !== window.innerWidth || H !== window.innerHeight) resize();
   if (game) { update(dt); render(); }
   requestAnimationFrame(frame);
 }

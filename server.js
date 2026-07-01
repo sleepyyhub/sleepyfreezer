@@ -32,7 +32,9 @@ const httpServer = http.createServer((req, res) => {
   if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
     fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
       if (err) { res.writeHead(500); res.end('index.html not found'); return; }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      // no-store: iPad Safari and home-screen apps aggressively cache,
+      // which otherwise keeps players on stale builds after updates
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(data);
     });
   } else if (req.url === '/favicon.ico') {
