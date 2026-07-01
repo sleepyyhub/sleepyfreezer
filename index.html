@@ -1280,17 +1280,21 @@ function endMatch(won, placement) {
 /* ---------- rendering ---------- */
 function render() {
   const g = game;
-  // camera follows the player, clamped to world bounds, plus decaying
+  // camera stays dead-centered on the player (no edge clamping — the
+  // area beyond the island renders as dark void instead), plus decaying
   // screen shake from firing and taking hits
-  g.camX = clamp(g.me.x - W / 2, 0, CFG.world - W);
-  g.camY = clamp(g.me.y - H / 2, 0, CFG.world - H);
+  g.camX = g.me.x - W / 2;
+  g.camY = g.me.y - H / 2;
   g.shake *= 0.86;
   const cx = g.camX + (Math.random() - 0.5) * g.shake;
   const cy = g.camY + (Math.random() - 0.5) * g.shake;
 
-  // ground: repeating grass texture aligned to world coordinates
-  ctx.save(); ctx.translate(-cx, -cy);
-  ctx.fillStyle = grassPattern; ctx.fillRect(cx, cy, W + 1, H + 1);
+  // the island floats in a dark void; grass + grid only inside the world
+  ctx.fillStyle = '#0e1613'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-cx, -cy, CFG.world, CFG.world); ctx.clip();
+  ctx.save(); ctx.translate(-cx, -cy);   // grass pattern in world coords
+  ctx.fillStyle = grassPattern; ctx.fillRect(cx - 1, cy - 1, W + 2, H + 2);
   ctx.restore();
   // faint grid (also doubles as the build grid guide)
   ctx.strokeStyle = g.buildMode ? '#ffffff40' : '#ffffff12'; ctx.lineWidth = 1;
@@ -1298,6 +1302,7 @@ function render() {
   for (let x = -cx % CFG.grid; x < W; x += CFG.grid) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
   for (let y = -cy % CFG.grid; y < H; y += CFG.grid) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
   ctx.stroke();
+  ctx.restore();
   // world border
   ctx.strokeStyle = '#173017'; ctx.lineWidth = 8;
   ctx.strokeRect(-cx, -cy, CFG.world, CFG.world);
