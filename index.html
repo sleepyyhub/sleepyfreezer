@@ -591,6 +591,24 @@ const ARMOR = [null,
   { name: 'Exotic Aegis',   icon: '💠', reduce: 0.82, dur: 900, rarity: 'exotic' },
 ];
 const MAX_SHIELD = 100; // shield potions fill a blue bar absorbed before HP
+const GRIMOIRES = {
+  flame: { name: 'Flame Grimoire', rarity: 38, col: '#ff7b3d', stats: 'Shots gain +8% damage.' },
+  stone: { name: 'Stone Grimoire', rarity: 25, col: '#b8a078', stats: 'Armor takes 15% less durability damage.' },
+  storm: { name: 'Storm Grimoire', rarity: 18, col: '#9fe6ff', stats: 'Move 6% faster and reload your shield cheaper.' },
+  wind: { name: 'Wind Grimoire', rarity: 5, col: '#a8ffcf', stats: 'Second rarest. Move 14% faster and bullets curve slightly toward targets.' },
+  antimagic: { name: 'Anti Magic Grimoire', rarity: 1, col: '#111111', stats: 'Rarest. Auto-parries up to 10 incoming bullets every 10s.' },
+};
+const DEVIL_CONTRACTS = [
+  { id: 'fang', name: 'Fang Contract', cost: 'Cannot revive teammates.', solo: false,
+    desc: '+18% weapon damage, but you cannot help downed teammates.',
+    apply(g) { g.contracts.noRevive = true; g.upgrades.dmgMul += 0.18; } },
+  { id: 'hunger', name: 'Hunger Contract', cost: 'Healing is weaker.', solo: true,
+    desc: '+20% move speed, but healing pickups restore half.',
+    apply(g) { g.contracts.weakHeal = true; g.upgrades.speedMul += 0.20; } },
+  { id: 'mirror', name: 'Mirror Contract', cost: 'Armor breaks faster.', solo: true,
+    desc: '+25 shield now, but armor durability drains faster.',
+    apply(g) { g.contracts.brittleArmor = true; g.me.shieldPts = Math.min(MAX_SHIELD, g.me.shieldPts + 25); } },
+];
 
 const EYES    = ['Dot', 'Wide', 'Sleepy', 'Angry', 'Cyber', 'Star'];
 const HAIRS   = ['Spiky', 'Bowl', 'Cap', 'Mohawk', 'Long', 'Crown'];
@@ -1048,6 +1066,7 @@ function makePlayer(id, name, look, team, x, y, isBot) {
     shieldHits: 0,          // >0 = a frontal shield is up (see deployShield)
     shieldPts: 0,           // blue bonus-HP from shield potions (absorbed first)
     armorTier: 0, armorDur: 0, // equipped ARMOR tier + remaining durability
+    downed: false, downT: 0, grimoire: null, antiReady: 0,
     weapon: 'pistol', weapons: ['pistol'], activeSlot: 0, lastShot: 0, hurtFlash: 0, chargeShot: null,
     // remote interpolation targets
     tx: x, ty: y, px: x, py: y, vx: 0, vy: 0, taim: -Math.PI / 2, lastStateT: performance.now(),
@@ -1073,6 +1092,8 @@ function baseGame(seed, mode) {
     ammo: { ...CFG.startAmmo }, kills: 0,
     upgrades: { aimAssist: 0, dmgMul: 0, rofMul: 0, spreadMul: 1, speedMul: 0, picks: [] },
     xp: 0, level: 1, nextLevelXp: 100,
+    contracts: {}, contractOffered: false, grimoireRolled: false,
+    grimoireTower: { x: CFG.world * 0.52, y: CFG.world * 0.48, open: false },
     nextUpgradeAt: mode === 'ffa' ? performance.now() + 60000 : Infinity,
     upgradeOpen: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
@@ -1148,6 +1169,7 @@ function startSoloMatch() {
     g.players['bot' + i] = bot;
   }
   spawnGuardians(g);
+  spawnWizardBoss(g);
   game = g; showScreen(null); resetHudState();
 }
 
@@ -1163,6 +1185,7 @@ function startNetworkMatch(m) {
     if (pl.id === net.selfId) g.me = p;
   });
   spawnGuardians(g);
+  spawnWizardBoss(g);
   game = g; showScreen(null); resetHudState();
 }
 
@@ -1240,6 +1263,35 @@ function awardXP(n, reason) {
     toast('LEVEL ' + game.level + '! +HP and supplies', 2200);
   }
   if (reason) addKillFeed('+' + n + ' XP · ' + reason);
+}
+function rollGrimoire() {
+  if (game.grimoireRolled) return toast('You already rolled a grimoire this match');
+  game.grimoireRolled = true;
+  const rng = seededRng(game.seed + 5555 + (game.me.id || 'me').length * 17);
+  const total = Object.values(GRIMOIRES).reduce((s, g) => s + g.rarity, 0);
+  let roll = rng() * total, key = 'flame';
+  for (const k in GRIMOIRES) { roll -= GRIMOIRES[k].rarity; if (roll <= 0) { key = k; break; } }
+  equipGrimoire(key);
+}
+function equipGrimoire(key) {
+  const old = game.me.grimoire;
+  if (old) spawnItem({ id: 'grim_' + performance.now(), x: game.me.x + 24, y: game.me.y, kind: 'grimoire', grimoire: old });
+  game.me.grimoire = key;
+  game.me.antiReady = 0;
+  toast('📖 ' + GRIMOIRES[key].name);
+  awardXP(key === 'antimagic' ? 140 : key === 'wind' ? 90 : 45, 'grimoire');
+}
+function offerDevilContract() {
+  if (!game || game.contractOffered || game.mode === 'solo') return;
+  game.contractOffered = true;
+  const pool = DEVIL_CONTRACTS.filter(c => c.solo || game.mode !== 'solo');
+  const c = pool[(seededRng(game.seed + 7777)() * pool.length) | 0];
+  setTimeout(() => {
+    if (game && game.me.alive && window.confirm(`${c.name}\n${c.desc}\n\nSacrifice: ${c.cost}\nAccept?`)) {
+      c.apply(game);
+      toast('Contract accepted: ' + c.name, 2400);
+    }
+  }, 250);
 }
 
 function weightedUpgradeRarity(rng) {
@@ -1438,7 +1490,15 @@ function deployShield() {
 function doInteract() {
   if (!game || !game.nearAction) return;
   if (game.nearAction.kind === 'chest') openChestById(game.nearAction.c.id, game.me.id, true);
+  else if (game.nearAction.kind === 'revive') revivePlayer(game.nearAction.p);
   else takePickup(game.nearAction.pk.id, true);
+}
+function revivePlayer(p) {
+  if (!p || !p.downed) return;
+  if (game.contracts.noRevive) return toast('Your contract forbids reviving teammates');
+  p.downed = false; p.hp = Math.max(35, p.maxHp * 0.35); p.downT = 0;
+  addEffect('shield', p.x, p.y, true);
+  awardXP(50, 'revive');
 }
 function selectPiece(piece) {
   game.piece = piece;
@@ -1555,7 +1615,8 @@ function tryShoot(p, mine) {
 function fireBullets(p, aim, mine) {
   const w = WEAPONS[p.weapon];
   const spreadMul = p === game.me ? game.upgrades.spreadMul : 1;
-  const dmgMul = p === game.me ? 1 + game.upgrades.dmgMul : 1;
+  const grimMul = p === game.me && game.me.grimoire === 'flame' ? 0.08 : 0;
+  const dmgMul = p === game.me ? 1 + game.upgrades.dmgMul + grimMul : 1;
   for (let i = 0; i < w.pellets; i++) {
     const a = aim + (Math.random() - 0.5) * 2 * w.spread * spreadMul;
     game.bullets.push({
@@ -1568,6 +1629,7 @@ function fireBullets(p, aim, mine) {
       exo: !!w.exotic,                       // exotic tracers cycle the rainbow
       shape: w.shape || 'line',
       splash: w.splash || 0, pierce: !!w.pierce, hitIds: [],
+      homingTarget: null,
     });
   }
   addEffect('muzzle', p.x + Math.cos(aim) * (CFG.playerR + 10), p.y + Math.sin(aim) * (CFG.playerR + 10), w.big);
@@ -1623,6 +1685,13 @@ function updateBullets(dt) {
     let travel = b.speed * dt;
     while (travel > 0) {
       const s = Math.min(step, travel); travel -= s;
+      if (b.homingTarget && g.players[b.homingTarget] && g.players[b.homingTarget].alive) {
+        const hp = g.players[b.homingTarget];
+        const a = Math.atan2(hp.y - b.y, hp.x - b.x);
+        b.dx = b.dx * 0.82 + Math.cos(a) * 0.18;
+        b.dy = b.dy * 0.82 + Math.sin(a) * 0.18;
+        const l = Math.hypot(b.dx, b.dy) || 1; b.dx /= l; b.dy /= l;
+      }
       b.x += b.dx * s; b.y += b.dy * s; b.dist += s;
       // out of range or out of world
       if (b.dist >= b.maxDist || b.x < 0 || b.y < 0 || b.x > CFG.world || b.y > CFG.world) {
@@ -1667,6 +1736,19 @@ function updateBullets(dt) {
         if (b.pierce && b.hitIds.indexOf(id) >= 0) continue; // already lanced
         const pr = (p.boss ? 27 : CFG.playerR) + 2;
         if (dist2(b.x, b.y, p.x, p.y) < pr * pr) {
+          const antiNow = performance.now();
+          const antiBurst = p.antiBurstUntil && antiNow < p.antiBurstUntil && (p.antiBurstCount || 0) < 10;
+          if (p === g.me && p.grimoire === 'antimagic' && (antiBurst || antiNow >= (p.antiReady || 0))) {
+            const oldOwner = b.owner;
+            if (!antiBurst) { p.antiReady = antiNow + 10000; p.antiBurstUntil = antiNow + 650; p.antiBurstCount = 0; }
+            p.antiBurstCount++;
+            b.owner = p.id; b.team = p.team; b.mine = true; b.npc = false; b.homingTarget = oldOwner;
+            const a = Math.atan2(-b.dy, -b.dx);
+            b.dx = Math.cos(a); b.dy = Math.sin(a); b.dist = 0; b.hitIds = [];
+            addEffect('shield', p.x, p.y, true);
+            toast('Anti Magic parry!');
+            continue outer;
+          }
           // frontal shield: absorbs the bullet if it comes head-on
           // (every client simulates this; shieldHits is synced in state)
           if (p.shieldHits > 0 && b.dx * Math.cos(p.aim) + b.dy * Math.sin(p.aim) < -0.35) {
@@ -1694,7 +1776,8 @@ function hurtLocal(p, dmg, by) {
   // 1) armor soaks a % of the hit while its durability lasts
   if (p.armorTier) {
     const soaked = Math.min(Math.round(dmg * ARMOR[p.armorTier].reduce), p.armorDur);
-    p.armorDur -= soaked; dmg -= soaked;
+    const durLoss = Math.round(soaked * (p === game.me && game.contracts.brittleArmor ? 1.35 : p.grimoire === 'stone' ? 0.85 : 1));
+    p.armorDur -= durLoss; dmg -= soaked;
     if (p.armorDur <= 0) {
       p.armorTier = 0; p.armorDur = 0;
       if (p === game.me) toast('🦺 Armor destroyed!');
@@ -1709,6 +1792,12 @@ function hurtLocal(p, dmg, by) {
   p.lastHurtT = performance.now(); // pauses the passive regen
   if (p === game.me) game.shake = Math.min(12, game.shake + 6);
   if (p.hp <= 0 && p.alive) {
+    if (!p.guard && game.mode !== 'solo' && !p.downed) {
+      p.downed = true; p.hp = 1; p.downT = 28;
+      addKillFeed(p.name + ' is downed');
+      if (p.grimoire) { spawnItem({ id: 'dropgrim_' + p.id + '_' + performance.now(), x: p.x + 18, y: p.y, kind: 'grimoire', grimoire: p.grimoire }); p.grimoire = null; }
+      return;
+    }
     p.alive = false; p.hp = 0;
     addEffect('break', p.x, p.y);
     const killer = game.players[by];
@@ -1724,6 +1813,14 @@ function hurtLocal(p, dmg, by) {
 function guardianDied(p) {
   if (p.dropDone) return;
   p.dropDone = true;
+  if (p.wizard) {
+    game.grimoireTower.open = true;
+    spawnItem({ id: 'grimoire_roll', x: p.x, y: p.y, kind: 'grimoireRoll' });
+    spawnItem({ id: 'wiz_armor', x: p.x + 42, y: p.y + 8, kind: 'armor', tier: 6 });
+    addKillFeed('📖 WIZARD KING defeated — grimoire roll opened!');
+    offerDevilContract();
+    return addEffect('boom', p.x, p.y, true);
+  }
   const i = p.bldIdx, bld = game.map.buildings[i];
   if (p.boss) {
     // the boss reward: an EXOTIC weapon (animated rarity), the
@@ -1754,9 +1851,16 @@ function spawnRuinBoss(i) {
   const bld = game.map.buildings[i];
   bld.bossUp = true;
   const x = (bld.x0 + bld.x1) / 2, y = (bld.y0 + bld.y1) / 2;
-  const b = makePlayer('boss' + i, 'RUIN BOSS', { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
-  b.guard = true; b.boss = true; b.weapon = bld.gweapon;
-  b.hp = b.maxHp = Math.round(CFG.bossHp * (game.mode === 'ffa' ? 0.65 : 1)); b.home = { x, y }; b.bldIdx = i;
+  const types = [
+    { name: 'FLAME RUIN BOSS', weapon: 'dragonfire', hp: 1.0 },
+    { name: 'VOID RUIN BOSS', weapon: 'oblivion', hp: 1.25 },
+    { name: 'STORM RUIN BOSS', weapon: 'stormc', hp: 0.9 },
+    { name: 'COLOSSUS RUIN BOSS', weapon: 'colossus', hp: 1.45 },
+  ];
+  const type = types[i % types.length];
+  const b = makePlayer('boss' + i, type.name, { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
+  b.guard = true; b.boss = true; b.bossType = type.name; b.weapon = type.weapon;
+  b.hp = b.maxHp = Math.round(CFG.bossHp * type.hp * (game.mode === 'ffa' ? 0.65 : 1)); b.home = { x, y }; b.bldIdx = i;
   game.players[b.id] = b;
   addEffect('boom', x, y);
   addKillFeed('⚠ A RUIN BOSS has emerged!');
@@ -1774,7 +1878,9 @@ function takePickup(id, mine, confirmed = false) {
       if (!addWeaponToInventory(pk.weapon, confirmed)) { pk.taken = false; return showPickupConfirm(pk); }
       awardXP(15, 'weapon found');
     }
-    else if (pk.kind === 'heal') { game.me.hp = Math.min(game.me.maxHp, game.me.hp + pk.amount); awardXP(8, 'healed'); }
+    else if (pk.kind === 'grimoireRoll') rollGrimoire();
+    else if (pk.kind === 'grimoire') equipGrimoire(pk.grimoire);
+    else if (pk.kind === 'heal') { game.me.hp = Math.min(game.me.maxHp, game.me.hp + pk.amount * (game.contracts.weakHeal ? 0.5 : 1)); awardXP(8, 'healed'); }
     else if (pk.kind === 'mat') { game.mats[pk.mat] += pk.amount; awardXP(6, 'supplies'); }
     else if (pk.kind === 'armor') {
       // only an upgrade (or a fresher copy of the same tier) replaces
@@ -1857,6 +1963,13 @@ function spawnItem(def) {
     it.icon = '🧪'; it.label = `Shield Potion +${it.amount}`;
     it.rarity = it.amount >= 50 ? 'epic' : 'rare';
     it.stats = `Bonus shield HP, absorbed before health (max ${MAX_SHIELD})`;
+  } else if (it.kind === 'grimoireRoll') {
+    it.icon = '📖'; it.label = 'Grimoire Roll'; it.rarity = 'exotic';
+    it.stats = 'Roll once this match. Anti Magic is rarest; Wind is second rarest.';
+  } else if (it.kind === 'grimoire') {
+    const gr = GRIMOIRES[it.grimoire];
+    it.icon = '📘'; it.label = gr.name; it.rarity = it.grimoire === 'antimagic' ? 'exotic' : it.grimoire === 'wind' ? 'mythic' : 'legendary';
+    it.stats = gr.stats;
   } else { // ammo
     it.icon = it.ammo === 'energy' ? '🔋' : it.ammo === 'shell' ? '🔻' : '🔸';
     it.label = `+${CFG.ammoPack[it.ammo]} ${AMMO[it.ammo].name} ammo`;
@@ -1962,6 +2075,15 @@ function updateGuardians(dt) {
       }
       const w = WEAPONS[gu.weapon], now = performance.now();
       const rof = w.rof * (gu.boss ? 1 : CFG.guardRofMul); // nerfed cadence
+      if (gu.wizard && now - (gu.lastAoE || 0) > 2800) {
+        gu.lastAoE = now;
+        addEffect('boom', target.x, target.y, true);
+        for (const oid in g.players) {
+          const o = g.players[oid];
+          if (!o.alive || o.guard) continue;
+          if (dist2(o.x, o.y, target.x, target.y) < 170 * 170) hurtLocal(o, 38, gu.id);
+        }
+      }
       if (now - gu.lastShot > 1000 / rof && dts < w.range + 60) {
         gu.lastShot = now;
         fireBullets(gu, gu.aim, false);
@@ -2085,7 +2207,7 @@ function aliveTeams() {
 function update(dt) {
   const g = game;
 
-  if (g.me.alive) {
+  if (g.me.alive && !g.me.downed) {
     if (g.me.chargeShot && g.me.chargeShot.weapon !== g.me.weapon) g.me.chargeShot = null;
     if (g.me.chargeShot && performance.now() >= g.me.chargeShot.ready) tryShoot(g.me, g.mode !== 'solo');
     // movement: WASD/arrows in PC mode, virtual joystick on touch
@@ -2094,7 +2216,8 @@ function update(dt) {
       for (const k in MOVE_KEYS) if (pc.keys[k]) { mvx += MOVE_KEYS[k][0]; mvy += MOVE_KEYS[k][1]; }
     }
     if (g.me.chargeShot) { mvx = 0; mvy = 0; }
-    movePlayer(g.me, mvx, mvy, dt, 1 + g.upgrades.speedMul);
+    const grimSpeed = g.me.grimoire === 'wind' ? 0.14 : g.me.grimoire === 'storm' ? 0.06 : 0;
+    movePlayer(g.me, mvx, mvy, dt, 1 + g.upgrades.speedMul + grimSpeed);
     if (pc.active) {
       // the mouse cursor IS the aim — recomputed every frame so walking
       // (which moves the camera under the cursor) keeps the aim true
@@ -2136,6 +2259,15 @@ function update(dt) {
     if (!g.nearAction && !c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70)
       g.nearAction = { kind: 'chest', c };
   }
+  if (!g.nearAction && !g.contracts.noRevive) {
+    for (const id in g.players) {
+      const p = g.players[id];
+      if (p === g.me || !p.downed) continue;
+      const teammate = p.team !== 'S' && p.team === g.me.team;
+      const ally = g.mode === 'ffa' && net.allies.has(id);
+      if ((teammate || ally) && dist2(g.me.x, g.me.y, p.x, p.y) < 72 * 72) { g.nearAction = { kind: 'revive', p }; break; }
+    }
+  }
   // the interact button exists ONLY while there is really something to
   // open or pick up right here (and never in build mode / while dead)
   if (g.buildMode) g.nearAction = null;
@@ -2150,6 +2282,12 @@ function update(dt) {
       info.firstElementChild.style.color = t.glow;
       info.lastElementChild.textContent = 'Loot spills out — grab what you want';
       info.style.borderColor = t.glow;
+    } else if (g.nearAction.kind === 'revive') {
+      btn.textContent = '✚ REVIVE';
+      info.firstElementChild.textContent = '✚ REVIVE ' + g.nearAction.p.name.toUpperCase();
+      info.firstElementChild.style.color = '#7fd4ff';
+      info.lastElementChild.textContent = 'Bring them back before bleed-out';
+      info.style.borderColor = '#7fd4ff';
     } else {
       const pk = g.nearAction.pk, col = rarityCol(pk.rarity);
       btn.textContent = '🖐 PICK UP';
@@ -2164,6 +2302,12 @@ function update(dt) {
   updateStorm(dt);
   if (g.mode === 'solo') updateBots(dt);
   if (g.npcAuthority) updateGuardians(dt);
+  for (const id in g.players) {
+    const p = g.players[id];
+    if (p.downed && (p.downT -= dt) <= 0) {
+      p.downed = false; p.alive = false; p.hp = 0; addEffect('break', p.x, p.y); addKillFeed(p.name + ' bled out');
+    }
+  }
   // downed practice dummies get back up after a short pause
   for (const dm of g.dummies)
     if (dm.hp <= 0 && (dm.respawn -= dt) <= 0) dm.hp = CFG.dummyHp;
@@ -2387,6 +2531,16 @@ function render() {
     }
     ctx.restore();
   }
+  // grimoire tower
+  const gt = g.grimoireTower, gtx = gt.x - cx, gty = gt.y - cy;
+  if (gtx > -120 && gty > -120 && gtx < VW + 120 && gty < VH + 120) {
+    drawShadow(gtx, gty + 34, 42);
+    ctx.fillStyle = '#1b1630'; ctx.fillRect(gtx - 32, gty - 54, 64, 96);
+    ctx.strokeStyle = gt.open ? rarityCol('exotic') : '#8a6dff'; ctx.lineWidth = 4; ctx.strokeRect(gtx - 32, gty - 54, 64, 96);
+    ctx.fillStyle = '#30205a'; ctx.beginPath(); ctx.moveTo(gtx - 44, gty - 54); ctx.lineTo(gtx, gty - 98); ctx.lineTo(gtx + 44, gty - 54); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.font = '26px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('📖', gtx, gty - 14);
+    ctx.strokeStyle = '#b46bff88'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(gtx, gty, 70 + Math.sin(performance.now() / 260) * 6, 0, 7); ctx.stroke();
+  }
 
   // ground loot: chest spills + guardian/boss drops, rarity-colored
   for (const pk of g.pickups) {
@@ -2515,6 +2669,16 @@ function render() {
     }
     drawCharacter(ctx, x, y, p.aim, p.look, bodyR);
     drawArmorOverlay(ctx, x, y, p.aim, p.armorTier, bodyR);
+    if (p.grimoire) {
+      ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = GRIMOIRES[p.grimoire].col;
+      ctx.fillText(p.grimoire === 'antimagic' ? '📕' : '📘', x + bodyR + 12, y - bodyR);
+    }
+    if (p.downed) {
+      ctx.strokeStyle = '#ffdf6b'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, bodyR + 16, 0, 7); ctx.stroke();
+      ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffdf6b';
+      ctx.fillText('DOWN', x, y + bodyR + 24);
+    }
     // deployed shield: cyan arc facing the aim; dashed once cracked
     if (p.shieldHits > 0) {
       const cracked = p.shieldHits < CFG.shieldHits;
@@ -2721,6 +2885,14 @@ function render() {
       slot.style.borderColor = '#ffffff24';
     }
   });
+}
+
+function spawnWizardBoss(g) {
+  const t = g.grimoireTower;
+  const w = makePlayer('wizardBoss', 'WIZARD KING', { eye: 4, hair: 5, outfit: 6 }, 'G', t.x, t.y, true);
+  w.guard = true; w.boss = true; w.wizard = true; w.weapon = 'zeus';
+  w.hp = w.maxHp = 1800; w.home = { x: t.x, y: t.y }; w.lastAoE = 0;
+  g.players[w.id] = w;
 }
 
 // Minimap (top-right): buildings, chests, storm circle, you, teammates,
