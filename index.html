@@ -178,6 +178,17 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .invStats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .invStat{background:#0d1627;border:1px solid #ffffff18;border-radius:8px;padding:10px;font-size:13px}
 .invStat b{display:block;color:#fff;margin-bottom:4px}
+#adminGui{position:fixed;inset:0;background:rgba(3,5,10,.82);z-index:210;display:none;align-items:center;justify-content:center;padding:18px;pointer-events:auto}
+#adminGui.show{display:flex}
+#adminPanel{width:min(680px,94vw);background:#111827;border:2px solid #ffdd6688;border-radius:8px;box-shadow:0 18px 70px #000e,0 0 36px #ffdd6628;padding:16px}
+#adminTop{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+#adminTop h2{margin:0;font-size:26px;color:#ffdd66}
+#adminClose{border:none;border-radius:8px;background:#33445f;color:#fff;font-weight:1000;padding:10px 14px}
+.adminGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.adminField{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#cfe3ff;font-weight:900}
+.adminField select,.adminField input{background:#0b1220;color:#fff;border:1px solid #ffffff26;border-radius:8px;padding:10px;font-size:14px}
+#adminSpawn{margin-top:12px;width:100%;border:none;border-radius:8px;background:linear-gradient(#ffd94d,#d99b1e);color:#2b2100;font-weight:1000;font-size:17px;padding:13px}
+@media (max-width:700px){.adminGrid{grid-template-columns:1fr}}
 @media (max-width:700px){.invGrid{grid-template-columns:1fr}.invWeapon{grid-template-columns:36px 1fr}.invWeapon button{min-height:38px}}
 #killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:184px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
@@ -427,6 +438,20 @@ body.pc #touchHint{display:none}
       <div class="invSection"><h3>Weapons</h3><div id="invWeapons"></div></div>
       <div class="invSection"><h3>Loadout</h3><div class="invStats" id="invStats"></div></div>
     </div>
+  </div>
+</div>
+<div id="adminGui">
+  <div id="adminPanel">
+    <div id="adminTop"><h2>Admin Item Spawner</h2><button id="adminClose">CLOSE</button></div>
+    <div class="adminGrid">
+      <label class="adminField">Category<select id="adminType">
+        <option value="weapon">Weapon</option><option value="armor">Armor</option><option value="grimoire">Grimoire</option><option value="ammo">Ammo</option><option value="material">Material</option><option value="heal">Heal / Shield</option>
+      </select></label>
+      <label class="adminField">Item<select id="adminItem"></select></label>
+      <label class="adminField">Amount<input id="adminAmount" type="number" min="1" max="999" value="1"></label>
+      <label class="adminField">Delivery<select id="adminDelivery"><option value="ground">Spawn near me</option><option value="direct">Give directly</option></select></label>
+    </div>
+    <button id="adminSpawn">SPAWN / GIVE</button>
   </div>
 </div>
 <div id="upgradeDraft">
@@ -898,6 +923,7 @@ function saveProfile() {
 
 // --- customization screen ---
 const custCtx = $('custPrev').getContext('2d');
+let adminUnlocked = false;
 function renderCustPreview() {
   custCtx.clearRect(0, 0, 180, 180);
   custCtx.fillStyle = '#223148'; custCtx.fillRect(0, 0, 180, 180);
@@ -1431,6 +1457,55 @@ function renderInventoryGui() {
     ['Materials', `Wood ${game.mats.wood} · Brick ${game.mats.brick} · Metal ${game.mats.metal}`],
   ].map(([k, v]) => `<div class="invStat"><b>${k}</b>${v}</div>`).join('');
 }
+function adminOptionsFor(type) {
+  if (type === 'weapon') return Object.keys(WEAPONS).map(k => [k, WEAPONS[k].name + ' (' + rarityLabel(WEAPONS[k].rarity) + ')']);
+  if (type === 'armor') return ARMOR.map((a, i) => a && [String(i), a.name]).filter(Boolean);
+  if (type === 'grimoire') return Object.keys(GRIMOIRES).map(k => [k, GRIMOIRES[k].name]);
+  if (type === 'ammo') return Object.keys(AMMO).map(k => [k, AMMO[k].name]);
+  if (type === 'material') return ['wood', 'brick', 'metal'].map(k => [k, k]);
+  return [['heal', 'Medkit +80 HP'], ['pot', 'Shield Potion +50']];
+}
+function refreshAdminItems() {
+  const type = $('adminType').value, sel = $('adminItem');
+  sel.innerHTML = adminOptionsFor(type).map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+}
+function openAdminPanel() {
+  if (!game) return toast('Start a match first');
+  if (!adminUnlocked) {
+    const key = prompt('Admin key');
+    if (key !== 'cloverisdatuffest') return toast('Wrong admin key');
+    adminUnlocked = true; toast('Admin unlocked');
+  }
+  refreshAdminItems();
+  $('adminGui').classList.add('show');
+}
+function adminSpawn() {
+  if (!game || !adminUnlocked) return;
+  const type = $('adminType').value, item = $('adminItem').value, amount = clamp(+$('adminAmount').value || 1, 1, 999);
+  const direct = $('adminDelivery').value === 'direct';
+  const dropAt = i => ({ x: clamp(game.me.x + 44 + i * 18, 30, CFG.world - 30), y: clamp(game.me.y + 22 + i * 10, 30, CFG.world - 30) });
+  if (direct) {
+    if (type === 'weapon') addWeaponToInventory(item, true);
+    else if (type === 'armor') { game.me.armorTier = +item; game.me.armorDur = ARMOR[+item].dur; }
+    else if (type === 'grimoire') equipGrimoire(item);
+    else if (type === 'ammo') game.ammo[item] += CFG.ammoPack[item] * amount;
+    else if (type === 'material') game.mats[item] += amount;
+    else if (item === 'heal') game.me.hp = Math.min(game.me.maxHp, game.me.hp + 80 * amount);
+    else addShieldPts(50 * amount);
+  } else {
+    for (let i = 0; i < amount; i++) {
+      const p = dropAt(i);
+      if (type === 'weapon') spawnItem({ id: 'admin_w_' + performance.now() + '_' + i, ...p, kind: 'weapon', weapon: item });
+      else if (type === 'armor') spawnItem({ id: 'admin_a_' + performance.now() + '_' + i, ...p, kind: 'armor', tier: +item });
+      else if (type === 'grimoire') spawnItem({ id: 'admin_g_' + performance.now() + '_' + i, ...p, kind: 'grimoire', grimoire: item });
+      else if (type === 'ammo') spawnItem({ id: 'admin_am_' + performance.now() + '_' + i, ...p, kind: 'ammo', ammo: item });
+      else if (type === 'material') spawnItem({ id: 'admin_m_' + performance.now() + '_' + i, ...p, kind: 'mat', mat: item, amount });
+      else spawnItem({ id: 'admin_h_' + performance.now() + '_' + i, ...p, kind: item, amount: item === 'heal' ? 80 : 50 });
+    }
+  }
+  toast('Admin spawned: ' + item);
+  renderInventoryGui();
+}
 function awardXP(n, reason) {
   if (!game || !game.me) return;
   game.xp += n;
@@ -1648,6 +1723,7 @@ if (window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matche
 const MOVE_KEYS = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0], arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0] };
 window.addEventListener('keydown', e => {
   if (e.target && e.target.tagName === 'INPUT') return; // typing a name/code
+  if (e.key === 'F2') { e.preventDefault(); openAdminPanel(); return; }
   const k = e.key.toLowerCase();
   if (MOVE_KEYS[k]) { enablePcMode(); pc.keys[k] = true; e.preventDefault(); }
   if (!pc.active || !game || e.repeat) return;
@@ -1884,6 +1960,9 @@ press($('shieldBtn'), deployShield);
 press($('wolfBtn'), summonHeavenWolves);
 press($('invBtn'), () => toggleInventoryGui());
 press($('invClose'), () => toggleInventoryGui(false));
+press($('adminClose'), () => $('adminGui').classList.remove('show'));
+press($('adminSpawn'), adminSpawn);
+$('adminType').addEventListener('change', refreshAdminItems);
 press($('chestBtn'), doInteract);
 press($('confirmEquip'), confirmWeaponPickup);
 press($('confirmCancel'), closePickupConfirm);
