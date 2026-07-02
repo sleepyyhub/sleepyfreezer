@@ -56,7 +56,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .lobbyRow canvas{width:44px;height:44px}
 .lobbyRow .nm{flex:1;font-size:19px;font-weight:600}
 .teamTag{font-size:15px;font-weight:800;padding:6px 14px;border-radius:10px;background:#333}
-.teamA{background:#2a6de0}.teamB{background:#d93030}.teamS{background:#6b7b92}
+.teamA{background:#2a6de0}.teamB{background:#d93030}.teamS{background:#6b7b92}.teamF{background:#7a4de8}
 .hostStar{color:#ffd94d;font-size:20px}
 
 /* ============================================================
@@ -146,6 +146,28 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .custRow .lab{width:90px;text-align:right;font-size:18px;font-weight:700;color:#9db2c9}
 #toast{position:fixed;left:50%;top:14%;transform:translateX(-50%);background:#000c;color:#ffd94d;
   padding:12px 26px;border-radius:12px;font-size:18px;font-weight:700;z-index:200;display:none}
+#upgradeDraft{position:fixed;inset:0;background:#07101fcc;z-index:180;display:none;align-items:center;justify-content:center;padding:22px}
+#upgradeDraft.show{display:flex}
+#upgradeBox{width:min(920px,96vw);background:#101a2b;border:2px solid #ffffff24;border-radius:8px;box-shadow:0 18px 50px #000b;padding:18px}
+#upgradeBox h2{margin:0 0 8px;font-size:30px}
+#upgradeBox .sub{margin-bottom:14px}
+#upgradeCards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.upgradeCard{min-height:176px;border:2px solid #ffffff22;border-radius:8px;background:#17243a;color:#fff;text-align:left;padding:14px;box-shadow:inset 0 0 0 1px #0006}
+.upgradeCard .rar{font-size:13px;font-weight:900;text-transform:uppercase;margin-bottom:10px}
+.upgradeCard .nm{font-size:24px;font-weight:1000;margin-bottom:8px}
+.upgradeCard .st{font-size:15px;line-height:1.35;color:#dce8ff}
+#confirmPickup{position:fixed;inset:0;background:#07101fb8;z-index:190;display:none;align-items:center;justify-content:center;padding:22px}
+#confirmPickup.show{display:flex}
+#confirmBox{width:min(520px,92vw);background:#101a2b;border:2px solid #ffffff26;border-radius:8px;box-shadow:0 18px 50px #000b;padding:18px;text-align:center}
+#confirmTitle{font-size:26px;font-weight:1000;margin-bottom:12px}
+#confirmItems{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.confirmItem{border:1px solid #ffffff22;background:#17243a;border-radius:8px;padding:12px;min-height:104px}
+.confirmItem .lab{font-size:12px;font-weight:900;color:#9db2c9;text-transform:uppercase;margin-bottom:6px}
+.confirmItem .nm{font-size:18px;font-weight:1000}
+.confirmItem .st{font-size:12px;color:#dce8ff;margin-top:6px;line-height:1.3}
+#confirmActions{display:flex;gap:10px;justify-content:center;margin-top:14px}
+#confirmActions .btn{min-width:150px}
+@media (max-width:700px){#upgradeCards{grid-template-columns:1fr}.upgradeCard{min-height:116px}}
 #rotateHint{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;align-items:center;
   justify-content:center;gap:12px;background:#101418f2;font-size:30px;font-weight:800;text-align:center;padding:24px}
 /* ============================================================
@@ -238,7 +260,7 @@ body.pc #pcHint{display:block}
 <!-- ================= PARTY: CREATE / JOIN ================= -->
 <div class="screen" id="scrParty">
   <h2>Party &amp; Custom Matches</h2>
-  <div class="sub">Create a party to get a share code, or type a friend's code to join their lobby. The party host picks the mode (Solos / 2v2 / 4v4) and assigns teams.</div>
+  <div class="sub">Create a party to get a share code, or type a friend's code to join their lobby. The party host picks the mode (Solos / FFA / 2v2 / 4v4) and assigns teams.</div>
   <button class="btn green" id="btnCreateParty">➕ CREATE PARTY</button>
   <div class="row">
     <input class="code" id="joinCode" placeholder="CODE" maxlength="4" autocomplete="off">
@@ -254,6 +276,7 @@ body.pc #pcHint{display:block}
   <div class="sub" id="lobbyHint">Share the code so friends can join.</div>
   <div class="row" id="modeRow">
     <button class="btn small gray modeBtn" data-mode="solos">SOLOS</button>
+    <button class="btn small gray modeBtn" data-mode="ffa">FFA</button>
     <button class="btn small gray modeBtn" data-mode="2v2">2v2</button>
     <button class="btn small gray modeBtn" data-mode="4v4">4v4</button>
   </div>
@@ -302,6 +325,34 @@ body.pc #pcHint{display:block}
 </div>
 
 <div id="toast"></div>
+<div id="upgradeDraft">
+  <div id="upgradeBox">
+    <h2>Choose an Upgrade</h2>
+    <div class="sub">Free for All grants a random card draft every minute.</div>
+    <div id="upgradeCards"></div>
+  </div>
+</div>
+<div id="confirmPickup">
+  <div id="confirmBox">
+    <div id="confirmTitle">Pick Up Weapon?</div>
+    <div id="confirmItems">
+      <div class="confirmItem">
+        <div class="lab">Current</div>
+        <div class="nm" id="confirmCurrentName"></div>
+        <div class="st" id="confirmCurrentStats"></div>
+      </div>
+      <div class="confirmItem">
+        <div class="lab">New</div>
+        <div class="nm" id="confirmNewName"></div>
+        <div class="st" id="confirmNewStats"></div>
+      </div>
+    </div>
+    <div id="confirmActions">
+      <button class="btn green" id="confirmEquip">EQUIP</button>
+      <button class="btn gray" id="confirmCancel">CANCEL</button>
+    </div>
+  </div>
+</div>
 
 <!-- shown while the device is held in portrait -->
 <div id="rotateHint"><div style="font-size:56px">🔄</div>Rotate to landscape<div class="sub">Sleepy Royale is built for two-handed landscape play</div></div>
@@ -460,6 +511,38 @@ const NORMAL_GUNS = ['pistol', 'smg', 'shotgun', 'judge', 'wasp', 'drifter', 'br
 const W_BY = {};
 for (const k in WEAPONS) if (!WEAPONS[k].exotic) (W_BY[WEAPONS[k].rarity] = W_BY[WEAPONS[k].rarity] || []).push(k);
 
+const UPGRADE_RARITIES = {
+  rare: { name: 'Rare', col: '#3f8cff', weight: 60 },
+  epic: { name: 'Epic', col: '#c45df0', weight: 28 },
+  legendary: { name: 'Legendary', col: '#ff9f2a', weight: 12 },
+};
+const UPGRADES = [
+  { id: 'shooting1', rarity: 'rare', name: 'Shooting 1',
+    text: 'Unlocks Aim Assist (10% aim assist) and +5% weapon damage.',
+    apply(g) { g.upgrades.aimAssist = Math.max(g.upgrades.aimAssist, 0.10); g.upgrades.dmgMul += 0.05; } },
+  { id: 'steady', rarity: 'rare', name: 'Steady Hands',
+    text: 'Tightens weapon spread by 8%.',
+    apply(g) { g.upgrades.spreadMul *= 0.92; } },
+  { id: 'runner', rarity: 'rare', name: 'Runner',
+    text: 'Move 7% faster.',
+    apply(g) { g.upgrades.speedMul += 0.07; } },
+  { id: 'fieldmedic', rarity: 'rare', name: 'Field Medic',
+    text: 'Gain +10 max HP and heal 20 HP now.',
+    apply(g) { g.me.maxHp += 10; g.me.hp = Math.min(g.me.maxHp, g.me.hp + 20); } },
+  { id: 'sharpshooter', rarity: 'epic', name: 'Sharpshooter',
+    text: 'Aim assist improves by 15% and weapon damage rises by 8%.',
+    apply(g) { g.upgrades.aimAssist = Math.min(0.45, g.upgrades.aimAssist + 0.15); g.upgrades.dmgMul += 0.08; } },
+  { id: 'quickdraw', rarity: 'epic', name: 'Quickdraw',
+    text: 'Fire rate rises by 10%.',
+    apply(g) { g.upgrades.rofMul += 0.10; } },
+  { id: 'juggernaut', rarity: 'legendary', name: 'Juggernaut',
+    text: 'Gain +25 max HP and 25 shield points.',
+    apply(g) { g.me.maxHp += 25; g.me.hp += 25; g.me.shieldPts = Math.min(MAX_SHIELD, g.me.shieldPts + 25); } },
+  { id: 'deadshot', rarity: 'legendary', name: 'Deadshot',
+    text: 'Aim assist improves by 25% and spread tightens by 15%.',
+    apply(g) { g.upgrades.aimAssist = Math.min(0.60, g.upgrades.aimAssist + 0.25); g.upgrades.spreadMul *= 0.85; } },
+];
+
 // Armor tiers: soak a % of every hit while durability lasts, then break.
 const ARMOR = [null,
   { name: 'Leather Armor',  icon: '🦺', reduce: 0.25, dur: 150, rarity: 'uncommon' },
@@ -492,6 +575,7 @@ function toast(msg, ms = 1800) {
   const t = $('toast'); t.textContent = msg; t.style.display = 'block';
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', ms);
 }
+let pendingWeaponPickup = null;
 
 /* ═══════════ 3. CHARACTER ART ═══════════
    Players are drawn procedurally from a "look" object
@@ -607,7 +691,8 @@ function renderLobby() {
   $('lobbyCode').textContent = p.code;
   const isHost = p.hostId === net.selfId;
   $('lobbyHint').textContent = isHost
-    ? (p.mode === 'solos' ? 'Solos: everyone for themselves. Tap START when ready.'
+    ? (p.mode === 'ffa' ? 'Free for All: unlimited joins, no bots, no teams, upgrade cards every minute.'
+       : p.mode === 'solos' ? 'Solos: everyone for themselves. Tap START when ready.'
        : `Mode ${p.mode}: tap a player to switch their team.`)
     : 'Waiting for the host to start the match…';
   $('btnStartMatch').style.display = isHost ? '' : 'none';
@@ -624,13 +709,23 @@ function renderLobby() {
     const nm = document.createElement('span'); nm.className = 'nm';
     nm.textContent = pl.name + (pl.id === net.selfId ? ' (you)' : '');
     const tag = document.createElement('span');
-    if (p.mode === 'solos') { tag.className = 'teamTag teamS'; tag.textContent = 'SOLO'; }
+    if (p.mode === 'ffa') {
+      const allied = net.allies.has(pl.id);
+      tag.className = 'teamTag ' + (allied ? 'teamA' : 'teamF');
+      tag.textContent = allied ? 'ALLY' : 'FFA';
+    }
+    else if (p.mode === 'solos') { tag.className = 'teamTag teamS'; tag.textContent = 'SOLO'; }
     else { tag.className = 'teamTag team' + pl.team; tag.textContent = 'TEAM ' + pl.team; }
     row.appendChild(cv); row.appendChild(nm);
     if (pl.id === p.hostId) { const st = document.createElement('span'); st.className = 'hostStar'; st.textContent = '★'; row.appendChild(st); }
     row.appendChild(tag);
     // host taps a player row to flip them between team A and B
-    if (isHost && p.mode !== 'solos') {
+    if (p.mode === 'ffa' && pl.id !== net.selfId) {
+      row.addEventListener('click', () => {
+        if (net.allies.has(pl.id)) net.allies.delete(pl.id); else net.allies.add(pl.id);
+        renderLobby();
+      });
+    } else if (isHost && p.mode !== 'solos' && p.mode !== 'ffa') {
       row.addEventListener('click', () => net.send({ t: 'assign_team', playerId: pl.id, team: pl.team === 'A' ? 'B' : 'A' }));
     }
     list.appendChild(row);
@@ -643,7 +738,7 @@ function renderLobby() {
    host/port; when opened as a local file it targets localhost:8080.
    Solo mode never touches the network. */
 const net = {
-  ws: null, selfId: null, party: null, connecting: false,
+  ws: null, selfId: null, party: null, connecting: false, allies: new Set(),
   url() {
     if (location.protocol.startsWith('http'))
       return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
@@ -665,7 +760,7 @@ const net = {
       this.ws = null;
     };
   },
-  disconnect() { this.party = null; if (this.ws) { this.ws.close(); this.ws = null; } },
+  disconnect() { this.party = null; this.allies.clear(); if (this.ws) { this.ws.close(); this.ws = null; } },
   send(obj) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj)); },
   onMessage(m) {
     switch (m.t) {
@@ -874,6 +969,9 @@ function baseGame(seed, mode) {
     lastNetSend: 0, nearAction: null,
     buildMode: false, piece: 'wall', mat: 'wood',
     ammo: { ...CFG.startAmmo }, kills: 0,
+    upgrades: { aimAssist: 0, dmgMul: 0, rofMul: 0, spreadMul: 1, speedMul: 0, picks: [] },
+    nextUpgradeAt: mode === 'ffa' ? performance.now() + 60000 : Infinity,
+    upgradeOpen: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
     // practice range: bare training figures in the top-left corner —
     // shoot them to warm up; they get back up after a few seconds
@@ -959,7 +1057,7 @@ function startNetworkMatch(m) {
     g.players[pl.id] = p;
     if (pl.id === net.selfId) g.me = p;
   });
-  spawnGuardians(g);
+  if (g.mode !== 'ffa') spawnGuardians(g);
   game = g; showScreen(null); resetHudState();
 }
 
@@ -968,6 +1066,84 @@ function resetHudState() {
   $('buildMenu').classList.remove('show'); $('buildBtn').classList.remove('on');
   $('killFeed').innerHTML = ''; $('itemInfo').style.display = 'none';
   $('chestBtn').classList.remove('show');
+  $('upgradeDraft').classList.remove('show'); $('upgradeCards').innerHTML = '';
+  closePickupConfirm();
+}
+
+function weaponStatLine(key) {
+  const w = WEAPONS[key];
+  return `DMG ${w.dmg}${w.pellets > 1 ? 'x' + w.pellets : ''} / ${w.rof}/s / ${AMMO[w.ammo].name}`;
+}
+function showPickupConfirm(pk) {
+  if (!game || !pk || pk.kind !== 'weapon') return;
+  if (pendingWeaponPickup && pendingWeaponPickup !== pk.id) closePickupConfirm();
+  pendingWeaponPickup = pk.id;
+  input.fire = false;
+  const cur = WEAPONS[game.me.weapon], next = WEAPONS[pk.weapon];
+  $('confirmCurrentName').textContent = cur.icon + ' ' + cur.name;
+  $('confirmCurrentName').style.color = rarityCol(cur.rarity);
+  $('confirmCurrentStats').textContent = RARITY[cur.rarity].name + ' / ' + weaponStatLine(game.me.weapon);
+  $('confirmNewName').textContent = next.icon + ' ' + next.name;
+  $('confirmNewName').style.color = rarityCol(next.rarity);
+  $('confirmNewStats').textContent = RARITY[next.rarity].name + ' / ' + weaponStatLine(pk.weapon);
+  $('confirmPickup').classList.add('show');
+}
+function closePickupConfirm() {
+  pendingWeaponPickup = null;
+  const el = $('confirmPickup');
+  if (el) el.classList.remove('show');
+}
+function confirmWeaponPickup() {
+  const id = pendingWeaponPickup;
+  closePickupConfirm();
+  if (id) takePickup(id, true, true);
+}
+
+function weightedUpgradeRarity(rng) {
+  const total = Object.values(UPGRADE_RARITIES).reduce((sum, r) => sum + r.weight, 0);
+  let roll = rng() * total;
+  for (const key in UPGRADE_RARITIES) {
+    roll -= UPGRADE_RARITIES[key].weight;
+    if (roll <= 0) return key;
+  }
+  return 'rare';
+}
+function drawUpgradeOptions() {
+  const rng = seededRng(game.seed + 9001 + game.upgrades.picks.length * 97);
+  const chosen = [];
+  for (let tries = 0; chosen.length < 3 && tries < 50; tries++) {
+    const rarity = weightedUpgradeRarity(rng);
+    const pool = UPGRADES.filter(u => u.rarity === rarity && !chosen.includes(u));
+    const pick = pool[(rng() * pool.length) | 0];
+    if (pick) chosen.push(pick);
+  }
+  while (chosen.length < 3) chosen.push(UPGRADES[(rng() * UPGRADES.length) | 0]);
+  return chosen;
+}
+function showUpgradeDraft() {
+  if (!game || game.upgradeOpen || game.mode !== 'ffa' || !game.me.alive) return;
+  game.upgradeOpen = true;
+  input.fire = false;
+  const wrap = $('upgradeCards'); wrap.innerHTML = '';
+  for (const up of drawUpgradeOptions()) {
+    const rar = UPGRADE_RARITIES[up.rarity];
+    const card = document.createElement('button');
+    card.className = 'upgradeCard';
+    card.style.borderColor = rar.col;
+    card.innerHTML = `<div class="rar" style="color:${rar.col}">${rar.name}</div><div class="nm">${up.name}</div><div class="st">${up.text}</div>`;
+    card.addEventListener('click', () => chooseUpgrade(up));
+    wrap.appendChild(card);
+  }
+  $('upgradeDraft').classList.add('show');
+}
+function chooseUpgrade(up) {
+  if (!game || !game.upgradeOpen) return;
+  up.apply(game);
+  game.upgrades.picks.push(up.id);
+  game.upgradeOpen = false;
+  game.nextUpgradeAt = performance.now() + 60000;
+  $('upgradeDraft').classList.remove('show');
+  toast('Upgrade: ' + up.name);
 }
 
 /* ═══════════ 7. TOUCH INPUT ═══════════
@@ -1132,6 +1308,8 @@ press($('fireBtn'), () => input.fire = true, () => input.fire = false);
 press($('buildBtn'), toggleBuildMode);
 press($('shieldBtn'), deployShield);
 press($('chestBtn'), doInteract);
+press($('confirmEquip'), confirmWeaponPickup);
+press($('confirmCancel'), closePickupConfirm);
 document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => selectPiece(b.dataset.piece)));
 document.querySelectorAll('.matBtn').forEach(b => press(b, () => selectMat(b.dataset.mat)));
 
@@ -1202,7 +1380,8 @@ function autoAimPick() {
 let lastAmmoWarn = 0;
 function tryShoot(p, mine) {
   const w = WEAPONS[p.weapon], now = performance.now();
-  if (now - p.lastShot < 1000 / w.rof) return;
+  const rofMul = p === game.me ? 1 + game.upgrades.rofMul : 1;
+  if (now - p.lastShot < 1000 / (w.rof * rofMul)) return;
   if (p === game.me) { // only YOU consume ammo; NPCs never run dry
     if (game.ammo[w.ammo] < 1) {
       if (now - lastAmmoWarn > 900) { lastAmmoWarn = now; toast('Out of ' + AMMO[w.ammo].name + ' ammo!'); }
@@ -1216,12 +1395,14 @@ function tryShoot(p, mine) {
 }
 function fireBullets(p, aim, mine) {
   const w = WEAPONS[p.weapon];
+  const spreadMul = p === game.me ? game.upgrades.spreadMul : 1;
+  const dmgMul = p === game.me ? 1 + game.upgrades.dmgMul : 1;
   for (let i = 0; i < w.pellets; i++) {
-    const a = aim + (Math.random() - 0.5) * 2 * w.spread;
+    const a = aim + (Math.random() - 0.5) * 2 * w.spread * spreadMul;
     game.bullets.push({
       x: p.x + Math.cos(a) * (CFG.playerR + 8), y: p.y + Math.sin(a) * (CFG.playerR + 8),
       dx: Math.cos(a), dy: Math.sin(a), speed: w.speed,
-      dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1)),
+      dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1) * dmgMul),
       owner: p.id, team: p.team, mine,
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
       col: w.col || '#fff', len: w.len, wid: w.wid, // tracer style
@@ -1419,9 +1600,10 @@ function spawnRuinBoss(i) {
   toast('⚠ RUIN BOSS! Slay it for an EXOTIC weapon', 2600);
 }
 
-function takePickup(id, mine) {
+function takePickup(id, mine, confirmed = false) {
   const pk = game.pickups.find(p => p.id === id);
   if (!pk || pk.taken) return;
+  if (mine && pk.kind === 'weapon' && !confirmed) return showPickupConfirm(pk);
   pk.taken = true;
   if (mine) {
     if (pk.kind === 'weapon') game.me.weapon = pk.weapon;
@@ -1735,7 +1917,7 @@ function update(dt) {
     if (pc.active) {
       for (const k in MOVE_KEYS) if (pc.keys[k]) { mvx += MOVE_KEYS[k][0]; mvy += MOVE_KEYS[k][1]; }
     }
-    movePlayer(g.me, mvx, mvy, dt);
+    movePlayer(g.me, mvx, mvy, dt, 1 + g.upgrades.speedMul);
     if (pc.active) {
       // the mouse cursor IS the aim — recomputed every frame so walking
       // (which moves the camera under the cursor) keeps the aim true
@@ -1745,15 +1927,23 @@ function update(dt) {
     } else {
       // auto-aim (touch only): track the locked enemy unless the player
       // is actively dragging in the aim zone (manual aim always wins)
-      g.aimLock = g.buildMode ? null : autoAimPick();
-      if (g.aimLock && input.aimId === null)
-        g.me.aim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
+      const assistReady = g.mode !== 'ffa' || g.upgrades.aimAssist > 0;
+      g.aimLock = g.buildMode || !assistReady ? null : autoAimPick();
+      if (g.aimLock && input.aimId === null) {
+        const targetAim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
+        if (g.mode === 'ffa') {
+          const turn = Math.atan2(Math.sin(targetAim - g.me.aim), Math.cos(targetAim - g.me.aim));
+          g.me.aim += turn * g.upgrades.aimAssist;
+        } else g.me.aim = targetAim;
+      }
     }
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
     // easier health: passive regeneration after a few calm seconds
     if (g.me.hp < g.me.maxHp && performance.now() - (g.me.lastHurtT || 0) > CFG.regenDelay * 1000)
       g.me.hp = Math.min(g.me.maxHp, g.me.hp + CFG.regenRate * dt);
   } else g.aimLock = null;
+
+  if (g.mode === 'ffa' && performance.now() >= g.nextUpgradeAt) showUpgradeDraft();
 
   // proximity -> contextual interact button (chests + ground loot),
   // preferring loot when both are in range so chests can't shadow items
@@ -1813,6 +2003,7 @@ function update(dt) {
 
   // decay timers + drop claimed loot from the list
   for (const id in g.players) g.players[id].hurtFlash = Math.max(0, g.players[id].hurtFlash - dt);
+  if (pendingWeaponPickup && !g.pickups.some(p => p.id === pendingWeaponPickup && !p.taken)) closePickupConfirm();
   if (g.pickups.some(p => p.taken)) g.pickups = g.pickups.filter(p => !p.taken);
   g.effects = g.effects.filter(e => (e.life -= dt) > 0);
   g.dmgNums = g.dmgNums.filter(d => { d.y -= 40 * dt; return (d.life -= dt) > 0; });
@@ -2289,6 +2480,7 @@ function drawMinimap() {
     let col = null;
     if (p.guard) col = '#ff5f5f';
     else if (id === g.me.id) col = '#ffffff';
+    else if (g.mode === 'ffa' && net.allies.has(id)) col = '#5dff7a';
     else if (p.team !== 'S' && p.team === g.me.team) col = '#5dff7a';
     if (!col) continue;                           // enemies stay hidden
     ctx.fillStyle = col;

@@ -78,9 +78,9 @@ function lobbyPayload(party) {
 }
 function pushLobby(party) { broadcast(party, { t: 'lobby', party: lobbyPayload(party) }); }
 
-// Default team for a new member: solos = own id; team modes = balance A/B.
+// Default team for a new member: solos/FFA = own side; team modes = balance A/B.
 function autoTeam(party) {
-  if (party.mode === 'solos') return 'S';
+  if (party.mode === 'solos' || party.mode === 'ffa') return 'S';
   let a = 0, b = 0;
   for (const [, p] of party.players) (p.team === 'A' ? a++ : b++);
   return a <= b ? 'A' : 'B';
@@ -113,7 +113,7 @@ wss.on('connection', ws => {
         const p = parties.get(String(m.code || '').toUpperCase());
         if (!p) return send(ws, { t: 'error', msg: 'No party with that code' });
         if (p.started) return send(ws, { t: 'error', msg: 'Match already in progress' });
-        if (p.players.size >= 8) return send(ws, { t: 'error', msg: 'Party is full (8 max)' });
+        if (p.mode !== 'ffa' && p.players.size >= 8) return send(ws, { t: 'error', msg: 'Party is full (8 max)' });
         p.players.set(ws.id, { ws, name: cleanName(m.name), look: cleanLook(m.look), team: autoTeam(p) });
         ws.partyCode = p.code;
         send(ws, { t: 'joined', selfId: ws.id, party: lobbyPayload(p) });
@@ -130,17 +130,17 @@ wss.on('connection', ws => {
       /* ----- custom match hosting (host only) ----- */
       case 'set_mode': {
         if (!party || party.hostId !== ws.id) return;
-        if (!['solos', '2v2', '4v4'].includes(m.mode)) return;
+        if (!['solos', 'ffa', '2v2', '4v4'].includes(m.mode)) return;
         party.mode = m.mode;
         // re-seed teams to match the new mode
         let i = 0;
         for (const [, p] of party.players)
-          p.team = party.mode === 'solos' ? 'S' : (i++ % 2 === 0 ? 'A' : 'B');
+          p.team = (party.mode === 'solos' || party.mode === 'ffa') ? 'S' : (i++ % 2 === 0 ? 'A' : 'B');
         pushLobby(party);
         break;
       }
       case 'assign_team': {
-        if (!party || party.hostId !== ws.id || party.mode === 'solos') return;
+        if (!party || party.hostId !== ws.id || party.mode === 'solos' || party.mode === 'ffa') return;
         const target = party.players.get(m.playerId);
         if (target && ['A', 'B'].includes(m.team)) { target.team = m.team; pushLobby(party); }
         break;
