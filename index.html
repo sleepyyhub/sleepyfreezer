@@ -132,6 +132,46 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   padding:12px 26px;border-radius:12px;font-size:18px;font-weight:700;z-index:200;display:none}
 #rotateHint{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;align-items:center;
   justify-content:center;gap:12px;background:#101418f2;font-size:30px;font-weight:800;text-align:center;padding:24px}
+/* ============================================================
+   COMPACT HUD for phones: any device with a short landscape
+   height (iPhones, Android phones — model doesn't matter) gets
+   smaller controls so the tablet-sized buttons don't swallow
+   the screen. Everything stays >= 44pt-ish tap targets.
+   ============================================================ */
+@media (max-height: 500px){
+  #fireBtn{width:84px;height:84px;font-size:15px;right:calc(14px + env(safe-area-inset-right));bottom:calc(76px + env(safe-area-inset-bottom))}
+  #buildBtn{width:58px;height:58px;font-size:11px;right:calc(112px + env(safe-area-inset-right));bottom:calc(110px + env(safe-area-inset-bottom))}
+  #shieldBtn{width:58px;height:58px;font-size:10px;right:calc(22px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}
+  #hud #chestBtn{height:48px;font-size:15px;padding:0 20px;bottom:calc(10px + env(safe-area-inset-bottom))}
+  #hpWrap{width:150px;padding:4px 8px}
+  #hpOuter{height:13px}
+  #hpText{font-size:10px;margin-top:2px}
+  #stormInfo{font-size:12px;padding:5px 10px}
+  #matInfo{font-size:11px;padding:4px 8px;line-height:1.4}
+  #killFeed{font-size:11px;top:calc(46px + env(safe-area-inset-top));right:calc(34vh + 20px)}
+  #itemInfo{bottom:calc(64px + env(safe-area-inset-bottom));padding:5px 12px;max-width:300px}
+  #itemInfo .nm{font-size:13px}
+  #itemInfo .st{font-size:10px}
+  #weaponPanel{right:calc(110px + env(safe-area-inset-right));bottom:calc(8px + env(safe-area-inset-bottom));padding:5px 10px;gap:8px;border-left-width:4px}
+  #wpnIcon{font-size:18px}
+  #wpnName{font-size:11px;letter-spacing:1px}
+  #wpnRarity{font-size:8px}
+  #wpnAmmo{font-size:18px;min-width:34px}
+  #buildMenu{gap:6px;transform:translateY(-62%)}
+  #buildMenu button{min-width:72px;min-height:44px;font-size:11px}
+  /* menus/lobby fit short screens too */
+  .btn{min-width:190px;min-height:48px;font-size:16px;padding:8px 18px}
+  h1{font-size:30px}
+  h2{font-size:20px}
+  .screen{gap:8px}
+  .sub{font-size:12px}
+  input.code{height:48px;font-size:22px}
+  input.name{height:44px;font-size:16px}
+  #custPrev{width:120px;height:120px}
+  #lobbyList{max-height:26vh}
+  .lobbyRow{min-height:44px;padding:4px 10px}
+  .codebox{font-size:28px;padding:6px 16px}
+}
 /* item card: shows name, rarity and stats of the loot you're standing on */
 #itemInfo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(104px + env(safe-area-inset-bottom));
   background:rgba(8,14,24,.85);border:2px solid #888;border-radius:12px;padding:8px 18px;text-align:center;
@@ -582,10 +622,15 @@ const net = {
 
 /* ═══════════ 6. MATCH SETUP ═══════════ */
 const canvas = $('game'), ctx = canvas.getContext('2d');
-let W = 0, H = 0, DPR = 1, vignette = null, hurtVignette = null;
+let W = 0, H = 0, DPR = 1, ZOOM = 1, vignette = null, hurtVignette = null;
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
+  // Phone support: small screens zoom the camera OUT so you still see a
+  // useful slice of the battlefield. iPads/large screens stay at 1:1;
+  // a 390px-tall phone renders the world at ~0.55x. All touch math is
+  // divided by ZOOM so aiming/building stay exact on any device.
+  ZOOM = clamp(H / 760, 0.55, 1);
   canvas.width = W * DPR; canvas.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   // cached full-screen gradients: cinematic edge darkening + red hurt flash
@@ -832,7 +877,7 @@ const input = {
 };
 const JOY_MAX = 60; // knob travel radius in px
 
-function screenToWorld(sx, sy) { return { x: sx + game.camX, y: sy + game.camY }; }
+function screenToWorld(sx, sy) { return { x: sx / ZOOM + game.camX, y: sy / ZOOM + game.camY }; }
 
 function handleTouchStart(e) {
   e.preventDefault();
@@ -886,7 +931,7 @@ function handleTouchEnd(e) {
 // Aim direction = vector from the player's on-screen position to the touch.
 function aimFromTouch(t) {
   if (!game || game.buildMode) return; // build mode taps shouldn't spin the aim
-  const px = game.me.x - game.camX, py = game.me.y - game.camY;
+  const px = (game.me.x - game.camX) * ZOOM, py = (game.me.y - game.camY) * ZOOM;
   game.me.aim = Math.atan2(t.clientY - py, t.clientX - px);
 }
 canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
@@ -1600,25 +1645,29 @@ function render() {
   const g = game;
   // camera stays dead-centered on the player (no edge clamping — the
   // area beyond the island renders as dark void instead), plus decaying
-  // screen shake from firing and taking hits
-  g.camX = g.me.x - W / 2;
-  g.camY = g.me.y - H / 2;
+  // screen shake from firing and taking hits. On small (phone) screens
+  // ZOOM < 1: the whole world pass is drawn scaled down, so the view
+  // covers VW x VH world units instead of W x H.
+  const VW = W / ZOOM, VH = H / ZOOM;
+  g.camX = g.me.x - VW / 2;
+  g.camY = g.me.y - VH / 2;
   g.shake *= 0.86;
   const cx = g.camX + (Math.random() - 0.5) * g.shake;
   const cy = g.camY + (Math.random() - 0.5) * g.shake;
+  ctx.setTransform(DPR * ZOOM, 0, 0, DPR * ZOOM, 0, 0); // world pass
 
   // the island floats in a dark void; grass + grid only inside the world
-  ctx.fillStyle = '#0e1613'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#0e1613'; ctx.fillRect(0, 0, VW, VH);
   ctx.save();
   ctx.beginPath(); ctx.rect(-cx, -cy, CFG.world, CFG.world); ctx.clip();
   ctx.save(); ctx.translate(-cx, -cy);   // grass pattern in world coords
-  ctx.fillStyle = grassPattern; ctx.fillRect(cx - 1, cy - 1, W + 2, H + 2);
+  ctx.fillStyle = grassPattern; ctx.fillRect(cx - 1, cy - 1, VW + 2, VH + 2);
   ctx.restore();
   // faint grid (also doubles as the build grid guide)
   ctx.strokeStyle = g.buildMode ? '#ffffff40' : '#ffffff12'; ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let x = -cx % CFG.grid; x < W; x += CFG.grid) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
-  for (let y = -cy % CFG.grid; y < H; y += CFG.grid) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  for (let x = -cx % CFG.grid; x < VW; x += CFG.grid) { ctx.moveTo(x, 0); ctx.lineTo(x, VH); }
+  for (let y = -cy % CFG.grid; y < VH; y += CFG.grid) { ctx.moveTo(0, y); ctx.lineTo(VW, y); }
   ctx.stroke();
   ctx.restore();
   // world border
@@ -1637,7 +1686,7 @@ function render() {
     }
     for (const dm of g.dummies) {
       const x = dm.x - cx, y = dm.y - cy;
-      if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+      if (x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
       if (dm.hp <= 0) { // knocked over: flat gray shape until it respawns
         ctx.fillStyle = '#c9b8a3';
         ctx.beginPath(); ctx.ellipse(x, y + 6, 20, 9, 0.5, 0, 7); ctx.fill();
@@ -1658,7 +1707,7 @@ function render() {
   // broken roof is drawn later, above players, unless you're inside)
   for (const b of g.map.buildings) {
     const x = b.x0 - cx, y = b.y0 - cy, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
-    if (x > W || y > H || x + bw < 0 || y + bh < 0) continue;
+    if (x > VW || y > VH || x + bw < 0 || y + bh < 0) continue;
     ctx.fillStyle = '#4a3b2c'; ctx.fillRect(x, y, bw, bh);          // worn plank floor
     ctx.strokeStyle = '#00000022'; ctx.lineWidth = 2;
     ctx.beginPath();
@@ -1679,7 +1728,7 @@ function render() {
   // builds
   for (const [, b] of g.builds) {
     const x = b.gx * CFG.grid - cx, y = b.gy * CFG.grid - cy;
-    if (x < -CFG.grid || y < -CFG.grid || x > W || y > H) continue;
+    if (x < -CFG.grid || y < -CFG.grid || x > VW || y > VH) continue;
     const col = b.mat === 'wood' ? '#9c6b30' : b.mat === 'brick' ? '#b34a3a' : b.mat === 'metal' ? '#7d8a99' : '#7a7264';
     ctx.fillStyle = col;
     if (b.piece === 'wall') {
@@ -1711,7 +1760,7 @@ function render() {
   // chests
   for (const c of g.map.chests) {
     const x = c.x - cx, y = c.y - cy;
-    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    if (x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
     const pop = c.opened ? Math.max(0, c.anim) : 0;
     const tier = CHEST_TIERS[c.tier];
     drawShadow(x, y + 6, 16);
@@ -1735,7 +1784,7 @@ function render() {
   for (const pk of g.pickups) {
     if (pk.taken) continue;
     const x = pk.x - cx, y = pk.y - cy;
-    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    if (x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
     const rc = RARITY[pk.rarity].col, pulse = 1 + Math.sin(performance.now() / 200) * 0.12;
     drawShadow(x, y + 4, 13);
     ctx.strokeStyle = rc; ctx.lineWidth = 3;
@@ -1752,7 +1801,7 @@ function render() {
   // trees & rocks
   for (const r of g.map.rocks) {
     const x = r.x - cx, y = r.y - cy;
-    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    if (x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
     drawShadow(x, y + r.r * 0.35, r.r);
     ctx.fillStyle = '#8a8f96'; ctx.beginPath(); ctx.arc(x, y, r.r, 0, 7); ctx.fill();
     ctx.fillStyle = '#a9aeb5'; ctx.beginPath(); ctx.arc(x - r.r * 0.25, y - r.r * 0.25, r.r * 0.5, 0, 7); ctx.fill();
@@ -1771,7 +1820,7 @@ function render() {
   for (const id in g.players) {
     const p = g.players[id];
     const x = p.x - cx, y = p.y - cy;
-    if (!p.alive || x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    if (!p.alive || x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
     const bodyR = p.boss ? 26 : CFG.playerR; // THE WARDEN towers over everyone
     drawShadow(x, y + 4, bodyR);
     if (p.guard) { // menacing pulsing red aura on special enemies
@@ -1808,7 +1857,7 @@ function render() {
   // tree canopies on top so players can hide under them
   for (const t of g.map.trees) {
     const x = t.x - cx, y = t.y - cy;
-    if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+    if (x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
     ctx.fillStyle = '#5a3d1e'; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill();
     ctx.fillStyle = '#2c5e2eE0'; ctx.beginPath(); ctx.arc(x, y, t.r, 0, 7); ctx.fill();
   }
@@ -1845,7 +1894,7 @@ function render() {
   for (const b of g.map.buildings) {
     if (b === myBuilding) continue;
     const x = b.x0 - cx, y = b.y0 - cy, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
-    if (x > W || y > H || x + bw < 0 || y + bh < 0) continue;
+    if (x > VW || y > VH || x + bw < 0 || y + bh < 0) continue;
     ctx.fillStyle = 'rgba(34,27,20,0.9)'; ctx.fillRect(x, y, bw, bh);
     ctx.strokeStyle = '#00000055'; ctx.lineWidth = 2;      // roof planks
     ctx.beginPath();
@@ -1867,22 +1916,15 @@ function render() {
   const s = g.storm;
   ctx.fillStyle = 'rgba(120,40,190,0.32)';
   ctx.beginPath();
-  ctx.rect(0, 0, W, H);
+  ctx.rect(0, 0, VW, VH);
   ctx.arc(s.x - cx, s.y - cy, s.r, 0, Math.PI * 2);
   ctx.fill('evenodd');
   ctx.strokeStyle = '#b46bff'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(s.x - cx, s.y - cy, s.r, 0, 7); ctx.stroke();
 
-  // cinematic vignette + red flash when recently hurt
-  ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
-  if (g.me.hurtFlash > 0) {
-    ctx.globalAlpha = clamp(g.me.hurtFlash * 3, 0, 0.8);
-    ctx.fillStyle = hurtVignette; ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = 1;
-  }
-
   // aim indicator: dashed line + reticle; turns red while auto-aim has
   // a lock, and the locked enemy gets a pulsing target ring
+  // (still part of the zoomed world pass — it's anchored to the player)
   if (g.me.alive && !g.buildMode) {
     const locked = g.aimLock;
     const px = g.me.x - cx, py = g.me.y - cy;
@@ -1902,6 +1944,17 @@ function render() {
       ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
       ctx.fillStyle = '#ff8a8a'; ctx.fillText('LOCK', lx, ly + r + 14);
     }
+  }
+
+  // ---- screen-space pass: UI overlays are never zoomed ----
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  // cinematic vignette + red flash when recently hurt
+  ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
+  if (g.me.hurtFlash > 0) {
+    ctx.globalAlpha = clamp(g.me.hurtFlash * 3, 0, 0.8);
+    ctx.fillStyle = hurtVignette; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
   }
 
   // virtual joystick (only while touched)
@@ -1940,7 +1993,9 @@ function render() {
 // Minimap (top-right): buildings, chests, storm circle, you, teammates,
 // and guardians — so ruins with special loot are easy to find.
 function drawMinimap() {
-  const g = game, M = 150, pad = 14, mx = W - M - pad, my = 62, sc = M / CFG.world;
+  // size adapts to the screen: full 150px on tablets, smaller on phones
+  const g = game, M = Math.min(150, (Math.min(W, H) * 0.3) | 0), pad = 12;
+  const mx = W - M - pad, my = H < 500 ? 48 : 62, sc = M / CFG.world;
   ctx.save();
   ctx.fillStyle = 'rgba(8,14,24,0.68)';
   ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 2;

@@ -1,6 +1,9 @@
 # 🛡️ Sleepy Royale
 
-A 2D battle-royale game inspired by Fortnite, built for **iPad landscape touch play**.
+A 2D battle-royale game inspired by Fortnite, built for **touch play in landscape** —
+iPads first, but any phone works too: small screens automatically zoom the camera out
+and switch to a compact HUD (media query at 500px height), so every iPhone/Android
+model gets full-size gameplay with thumb-sized controls.
 The whole client is a single `index.html` (canvas rendering, procedural shapes, zero
 external assets); `server.js` is a tiny Node.js + `ws` server for parties, lobbies and
 real-time sync.
