@@ -84,11 +84,12 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   color:#1a2740;flex-direction:column;line-height:1.15;display:none}
 #hud #wolfBtn.show{display:flex}
 #hud #wolfBtn.off{opacity:.45;filter:saturate(.6)}
-#hud #grimBtn,#hud #devilBtn{left:calc(18px + env(safe-area-inset-left));width:76px;height:76px;font-size:11px;
-  box-shadow:0 0 0 5px #ffffff22;flex-direction:column;line-height:1.15}
-#hud #grimBtn{bottom:calc(174px + env(safe-area-inset-bottom));background:radial-gradient(#d8fff0,#38bdf8);color:#102032}
-#hud #devilBtn{bottom:calc(258px + env(safe-area-inset-bottom));background:radial-gradient(#ff8a9d,#9d102a);color:#fff}
-#hud #grimBtn.off,#hud #devilBtn.off{opacity:.45;filter:saturate(.55)}
+#abilityPad{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(158px + env(safe-area-inset-bottom));
+  display:grid;grid-template-columns:repeat(4,54px);gap:7px;pointer-events:auto}
+#abilityPad .hbtn{position:static;width:54px;height:54px;font-size:10px;border-radius:14px;box-shadow:0 0 0 3px #ffffff22;line-height:1.05;flex-direction:column}
+#abilityPad .grimBtn{background:radial-gradient(#d8fff0,#38bdf8);color:#102032}
+#abilityPad .devilBtn{background:radial-gradient(#ff8a9d,#9d102a);color:#fff}
+#abilityPad .off{opacity:.45;filter:saturate(.55)}
 /* NOTE: #hud #chestBtn (double id) is required — the generic
    `#hud .hbtn{display:flex}` rule is more specific than a lone
    `#chestBtn{display:none}`, which kept this button visible 24/7 */
@@ -220,9 +221,8 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   #buildBtn{width:58px;height:58px;font-size:11px;right:calc(112px + env(safe-area-inset-right));bottom:calc(110px + env(safe-area-inset-bottom))}
   #shieldBtn{width:58px;height:58px;font-size:10px;right:calc(22px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}
   #hud #wolfBtn{width:58px;height:58px;font-size:9px;right:calc(92px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}
-  #hud #grimBtn,#hud #devilBtn{width:58px;height:58px;font-size:9px}
-  #hud #grimBtn{bottom:calc(110px + env(safe-area-inset-bottom))}
-  #hud #devilBtn{bottom:calc(172px + env(safe-area-inset-bottom))}
+  #abilityPad{bottom:calc(96px + env(safe-area-inset-bottom));grid-template-columns:repeat(4,42px);gap:5px}
+  #abilityPad .hbtn{width:42px;height:42px;font-size:8px;border-radius:10px}
   #hud #chestBtn{height:48px;font-size:15px;padding:0 20px;bottom:calc(10px + env(safe-area-inset-bottom))}
   #hpWrap{width:150px;padding:4px 8px}
   #hpOuter{height:13px}
@@ -355,11 +355,19 @@ body.pc #touchHint{display:none}
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
   </div>
   <div id="killFeed"></div>
-  <div id="touchHint">Left side move · right side aim · buttons handle fire, build, shield, interact, weapons, wolves</div>
-  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · 1-5 weapons · B build · F shield · R wolves · Z/X/C piece · V/G/H material</div>
+  <div id="touchHint">Left side move · right side aim · buttons handle fire, build, shield, interact, weapons, wolves, grimoire, devil powers</div>
+  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · 1-5 weapons · B build · F shield · R wolves · T/Y/U/I grimoire · O/P/[ /] devil</div>
   <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
-  <button class="hbtn" id="grimBtn">📖<br>CAST</button>
-  <button class="hbtn" id="devilBtn">契<br>DEVIL</button>
+  <div id="abilityPad">
+    <button class="hbtn grimBtn" data-ability="0">📖1</button>
+    <button class="hbtn grimBtn" data-ability="1">📖2</button>
+    <button class="hbtn grimBtn" data-ability="2">📖3</button>
+    <button class="hbtn grimBtn" data-ability="3">📖4</button>
+    <button class="hbtn devilBtn" data-ability="0">契1</button>
+    <button class="hbtn devilBtn" data-ability="1">契2</button>
+    <button class="hbtn devilBtn" data-ability="2">契3</button>
+    <button class="hbtn devilBtn" data-ability="3">契4</button>
+  </div>
   <button class="hbtn" id="shieldBtn">🛡<br>SHIELD</button>
   <button class="hbtn" id="wolfBtn">☄<br>WOLVES</button>
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
@@ -676,21 +684,21 @@ const ARMOR = [null,
 ];
 const MAX_SHIELD = 100; // shield potions fill a blue bar absorbed before HP
 const GRIMOIRES = {
-  stone: { name: 'Stone Grimoire', rarity: 38, col: '#b8a078', stats: 'Stone Bulwark: armor up and quake nearby enemies.' },
-  flame: { name: 'Flame Grimoire', rarity: 25, col: '#ff7b3d', stats: 'Flame Nova: burning blast in front of you.' },
-  storm: { name: 'Storm Grimoire', rarity: 18, col: '#9fe6ff', stats: 'Storm Lance: chain lightning through enemies.' },
-  wind: { name: 'Wind Grimoire', rarity: 5, col: '#a8ffcf', stats: 'Wind Blast: dash gust that knocks enemies back.' },
-  antimagic: { name: 'Anti Magic Grimoire', rarity: 1, col: '#111111', stats: 'Anti Magic: parry burst and void slash.' },
+  stone: { name: 'Stone Grimoire', rarity: 38, col: '#b8a078', stats: 'Earth magic kit: armor, quake, spires, fortress.', moves: ['Bulwark', 'Quake', 'Spire', 'Fortress'] },
+  flame: { name: 'Flame Grimoire', rarity: 25, col: '#ff7b3d', stats: 'Fire magic kit: burst, wall, meteor, overheat.', moves: ['Nova', 'Fire Wall', 'Meteor', 'Overheat'] },
+  storm: { name: 'Storm Grimoire', rarity: 18, col: '#9fe6ff', stats: 'Lightning storm kit: lance, surge, cloud, thunderfall.', moves: ['Lance', 'Surge', 'Cloud', 'Thunderfall'] },
+  wind: { name: 'Wind Grimoire', rarity: 5, col: '#a8ffcf', stats: 'Wind magic kit: blast, dash, cyclone, sky domain.', moves: ['Blast', 'Dash', 'Cyclone', 'Sky Domain'] },
+  antimagic: { name: 'Anti Magic Grimoire', rarity: 1, col: '#111111', stats: 'Anti magic kit: parry, slash, null field, breaker.', moves: ['Parry', 'Slash', 'Null Field', 'Breaker'] },
 };
 const GRIMOIRE_EVOLVE = ['stone', 'flame', 'storm', 'wind', 'antimagic'];
 const DEVIL_CONTRACTS = [
-  { id: 'fang', name: 'Fang Contract', power: 'Rend Rush', cost: 'Cannot revive teammates.', solo: false,
+  { id: 'fang', name: 'Fang Contract', power: 'Rend Rush', moves: ['Rend', 'Pounce', 'Blood Mark', 'Fang Storm'], cost: 'Cannot revive teammates.', solo: false,
     desc: '+18% weapon damage, but you cannot help downed teammates.',
     apply(g) { g.contracts.noRevive = true; g.upgrades.dmgMul += 0.18; } },
-  { id: 'hunger', name: 'Hunger Contract', power: 'Blood Feast', cost: 'Healing is weaker.', solo: true,
+  { id: 'hunger', name: 'Hunger Contract', power: 'Blood Feast', moves: ['Feast', 'Leech', 'Frenzy', 'Devour'], cost: 'Healing is weaker.', solo: true,
     desc: '+20% move speed, but healing pickups restore half.',
     apply(g) { g.contracts.weakHeal = true; g.upgrades.speedMul += 0.20; } },
-  { id: 'mirror', name: 'Mirror Contract', power: 'Reflect Halo', cost: 'Armor breaks faster.', solo: true,
+  { id: 'mirror', name: 'Mirror Contract', power: 'Reflect Halo', moves: ['Halo', 'Shard Burst', 'Backlash', 'Mirror Dome'], cost: 'Armor breaks faster.', solo: true,
     desc: '+25 shield now, but armor durability drains faster.',
     apply(g) { g.contracts.brittleArmor = true; g.me.shieldPts = Math.min(MAX_SHIELD, g.me.shieldPts + 25); } },
 ];
@@ -1564,8 +1572,8 @@ window.addEventListener('keydown', e => {
   else if (k === 'b' || k === 'q') toggleBuildMode();
   else if (k === 'f') deployShield();
   else if (k === 'r') summonHeavenWolves();
-  else if (k === 't') activateGrimoire();
-  else if (k === 'y') activateDevilPower();
+  else if (['t', 'y', 'u', 'i'].includes(k)) activateGrimoire(['t', 'y', 'u', 'i'].indexOf(k));
+  else if (['o', 'p', '[', ']'].includes(k)) activateDevilPower(['o', 'p', '[', ']'].indexOf(k));
   else if (['1', '2', '3', '4', '5'].includes(k)) selectWeaponSlot(+k - 1);
   else if (k === 'z') selectPiece('wall');
   else if (k === 'x') selectPiece('ramp');
@@ -1647,50 +1655,76 @@ function damageEnemiesAround(x, y, radius, dmg, by, knock = 0) {
     addEffect('hit', p.x, p.y, true);
   }
 }
-function activateGrimoire() {
+function abilityReady(bucket, slot) {
+  bucket[slot] ??= 0;
+  return Math.max(0, bucket[slot] - performance.now());
+}
+function activateGrimoire(slot = 0) {
   if (!game || !game.me.alive) return;
   const key = game.me.grimoire;
   if (!key) return toast('No grimoire equipped');
-  const now = performance.now(), ready = game.nextGrimoireCast || 0;
-  if (now < ready) return toast('Grimoire ready in ' + Math.ceil((ready - now) / 1000) + 's');
-  const x = game.me.x + Math.cos(game.me.aim) * 90, y = game.me.y + Math.sin(game.me.aim) * 90;
+  game.grimoireCooldowns ||= [0, 0, 0, 0];
+  const now = performance.now(), ready = game.grimoireCooldowns[slot] || 0;
+  if (now < ready) return toast(GRIMOIRES[key].moves[slot] + ' ready in ' + Math.ceil((ready - now) / 1000) + 's');
+  const x = game.me.x + Math.cos(game.me.aim) * 105, y = game.me.y + Math.sin(game.me.aim) * 105;
   if (key === 'stone') {
-    game.me.armorTier = Math.max(game.me.armorTier, 3); game.me.armorDur = Math.max(game.me.armorDur, 240);
-    damageEnemiesAround(game.me.x, game.me.y, 145, 34, game.me.id, 35); addEffect('boom', game.me.x, game.me.y, true);
+    if (slot === 0) { game.me.armorTier = Math.max(game.me.armorTier, 3); game.me.armorDur = Math.max(game.me.armorDur, 260); damageEnemiesAround(game.me.x, game.me.y, 145, 34, game.me.id, 35); addEffect('boom', game.me.x, game.me.y, true); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 215, 52, game.me.id, 85); addEffect('sigil', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(x, y, 120, 76, game.me.id, 130); addEffect('place', x, y, true); }
+    else { game.me.armorTier = Math.max(game.me.armorTier, 5); game.me.armorDur = Math.max(game.me.armorDur, 420); damageEnemiesAround(game.me.x, game.me.y, 230, 44, game.me.id, 65); addEffect('heaven', game.me.x, game.me.y, true); }
   } else if (key === 'flame') {
-    damageEnemiesAround(x, y, 190, 58, game.me.id, 45); addEffect('boom', x, y, true);
+    if (slot === 0) { damageEnemiesAround(x, y, 190, 58, game.me.id, 45); addEffect('boom', x, y, true); }
+    else if (slot === 1) { for (let i = -1; i <= 1; i++) damageEnemiesAround(game.me.x + Math.cos(game.me.aim + i * 0.35) * 150, game.me.y + Math.sin(game.me.aim + i * 0.35) * 150, 95, 42, game.me.id, 35); addEffect('sigil', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(x + Math.cos(game.me.aim) * 120, y + Math.sin(game.me.aim) * 120, 235, 88, game.me.id, 70); addEffect('skybeam', x, y, true); addEffect('boom', x, y, true); }
+    else { game.upgrades.dmgMul += 0.08; game.me.hurtFlash = 0.35; damageEnemiesAround(game.me.x, game.me.y, 175, 46, game.me.id, 55); addEffect('boom', game.me.x, game.me.y, true); }
   } else if (key === 'storm') {
-    for (let i = 0; i < 4; i++) addEffect('skybeam', x + (Math.random() - 0.5) * 220, y + (Math.random() - 0.5) * 220, true);
-    damageEnemiesAround(x, y, 230, 72, game.me.id, 20);
+    if (slot === 0) { damageEnemiesAround(x, y, 230, 72, game.me.id, 20); addEffect('skybeam', x, y, true); }
+    else if (slot === 1) { game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 35); damageEnemiesAround(game.me.x, game.me.y, 180, 36, game.me.id, 60); addEffect('shield', game.me.x, game.me.y, true); }
+    else if (slot === 2) { for (let i = 0; i < 5; i++) addEffect('skybeam', x + (Math.random() - 0.5) * 260, y + (Math.random() - 0.5) * 260, true); damageEnemiesAround(x, y, 250, 54, game.me.id, 30); }
+    else { for (let i = 0; i < 8; i++) addEffect('skybeam', game.me.x + (Math.random() - 0.5) * 420, game.me.y + (Math.random() - 0.5) * 420, true); damageEnemiesAround(game.me.x, game.me.y, 310, 86, game.me.id, 80); }
   } else if (key === 'wind') {
-    game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 150, 30, CFG.world - 30);
-    game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 150, 30, CFG.world - 30);
-    damageEnemiesAround(x, y, 240, 48, game.me.id, 105); addEffect('sigil', x, y, true);
+    if (slot === 0) { damageEnemiesAround(x, y, 240, 48, game.me.id, 105); addEffect('sigil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 210, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 210, 30, CFG.world - 30); addEffect('shield', game.me.x, game.me.y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 58, game.me.id, 150); addEffect('heaven', game.me.x, game.me.y, true); }
+    else { game.upgrades.speedMul += 0.05; damageEnemiesAround(game.me.x, game.me.y, 330, 62, game.me.id, 125); addEffect('sigil', game.me.x, game.me.y, true); }
   } else if (key === 'antimagic') {
-    game.me.antiReady = 0; game.me.antiBurstUntil = now + 1300; game.me.antiBurstCount = 0;
-    damageEnemiesAround(x, y, 210, 88, game.me.id, 70); addEffect('heaven', x, y, true);
+    if (slot === 0) { game.me.antiReady = 0; game.me.antiBurstUntil = now + 1500; game.me.antiBurstCount = 0; addEffect('shield', game.me.x, game.me.y, true); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 230, 92, game.me.id, 80); addEffect('heaven', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 48, game.me.id, 40); game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 25); addEffect('sigil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(x, y, 300, 120, game.me.id, 120); game.me.antiReady = 0; addEffect('heaven', x, y, true); }
   }
-  game.nextGrimoireCast = now + (key === 'antimagic' ? 18000 : key === 'wind' ? 14000 : 12000);
-  toast(GRIMOIRES[key].name + ' cast');
+  game.grimoireCooldowns[slot] = now + [9000, 12000, 15000, 22000][slot];
+  toast(GRIMOIRES[key].moves[slot]);
 }
-function activateDevilPower() {
+function activateDevilPower(slot = 0) {
   if (!game || !game.me.alive) return;
   const active = Object.keys(game.contracts).find(k => game.contracts[k]);
   if (!active) return toast('No devil contract active');
-  const now = performance.now(), ready = game.nextDevilCast || 0;
-  if (now < ready) return toast('Devil power ready in ' + Math.ceil((ready - now) / 1000) + 's');
+  const def = DEVIL_CONTRACTS.find(c => c.id === active);
+  game.devilCooldowns ||= [0, 0, 0, 0];
+  const now = performance.now(), ready = game.devilCooldowns[slot] || 0;
+  if (now < ready) return toast(def.moves[slot] + ' ready in ' + Math.ceil((ready - now) / 1000) + 's');
   const x = game.me.x + Math.cos(game.me.aim) * 115, y = game.me.y + Math.sin(game.me.aim) * 115;
   if (active === 'fang') {
-    damageEnemiesAround(x, y, 170, 70, game.me.id, 75); addEffect('sigil', x, y, true);
+    if (slot === 0) { damageEnemiesAround(x, y, 170, 70, game.me.id, 75); addEffect('sigil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 160, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 160, 30, CFG.world - 30); damageEnemiesAround(game.me.x, game.me.y, 115, 52, game.me.id, 55); }
+    else if (slot === 2) { game.upgrades.dmgMul += 0.06; damageEnemiesAround(x, y, 190, 38, game.me.id, 25); addEffect('shield', x, y, true); }
+    else { damageEnemiesAround(game.me.x, game.me.y, 250, 92, game.me.id, 115); addEffect('heaven', game.me.x, game.me.y, true); }
   } else if (active === 'hunger') {
-    damageEnemiesAround(x, y, 160, 44, game.me.id, 30);
-    game.me.hp = Math.min(game.me.maxHp, game.me.hp + 35); addEffect('shield', game.me.x, game.me.y, true);
+    if (slot === 0) { damageEnemiesAround(x, y, 160, 44, game.me.id, 30); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 35); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 190, 38, game.me.id, 20); game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 30); }
+    else if (slot === 2) { game.upgrades.speedMul += 0.06; game.upgrades.rofMul += 0.06; addEffect('sigil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(game.me.x, game.me.y, 260, 78, game.me.id, 65); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 55); }
+    addEffect('shield', game.me.x, game.me.y, true);
   } else if (active === 'mirror') {
-    game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 45);
-    damageEnemiesAround(game.me.x, game.me.y, 150, 38, game.me.id, 55); addEffect('heaven', game.me.x, game.me.y, true);
+    if (slot === 0) { game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 45); damageEnemiesAround(game.me.x, game.me.y, 150, 38, game.me.id, 55); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 180, 64, game.me.id, 90); addEffect('break', x, y, true); }
+    else if (slot === 2) { game.me.shieldHits = Math.max(game.me.shieldHits, 3); damageEnemiesAround(game.me.x, game.me.y, 175, 42, game.me.id, 80); }
+    else { game.me.shieldPts = MAX_SHIELD; damageEnemiesAround(game.me.x, game.me.y, 250, 72, game.me.id, 120); }
+    addEffect('heaven', game.me.x, game.me.y, true);
   }
-  game.nextDevilCast = now + 16000;
-  toast('Devil power unleashed');
+  game.devilCooldowns[slot] = now + [9000, 12000, 15000, 22000][slot];
+  toast(def.moves[slot]);
 }
 function doInteract() {
   if (!game || !game.nearAction) return;
@@ -1715,8 +1749,8 @@ function selectMat(mat) {
 }
 press($('fireBtn'), () => input.fire = true, () => input.fire = false);
 press($('buildBtn'), toggleBuildMode);
-press($('grimBtn'), activateGrimoire);
-press($('devilBtn'), activateDevilPower);
+document.querySelectorAll('.grimBtn').forEach(b => press(b, () => activateGrimoire(+b.dataset.ability)));
+document.querySelectorAll('.devilBtn').forEach(b => press(b, () => activateDevilPower(+b.dataset.ability)));
 press($('shieldBtn'), deployShield);
 press($('wolfBtn'), summonHeavenWolves);
 press($('chestBtn'), doInteract);
@@ -3181,13 +3215,22 @@ function render() {
   wbtn.classList.toggle('show', g.me.weapon === 'heavenfang');
   wbtn.classList.toggle('off', wolfReady > 0);
   wbtn.innerHTML = wolfReady > 0 ? `☄<br>${Math.ceil(wolfReady / 1000)}s` : '☄<br>WOLVES';
-  const grReady = Math.max(0, (g.nextGrimoireCast || 0) - performance.now());
-  $('grimBtn').classList.toggle('off', !g.me.grimoire || grReady > 0);
-  $('grimBtn').innerHTML = grReady > 0 ? `📖<br>${Math.ceil(grReady / 1000)}s` : '📖<br>CAST';
   const hasDevil = Object.keys(g.contracts).some(k => g.contracts[k]);
-  const dvReady = Math.max(0, (g.nextDevilCast || 0) - performance.now());
-  $('devilBtn').classList.toggle('off', !hasDevil || dvReady > 0);
-  $('devilBtn').innerHTML = dvReady > 0 ? `契<br>${Math.ceil(dvReady / 1000)}s` : '契<br>DEVIL';
+  const activeDevil = Object.keys(g.contracts).find(k => g.contracts[k]);
+  const devilDefForButtons = DEVIL_CONTRACTS.find(c => c.id === activeDevil);
+  g.grimoireCooldowns ||= [0, 0, 0, 0]; g.devilCooldowns ||= [0, 0, 0, 0];
+  document.querySelectorAll('.grimBtn').forEach((b, i) => {
+    const ready = Math.max(0, (g.grimoireCooldowns[i] || 0) - performance.now());
+    const label = g.me.grimoire ? GRIMOIRES[g.me.grimoire].moves[i] : 'LOCKED';
+    b.classList.toggle('off', !g.me.grimoire || ready > 0);
+    b.innerHTML = ready > 0 ? `📖${i + 1}<br>${Math.ceil(ready / 1000)}s` : `📖${i + 1}<br>${label}`;
+  });
+  document.querySelectorAll('.devilBtn').forEach((b, i) => {
+    const ready = Math.max(0, (g.devilCooldowns[i] || 0) - performance.now());
+    const label = devilDefForButtons ? devilDefForButtons.moves[i] : 'LOCKED';
+    b.classList.toggle('off', !hasDevil || ready > 0);
+    b.innerHTML = ready > 0 ? `契${i + 1}<br>${Math.ceil(ready / 1000)}s` : `契${i + 1}<br>${label}`;
+  });
 
   // weapon panel (standard shooter layout: icon / name+rarity / ammo);
   // exotic weapons animate their color right in the panel
