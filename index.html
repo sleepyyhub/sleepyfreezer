@@ -701,6 +701,18 @@ const DEVIL_CONTRACTS = [
   { id: 'mirror', name: 'Mirror Contract', power: 'Reflect Halo', moves: ['Halo', 'Shard Burst', 'Backlash', 'Mirror Dome'], cost: 'Armor breaks faster.', solo: true,
     desc: '+25 shield now, but armor durability drains faster.',
     apply(g) { g.contracts.brittleArmor = true; g.me.shieldPts = Math.min(MAX_SHIELD, g.me.shieldPts + 25); } },
+  { id: 'blood', name: 'Blood Contract', power: 'Crimson Rite', moves: ['Needle Rain', 'Blood Step', 'Hemolock', 'Crimson Garden'], cost: 'Every cast costs a little HP.', solo: true,
+    desc: 'Gain brutal blood techniques, but devil powers drain your health.',
+    apply(g) { g.contracts.bloodTax = true; g.me.maxHp += 20; g.me.hp += 20; } },
+  { id: 'shadow', name: 'Shadow Contract', power: 'Night Crawl', moves: ['Shade Cut', 'Blink', 'Blackout', 'Abyss Maw'], cost: 'Max shield is reduced.', solo: true,
+    desc: 'Fast shadow techniques, but your shield capacity is lower.',
+    apply(g) { g.contracts.shadowVeil = true; g.me.shieldPts = Math.min(g.me.shieldPts, 50); g.upgrades.speedMul += 0.08; } },
+  { id: 'blade', name: 'Blade Contract', power: 'Iron Requiem', moves: ['Cross Cut', 'Saw Dash', 'Blade Cage', 'Executioner'], cost: 'Passive regen takes longer.',
+    solo: true, desc: 'High damage melee bursts, but recovery is harsher.',
+    apply(g) { g.contracts.slowRegen = true; g.upgrades.dmgMul += 0.10; } },
+  { id: 'curse', name: 'Curse Contract', power: 'Doom Script', moves: ['Hex Bolt', 'Weakness Seal', 'Grave Pulse', 'Doom Bell'], cost: 'You move slower while hurt.',
+    solo: true, desc: 'Debuff and burst curse powers, but wounds weigh you down.',
+    apply(g) { g.contracts.curseWeight = true; g.upgrades.rofMul += 0.06; } },
 ];
 
 const EYES    = ['Dot', 'Wide', 'Sleepy', 'Angry', 'Cyber', 'Star'];
@@ -1409,7 +1421,7 @@ function offerDevilContract() {
   const c = pool[(seededRng(game.seed + 7777)() * pool.length) | 0];
   game.pendingContract = c;
   $('contractName').textContent = c.name;
-  $('contractDesc').textContent = c.desc;
+  $('contractDesc').textContent = c.desc + ' Powers: ' + c.moves.join(' / ');
   $('contractCost').textContent = 'Sacrifice: ' + c.cost;
   $('contractOffer').classList.add('show');
 }
@@ -1659,6 +1671,10 @@ function abilityReady(bucket, slot) {
   bucket[slot] ??= 0;
   return Math.max(0, bucket[slot] - performance.now());
 }
+function addShieldPts(n) {
+  const cap = game.contracts.shadowVeil ? 50 : MAX_SHIELD;
+  game.me.shieldPts = Math.min(cap, game.me.shieldPts + n);
+}
 function activateGrimoire(slot = 0) {
   if (!game || !game.me.alive) return;
   const key = game.me.grimoire;
@@ -1679,7 +1695,7 @@ function activateGrimoire(slot = 0) {
     else { game.upgrades.dmgMul += 0.08; game.me.hurtFlash = 0.35; damageEnemiesAround(game.me.x, game.me.y, 175, 46, game.me.id, 55); addEffect('boom', game.me.x, game.me.y, true); }
   } else if (key === 'storm') {
     if (slot === 0) { damageEnemiesAround(x, y, 230, 72, game.me.id, 20); addEffect('skybeam', x, y, true); }
-    else if (slot === 1) { game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 35); damageEnemiesAround(game.me.x, game.me.y, 180, 36, game.me.id, 60); addEffect('shield', game.me.x, game.me.y, true); }
+    else if (slot === 1) { addShieldPts(35); damageEnemiesAround(game.me.x, game.me.y, 180, 36, game.me.id, 60); addEffect('shield', game.me.x, game.me.y, true); }
     else if (slot === 2) { for (let i = 0; i < 5; i++) addEffect('skybeam', x + (Math.random() - 0.5) * 260, y + (Math.random() - 0.5) * 260, true); damageEnemiesAround(x, y, 250, 54, game.me.id, 30); }
     else { for (let i = 0; i < 8; i++) addEffect('skybeam', game.me.x + (Math.random() - 0.5) * 420, game.me.y + (Math.random() - 0.5) * 420, true); damageEnemiesAround(game.me.x, game.me.y, 310, 86, game.me.id, 80); }
   } else if (key === 'wind') {
@@ -1690,7 +1706,7 @@ function activateGrimoire(slot = 0) {
   } else if (key === 'antimagic') {
     if (slot === 0) { game.me.antiReady = 0; game.me.antiBurstUntil = now + 1500; game.me.antiBurstCount = 0; addEffect('shield', game.me.x, game.me.y, true); }
     else if (slot === 1) { damageEnemiesAround(x, y, 230, 92, game.me.id, 80); addEffect('heaven', x, y, true); }
-    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 48, game.me.id, 40); game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 25); addEffect('sigil', game.me.x, game.me.y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 48, game.me.id, 40); addShieldPts(25); addEffect('sigil', game.me.x, game.me.y, true); }
     else { damageEnemiesAround(x, y, 300, 120, game.me.id, 120); game.me.antiReady = 0; addEffect('heaven', x, y, true); }
   }
   game.grimoireCooldowns[slot] = now + [9000, 12000, 15000, 22000][slot];
@@ -1712,16 +1728,37 @@ function activateDevilPower(slot = 0) {
     else { damageEnemiesAround(game.me.x, game.me.y, 250, 92, game.me.id, 115); addEffect('devil', game.me.x, game.me.y, true); }
   } else if (active === 'hunger') {
     if (slot === 0) { damageEnemiesAround(x, y, 160, 44, game.me.id, 30); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 35); }
-    else if (slot === 1) { damageEnemiesAround(x, y, 190, 38, game.me.id, 20); game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 30); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 190, 38, game.me.id, 20); addShieldPts(30); }
     else if (slot === 2) { game.upgrades.speedMul += 0.06; game.upgrades.rofMul += 0.06; addEffect('devil', game.me.x, game.me.y, true); }
     else { damageEnemiesAround(game.me.x, game.me.y, 260, 78, game.me.id, 65); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 55); }
     addEffect('shield', game.me.x, game.me.y, true);
   } else if (active === 'mirror') {
-    if (slot === 0) { game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + 45); damageEnemiesAround(game.me.x, game.me.y, 150, 38, game.me.id, 55); }
+    if (slot === 0) { addShieldPts(45); damageEnemiesAround(game.me.x, game.me.y, 150, 38, game.me.id, 55); }
     else if (slot === 1) { damageEnemiesAround(x, y, 180, 64, game.me.id, 90); addEffect('break', x, y, true); }
     else if (slot === 2) { game.me.shieldHits = Math.max(game.me.shieldHits, 3); damageEnemiesAround(game.me.x, game.me.y, 175, 42, game.me.id, 80); }
     else { game.me.shieldPts = MAX_SHIELD; damageEnemiesAround(game.me.x, game.me.y, 250, 72, game.me.id, 120); }
     addEffect('heaven', game.me.x, game.me.y, true);
+  } else if (active === 'blood') {
+    game.me.hp = Math.max(1, game.me.hp - (slot + 1) * 4);
+    if (slot === 0) { for (let i = -2; i <= 2; i++) damageEnemiesAround(x + i * 34, y, 80, 36, game.me.id, 28); addEffect('devil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 190, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 190, 30, CFG.world - 30); damageEnemiesAround(game.me.x, game.me.y, 130, 54, game.me.id, 50); addEffect('devil', game.me.x, game.me.y, true); }
+    else if (slot === 2) { damageEnemiesAround(x, y, 210, 42, game.me.id, 15); game.upgrades.spreadMul *= 0.96; addEffect('sigil', x, y, true); }
+    else { damageEnemiesAround(game.me.x, game.me.y, 310, 96, game.me.id, 80); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 30); addEffect('devil', game.me.x, game.me.y, true); }
+  } else if (active === 'shadow') {
+    if (slot === 0) { damageEnemiesAround(x, y, 185, 58, game.me.id, 80); addEffect('devil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 240, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 240, 30, CFG.world - 30); addEffect('sigil', game.me.x, game.me.y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 240, 35, game.me.id, 110); game.me.shieldHits = Math.max(game.me.shieldHits, 1); addEffect('devil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(x, y, 260, 110, game.me.id, 150); addEffect('devil', x, y, true); }
+  } else if (active === 'blade') {
+    if (slot === 0) { damageEnemiesAround(x, y, 140, 82, game.me.id, 105); addEffect('devil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 170, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 170, 30, CFG.world - 30); damageEnemiesAround(game.me.x, game.me.y, 120, 72, game.me.id, 95); addEffect('devil', game.me.x, game.me.y, true); }
+    else if (slot === 2) { for (let i = 0; i < 6; i++) damageEnemiesAround(game.me.x + Math.cos(i / 6 * Math.PI * 2) * 110, game.me.y + Math.sin(i / 6 * Math.PI * 2) * 110, 80, 42, game.me.id, 65); addEffect('sigil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(x, y, 190, 140, game.me.id, 170); addEffect('devil', x, y, true); }
+  } else if (active === 'curse') {
+    if (slot === 0) { damageEnemiesAround(x, y, 190, 50, game.me.id, 35); addEffect('sigil', x, y, true); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 230, 34, game.me.id, 20); game.upgrades.dmgMul += 0.04; addEffect('devil', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 64, game.me.id, 90); addEffect('boom', game.me.x, game.me.y, true); }
+    else { for (let i = 0; i < 6; i++) addEffect('skybeam', game.me.x + (Math.random() - 0.5) * 360, game.me.y + (Math.random() - 0.5) * 360, true); damageEnemiesAround(game.me.x, game.me.y, 320, 118, game.me.id, 125); }
   }
   game.devilCooldowns[slot] = now + [9000, 12000, 15000, 22000][slot];
   toast(def.moves[slot]);
@@ -2148,7 +2185,7 @@ function takePickup(id, mine, confirmed = false) {
       game.me.armorTier = pk.tier; game.me.armorDur = ARMOR[pk.tier].dur;
       awardXP(20 + pk.tier * 8, 'armor equipped');
     }
-    else if (pk.kind === 'pot') { game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + pk.amount); awardXP(10, 'shielded'); }
+    else if (pk.kind === 'pot') { addShieldPts(pk.amount); awardXP(10, 'shielded'); }
     else { game.ammo[pk.ammo] += CFG.ammoPack[pk.ammo]; awardXP(5, 'ammo'); }
     toast(pk.icon + ' ' + pk.label);
     net.send({ t: 'pickup_taken', id });
@@ -2577,7 +2614,8 @@ function update(dt) {
     }
     if (g.me.chargeShot) { mvx = 0; mvy = 0; }
     const grimSpeed = g.me.grimoire === 'wind' ? 0.18 : g.me.grimoire === 'storm' ? 0.08 : 0;
-    movePlayer(g.me, mvx, mvy, dt, 1 + g.upgrades.speedMul + grimSpeed);
+    const curseSlow = g.contracts.curseWeight && g.me.hp < g.me.maxHp * 0.55 ? -0.14 : 0;
+    movePlayer(g.me, mvx, mvy, dt, 1 + g.upgrades.speedMul + grimSpeed + curseSlow);
     if (pc.active) {
       // the mouse cursor IS the aim — recomputed every frame so walking
       // (which moves the camera under the cursor) keeps the aim true
@@ -2600,7 +2638,7 @@ function update(dt) {
     }
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
     // easier health: passive regeneration after a few calm seconds
-    if (g.me.hp < g.me.maxHp && performance.now() - (g.me.lastHurtT || 0) > CFG.regenDelay * 1000)
+    if (g.me.hp < g.me.maxHp && performance.now() - (g.me.lastHurtT || 0) > CFG.regenDelay * (g.contracts.slowRegen ? 1.8 : 1) * 1000)
       g.me.hp = Math.min(g.me.maxHp, g.me.hp + CFG.regenRate * dt);
   } else g.aimLock = null;
 
