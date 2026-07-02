@@ -409,7 +409,7 @@ const CFG = {
   shieldHits: 2,          // enemy hits the shield absorbs before breaking
   dummyZone: 660,         // top-left practice corner size (px)
   dummyHp: 50,            // practice dummies fall after this much damage
-  netHz: 15,              // state sync rate (multiplayer)
+  netHz: 30,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
   // (longer than before — the island is big and walks take time)
   stormPhases: [
@@ -459,14 +459,17 @@ const WEAPONS = {
   // ---- more normal guns (chest + NPC pool) ----
   judge:   { name: 'Judge',           icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 30, rof: 1.6,  range: 560,  spread: 0.02,  pellets: 1, speed: 1000, col: '#ffe9a8', len: 16, wid: 3, kick: 3 },
   twinbite:{ name: 'Twinbite',        icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 12, rof: 2.8,  range: 480,  spread: 0.05,  pellets: 2, speed: 950,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
+  nailer:  { name: 'Nailer',          icon: '🔩', rarity: 'common',    ammo: 'light',  dmg: 18, rof: 4.2,  range: 460,  spread: 0.06,  pellets: 1, speed: 900,  col: '#d8d0c0', len: 13, wid: 3, kick: 1.8 },
   wasp:    { name: 'Wasp',            icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 9,  rof: 9,    range: 380,  spread: 0.11,  pellets: 1, speed: 850,  col: '#ffe9a8', len: 12, wid: 2, kick: 1 },
   drifter: { name: 'Drifter',         icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 16, rof: 5,    range: 600,  spread: 0.04,  pellets: 1, speed: 1100, col: '#d8ffd0', len: 18, wid: 3, kick: 2 },
   bruiser: { name: 'Bruiser',         icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 24, rof: 2.2,  range: 500,  spread: 0.03,  pellets: 1, speed: 1000, col: '#d8ffd0', len: 16, wid: 3, kick: 3 },
   ripsaw:  { name: 'Ripsaw',          icon: '💥', rarity: 'uncommon',  ammo: 'shell',  dmg: 8,  rof: 1.8,  range: 200,  spread: 0.3,   pellets: 4, speed: 750,  col: '#ffd27a', len: 10, wid: 3, kick: 4 },
   static:  { name: 'Static',          icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 11, rof: 8.5,  range: 420,  spread: 0.08,  pellets: 1, speed: 900,  col: '#d8ffd0', len: 13, wid: 3, kick: 1.2 },
+  burst:   { name: 'Burstline',       icon: '≋', rarity: 'uncommon',  ammo: 'light',  dmg: 14, rof: 4.8,  range: 620,  spread: 0.035, pellets: 3, speed: 1050, col: '#d8ffd0', len: 16, wid: 3, kick: 2.4 },
   longtooth:{ name: 'Longtooth',      icon: '🎯', rarity: 'rare',      ammo: 'light',  dmg: 34, rof: 1.6,  range: 850,  spread: 0.01,  pellets: 1, speed: 1400, col: '#a8d9ff', len: 26, wid: 3, kick: 4 },
   undertaker:{ name: 'Undertaker',    icon: '💥', rarity: 'rare',      ammo: 'shell',  dmg: 8,  rof: 2.2,  range: 250,  spread: 0.22,  pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
   warhound:{ name: 'Warhound',        icon: '🔫', rarity: 'rare',      ammo: 'light',  dmg: 22, rof: 3.6,  range: 640,  spread: 0.03,  pellets: 1, speed: 1150, col: '#a8d9ff', len: 20, wid: 3, kick: 2.5 },
+  frostbite:{ name: 'Frostbite',      icon: '❄', rarity: 'rare',      ammo: 'energy', dmg: 28, rof: 2.8,  range: 700,  spread: 0.018, pellets: 1, speed: 1200, col: '#9fe6ff', len: 22, wid: 4, kick: 3 },
   minigun: { name: 'Meatgrinder',     icon: '🌀', rarity: 'epic',      ammo: 'light',  dmg: 8,  rof: 16,   range: 520,  spread: 0.12,  pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2, special: true },
   hydra:   { name: 'Hydra',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 13, rof: 4.2,  range: 560,  spread: 0.05,  pellets: 3, speed: 1000, col: '#7dff9b', len: 18, wid: 3, kick: 3,   special: true },
   dragon:  { name: "Dragon's Breath", icon: '🔥', rarity: 'epic',      ammo: 'shell',  dmg: 7,  rof: 11,   range: 210,  spread: 0.34,  pellets: 2, speed: 480,  col: '#ff9b3d', len: 10, wid: 5, kick: 1,   special: true },
@@ -480,15 +483,18 @@ const WEAPONS = {
   hailstorm:{ name: 'Hailstorm',      icon: '🌨', rarity: 'epic', ammo: 'light',  dmg: 10, rof: 2.6, range: 520, spread: 0.09, pellets: 4, speed: 1000, col: '#cfe8ff', len: 14, wid: 3, kick: 3 },
   magma:   { name: 'Magma',           icon: '🌋', rarity: 'epic', ammo: 'shell',  dmg: 8,  rof: 12,  range: 240, spread: 0.3,  pellets: 2, speed: 500,  col: '#ff7b3d', len: 10, wid: 5, kick: 1 },
   falcon:  { name: 'Falcon',          icon: '🦅', rarity: 'epic', ammo: 'light',  dmg: 34, rof: 2.4, range: 620, spread: 0.015, pellets: 1, speed: 1300, col: '#e0a0ff', len: 20, wid: 3, kick: 3.5 },
+  pulse:   { name: 'Pulseburn',       icon: '◆', rarity: 'epic', ammo: 'energy', dmg: 24, rof: 5.5, range: 560, spread: 0.035, pellets: 2, speed: 1100, col: '#d8a0ff', len: 19, wid: 4, kick: 2.5 },
   // ---- more legendary chest weapons ----
   executioner:{ name: 'Executioner',  icon: '🪓', rarity: 'legendary', ammo: 'shell',  dmg: 10, rof: 1.6, range: 300, spread: 0.24, pellets: 6, speed: 850,  col: '#ffc46b', len: 13, wid: 4, kick: 5, big: true },
   tempest: { name: 'Tempest',         icon: '🌪', rarity: 'legendary', ammo: 'light',  dmg: 20, rof: 6.5, range: 620, spread: 0.04, pellets: 1, speed: 1200, col: '#ffc46b', len: 20, wid: 3, kick: 2 },
   kingslayer:{ name: 'Kingslayer',    icon: '🗡', rarity: 'legendary', ammo: 'energy', dmg: 55, rof: 1.4, range: 1000, spread: 0.005, pellets: 1, speed: 1700, col: '#ffdf9e', len: 30, wid: 3, kick: 5, big: true },
+  solstice:{ name: 'Solstice',        icon: '✦', rarity: 'legendary', ammo: 'energy', dmg: 38, rof: 3.4, range: 760, spread: 0.012, pellets: 2, speed: 1500, col: '#fff0a8', len: 28, wid: 4, kick: 5, big: true },
   // ---- more mythic chest weapons ----
   reaper:  { name: 'Reaper',          icon: '⚰️', rarity: 'mythic', ammo: 'energy', dmg: 16, rof: 6,   range: 550,  spread: 0.05, pellets: 1, speed: 1300, col: '#b8ffe8', len: 22, wid: 4, kick: 2, big: true, pierce: true },
   cataclysm:{ name: 'Cataclysm',      icon: '🌊', rarity: 'mythic', ammo: 'shell',  dmg: 18, rof: 1.2, range: 340,  spread: 0.18, pellets: 3, speed: 800,  col: '#7fd4ff', len: 14, wid: 5, kick: 6, big: true, splash: 60 },
   nightfall:{ name: 'Nightfall',      icon: '🌑', rarity: 'mythic', ammo: 'energy', dmg: 110, rof: 0.7, range: 1400, spread: 0.001, pellets: 1, speed: 2200, col: '#c9b6ff', len: 50, wid: 3, kick: 9, big: true },
   sunburst:{ name: 'Sunburst',        icon: '🌞', rarity: 'mythic', ammo: 'energy', dmg: 12, rof: 11,  range: 480,  spread: 0.06, pellets: 1, speed: 1100, col: '#ffe45f', len: 18, wid: 4, kick: 1.2, big: true },
+  eclipse:{ name: 'Eclipse',          icon: '◐', rarity: 'mythic', ammo: 'energy', dmg: 72, rof: 1.6, range: 920, spread: 0.004, pellets: 1, speed: 1800, col: '#e0d3ff', len: 42, wid: 5, kick: 7, big: true, pierce: true },
   // ---- more building specials ----
   earthshaker:{ name: 'Earthshaker',  icon: '🪨', rarity: 'legendary', ammo: 'energy', dmg: 45, rof: 1,  range: 520, spread: 0.02, pellets: 1, speed: 700,  col: '#d9a066', len: 18, wid: 6, kick: 7, big: true, splash: 70, special: true },
   venom:   { name: 'Venom',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 10, rof: 10, range: 440, spread: 0.1,  pellets: 1, speed: 950,  col: '#8aff5d', len: 14, wid: 3, kick: 1, special: true },
@@ -506,7 +512,7 @@ const WEAPONS = {
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
-const NORMAL_GUNS = ['pistol', 'smg', 'shotgun', 'judge', 'wasp', 'drifter', 'bruiser', 'static', 'warhound']; // what NPCs actually carry
+const NORMAL_GUNS = ['pistol', 'smg', 'shotgun', 'judge', 'nailer', 'wasp', 'drifter', 'bruiser', 'static', 'burst', 'warhound', 'frostbite']; // what NPCs actually carry
 // weapon keys grouped by rarity, exotics excluded (those are boss-only)
 const W_BY = {};
 for (const k in WEAPONS) if (!WEAPONS[k].exotic) (W_BY[WEAPONS[k].rarity] = W_BY[WEAPONS[k].rarity] || []).push(k);
@@ -546,16 +552,18 @@ const UPGRADES = [
 // Armor tiers: soak a % of every hit while durability lasts, then break.
 const ARMOR = [null,
   { name: 'Leather Armor',  icon: '🦺', reduce: 0.25, dur: 150, rarity: 'uncommon' },
+  { name: 'Scout Vest',     icon: '🎽', reduce: 0.32, dur: 190, rarity: 'rare' },
   { name: 'Iron Armor',     icon: '🛡', reduce: 0.4,  dur: 250, rarity: 'epic' },
-  { name: 'Guardian Plate', icon: '⚜️', reduce: 0.55, dur: 400, rarity: 'legendary' },
+  { name: 'Storm Mail',     icon: '⛈', reduce: 0.48, dur: 330, rarity: 'mythic' },
+  { name: 'Guardian Plate', icon: '⚜️', reduce: 0.6,  dur: 460, rarity: 'legendary' },
   { name: 'Exotic Aegis',   icon: '💠', reduce: 0.82, dur: 900, rarity: 'exotic' },
 ];
 const MAX_SHIELD = 100; // shield potions fill a blue bar absorbed before HP
 
-const EYES    = ['Dot', 'Wide', 'Sleepy'];
-const HAIRS   = ['Spiky', 'Bowl', 'Cap'];
-const OUTFITS = ['Blue', 'Red', 'Green', 'Purple'];
-const OUTFIT_COLORS = ['#2a6de0', '#d93030', '#25a03e', '#8a3fd9'];
+const EYES    = ['Dot', 'Wide', 'Sleepy', 'Angry', 'Cyber', 'Star'];
+const HAIRS   = ['Spiky', 'Bowl', 'Cap', 'Mohawk', 'Long', 'Crown'];
+const OUTFITS = ['Blue', 'Red', 'Green', 'Purple', 'Gold', 'Shadow', 'Ice', 'Lime'];
+const OUTFIT_COLORS = ['#2a6de0', '#d93030', '#25a03e', '#8a3fd9', '#d9a21e', '#2f3545', '#36b8d8', '#89d638'];
 
 /* ═══════════ 2. UTILITIES ═══════════ */
 // mulberry32: tiny seeded PRNG so every client generates the same map
@@ -604,10 +612,22 @@ function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
     }
   } else if (look.hair === 1) {     // bowl cut: arc over the head
     ctx.beginPath(); ctx.arc(0, -2, r * 0.62, Math.PI, 2 * Math.PI); ctx.fill();
-  } else {                          // cap: colored beanie band
+  } else if (look.hair === 2) {     // cap: colored beanie band
     ctx.fillStyle = oc;
     ctx.beginPath(); ctx.arc(0, -3, r * 0.6, Math.PI, 2 * Math.PI); ctx.fill();
     ctx.fillRect(-r * 0.6, -5, r * 1.2, 4);
+  } else if (look.hair === 3) {     // mohawk
+    ctx.fillStyle = '#f0d060';
+    ctx.beginPath(); ctx.moveTo(-3, -r * 0.2); ctx.lineTo(0, -r * 1.15); ctx.lineTo(3, -r * 0.2); ctx.fill();
+  } else if (look.hair === 4) {     // long
+    ctx.fillStyle = '#2b1a10';
+    ctx.beginPath(); ctx.ellipse(0, 5, r * 0.72, r * 0.85, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ffd9a8'; ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill();
+  } else {                          // crown
+    ctx.fillStyle = '#ffd94d';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.55, -r * 0.55); ctx.lineTo(-r * 0.3, -r * 1.0); ctx.lineTo(0, -r * 0.58);
+    ctx.lineTo(r * 0.3, -r * 1.0); ctx.lineTo(r * 0.55, -r * 0.55); ctx.closePath(); ctx.fill();
   }
   // eye styles
   ctx.fillStyle = '#222';
@@ -618,9 +638,42 @@ function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
     ctx.beginPath(); ctx.arc(-4, 1, 4, 0, 7); ctx.arc(4, 1, 4, 0, 7); ctx.fill();
     ctx.fillStyle = '#222';
     ctx.beginPath(); ctx.arc(-4, 1, 1.8, 0, 7); ctx.arc(4, 1, 1.8, 0, 7); ctx.fill();
-  } else {                          // sleepy: half-closed lines
+  } else if (look.eye === 2) {      // sleepy: half-closed lines
     ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(-7, 1); ctx.lineTo(-2, 1); ctx.moveTo(2, 1); ctx.lineTo(7, 1); ctx.stroke();
+  } else if (look.eye === 3) {      // angry
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(-8, -1); ctx.lineTo(-2, 2); ctx.moveTo(8, -1); ctx.lineTo(2, 2); ctx.stroke();
+  } else if (look.eye === 4) {      // cyber
+    ctx.strokeStyle = '#66f6ff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.rect(-9, -3, 7, 5); ctx.rect(2, -3, 7, 5); ctx.stroke();
+  } else {                          // star
+    ctx.fillStyle = '#ffd94d';
+    ctx.beginPath(); ctx.arc(-4, 0, 2.7, 0, 7); ctx.arc(4, 0, 2.7, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawArmorOverlay(ctx, x, y, angle, tier, r = CFG.playerR) {
+  if (!tier || !ARMOR[tier]) return;
+  const A = ARMOR[tier], col = rarityCol(A.rarity);
+  ctx.save(); ctx.translate(x, y);
+  ctx.strokeStyle = col; ctx.lineWidth = tier === 4 ? 4 : 3;
+  ctx.beginPath(); ctx.arc(0, 0, r + 4, 0.18, Math.PI * 1.82); ctx.stroke();
+  ctx.rotate(angle);
+  ctx.fillStyle = col;
+  ctx.globalAlpha = tier === 4 ? 0.52 : 0.34;
+  ctx.fillRect(-r * 0.62, -r * 0.28, r * 1.24, r * 0.7);
+  ctx.globalAlpha = 1;
+  if (tier >= 3) {
+    ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-r * 0.65, -r * 0.45); ctx.lineTo(0, -r * 0.15); ctx.lineTo(r * 0.65, -r * 0.45); ctx.stroke();
+  }
+  if (ARMOR[tier].rarity === 'exotic') {
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = rarityCol('exotic'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r + 9, 0, 7); ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
@@ -957,7 +1010,7 @@ function makePlayer(id, name, look, team, x, y, isBot) {
     armorTier: 0, armorDur: 0, // equipped ARMOR tier + remaining durability
     weapon: 'pistol', lastShot: 0, hurtFlash: 0, chargeShot: null,
     // remote interpolation targets
-    tx: x, ty: y, taim: -Math.PI / 2,
+    tx: x, ty: y, px: x, py: y, vx: 0, vy: 0, taim: -Math.PI / 2, lastStateT: performance.now(),
     // bot AI state
     ai: isBot ? { mode: 'wander', wx: x, wy: y, think: 0 } : null,
   };
@@ -1595,7 +1648,7 @@ function guardianDied(p) {
     // building's special, exotic armor, and supplies
     spawnItem({ id: 'bw' + i, x: p.x, y: p.y, kind: 'weapon', weapon: bld.exotic });
     spawnItem({ id: 'bs' + i, x: p.x + 50, y: p.y - 10, kind: 'weapon', weapon: bld.drop });
-    spawnItem({ id: 'bar' + i, x: p.x - 34, y: p.y - 42, kind: 'armor', tier: 4 });
+    spawnItem({ id: 'bar' + i, x: p.x - 34, y: p.y - 42, kind: 'armor', tier: 6 });
     spawnItem({ id: 'ba' + i, x: p.x + 20, y: p.y + 44, kind: 'ammo', ammo: 'energy' });
     spawnItem({ id: 'bh' + i, x: p.x - 46, y: p.y + 20, kind: 'heal', amount: 80 });
     addKillFeed('👑 RUIN BOSS down — EXOTIC loot dropped!');
@@ -1669,26 +1722,26 @@ function chestLoot(tier, rng) {
   const P = r => W_BY[r]; // weapon pool by rarity (exotics never in chests)
   if (tier === 'epic') return [
     { kind: 'weapon', weapon: rng() < 0.55 ? pick(P('epic')) : pick(P('rare')) },
-    rng() < 0.4 ? { kind: 'armor', tier: 2 } : { kind: 'pot', amount: 25 },
+    rng() < 0.4 ? { kind: 'armor', tier: rng() < 0.5 ? 2 : 3 } : { kind: 'pot', amount: 25 },
     { kind: 'heal', amount: 50 },
     { kind: 'ammo', ammo: pick(['light', 'shell', 'energy']) },
   ];
   if (tier === 'legendary') return [
     { kind: 'weapon', weapon: rng() < 0.5 ? pick(P('legendary')) : pick(P('epic')) },
-    rng() < 0.5 ? { kind: 'armor', tier: rng() < 0.4 ? 3 : 2 } : { kind: 'pot', amount: 50 },
+    rng() < 0.5 ? { kind: 'armor', tier: rng() < 0.35 ? 5 : 4 } : { kind: 'pot', amount: 50 },
     { kind: 'ammo', ammo: 'energy' },
     { kind: 'mat', mat: pick(['brick', 'metal']), amount: 60 },
   ];
   if (tier === 'mythic') return [
     { kind: 'weapon', weapon: pick(P('mythic')) },
     { kind: 'weapon', weapon: pick(P('mythic').concat(P('legendary'))) },
-    { kind: 'armor', tier: 3 },
+    { kind: 'armor', tier: rng() < 0.55 ? 5 : 4 },
     { kind: 'pot', amount: 50 },
     { kind: 'ammo', ammo: 'energy' },
   ];
   return [ // normal: commons through rares, small defensive rolls
     { kind: 'weapon', weapon: pick(P('common').concat(P('uncommon'), P('rare'))) },
-    rng() < 0.3 ? { kind: 'armor', tier: 1 } : rng() < 0.5 ? { kind: 'pot', amount: 25 }
+    rng() < 0.3 ? { kind: 'armor', tier: rng() < 0.5 ? 1 : 2 } : rng() < 0.5 ? { kind: 'pot', amount: 25 }
       : rng() < 0.7 ? { kind: 'heal', amount: 30 } : { kind: 'mat', mat: pick(['wood', 'brick', 'metal']), amount: 40 },
     { kind: 'ammo', ammo: pick(['light', 'shell']) },
   ];
@@ -1920,8 +1973,13 @@ function movePlayer(p, mx, my, dt, speedMul = 1) {
 
 function applyPeerState(m) {
   const p = game.players[m.id]; if (!p) return;
+  const now = performance.now(), age = Math.max(16, now - (p.lastStateT || now));
+  p.vx = (m.x - (p.tx ?? p.x)) / (age / 1000);
+  p.vy = (m.y - (p.ty ?? p.y)) / (age / 1000);
+  p.px = p.x; p.py = p.y; p.lastStateT = now;
   p.tx = m.x; p.ty = m.y; p.taim = m.aim;
   p.hp = m.hp; p.weapon = m.weapon; p.shieldHits = m.sh || 0; p.shieldPts = m.sp || 0;
+  p.armorTier = m.ar || 0; p.armorDur = m.ad || 0;
   if (p.alive && !m.alive) { p.alive = false; addEffect('break', p.x, p.y); }
 }
 
@@ -2027,9 +2085,17 @@ function update(dt) {
   for (const id in g.players) {
     const p = g.players[id];
     if (p === g.me || (p.isBot && g.npcAuthority)) continue;
-    p.x += (p.tx - p.x) * Math.min(1, dt * 12);
-    p.y += (p.ty - p.y) * Math.min(1, dt * 12);
-    p.aim = p.taim;
+    const lead = Math.min(0.12, (performance.now() - (p.lastStateT || performance.now())) / 1000);
+    const tx = p.tx + clamp(p.vx || 0, -CFG.playerSpeed * 1.5, CFG.playerSpeed * 1.5) * lead;
+    const ty = p.ty + clamp(p.vy || 0, -CFG.playerSpeed * 1.5, CFG.playerSpeed * 1.5) * lead;
+    const snap = dist2(p.x, p.y, tx, ty) > 280 * 280;
+    if (snap) { p.x = tx; p.y = ty; }
+    else {
+      const k = 1 - Math.exp(-dt * 10);
+      p.x += (tx - p.x) * k;
+      p.y += (ty - p.y) * k;
+    }
+    p.aim += Math.atan2(Math.sin(p.taim - p.aim), Math.cos(p.taim - p.aim)) * Math.min(1, dt * 14);
   }
 
   // decay timers + drop claimed loot from the list
@@ -2044,7 +2110,7 @@ function update(dt) {
     const now = performance.now();
     if (now - g.lastNetSend > 1000 / CFG.netHz) {
       g.lastNetSend = now;
-      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon, sh: g.me.shieldHits, sp: g.me.shieldPts });
+      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon, sh: g.me.shieldHits, sp: g.me.shieldPts, ar: g.me.armorTier, ad: g.me.armorDur });
       if (g.npcAuthority) { // host also ships a guardian snapshot
         const list = [];
         for (const id in g.players) { const p = g.players[id];
@@ -2360,6 +2426,7 @@ function render() {
       ctx.beginPath(); ctx.arc(x, y, bodyR + 18, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2); ctx.stroke();
     }
     drawCharacter(ctx, x, y, p.aim, p.look, bodyR);
+    drawArmorOverlay(ctx, x, y, p.aim, p.armorTier, bodyR);
     // deployed shield: cyan arc facing the aim; dashed once cracked
     if (p.shieldHits > 0) {
       const cracked = p.shieldHits < CFG.shieldHits;

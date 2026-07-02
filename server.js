@@ -168,7 +168,7 @@ wss.on('connection', ws => {
 
       /* ----- in-match relay ----- */
       case 'state':      // my position/hp/aim -> everyone else
-        if (party) broadcast(party, { t: 'peer_state', id: ws.id, x: m.x, y: m.y, aim: m.aim, hp: m.hp, alive: m.alive, weapon: m.weapon }, ws.id);
+        if (party) broadcast(party, { t: 'peer_state', id: ws.id, x: m.x, y: m.y, aim: m.aim, hp: m.hp, alive: m.alive, weapon: m.weapon, sh: m.sh, sp: m.sp, ar: m.ar, ad: m.ad }, ws.id);
         break;
       case 'shoot':      // replayed visually + simulated on peers
         if (party) broadcast(party, { t: 'peer_shoot', by: ws.id, x: m.x, y: m.y, aim: m.aim, weapon: m.weapon }, ws.id);
@@ -227,7 +227,7 @@ function leaveParty(ws) {
 function cleanName(n) { return String(n || 'Player').replace(/[^\w \-!?.]/g, '').slice(0, 12) || 'Player'; }
 function cleanLook(l) {
   l = l || {};
-  return { eye: clampInt(l.eye, 0, 2), hair: clampInt(l.hair, 0, 2), outfit: clampInt(l.outfit, 0, 3) };
+  return { eye: clampInt(l.eye, 0, 5), hair: clampInt(l.hair, 0, 5), outfit: clampInt(l.outfit, 0, 7) };
 }
 function clampInt(v, a, b) { v = v | 0; return v < a ? a : v > b ? b : v; }
 
