@@ -35,16 +35,29 @@ All buttons are ≥ 56 px (above the 44 pt minimum); everything uses
 
 - **Movement & collision** — walls and rocks block, sliding along surfaces; floors give a
   small speed boost, ramps can be vaulted slowly.
-- **Combat** — pistol / SMG / shotgun with distinct damage, fire rate, spread and range;
-  muzzle flash, colored bullet tracers, hit markers, floating damage numbers, kill feed,
-  and screen shake on firing and taking hits.
-- **Ruined buildings** — 5 seeded run-down structures with destructible cracked walls,
+- **Combat** — 10 weapons across 6 rarity tiers (Common → Mythic), each with a tough
+  name and distinct stats: Rustfang (pistol), Hornet (SMG), Gravedigger (shotgun), plus
+  7 specials — Meatgrinder (minigun), Hydra (3-round burst), Dragon's Breath (flamer),
+  Widowmaker (railgun), Deadeye (sniper), Phantom Lance (pierces through players) and
+  Doomsday (explosive splash damage). Muzzle flash, per-weapon tracers, hit markers,
+  damage numbers, kill feed, screen shake.
+- **Ammunition** — three ammo types (Light / Shell / Energy) consumed per shot, shown
+  next to your weapon in the HUD; refill from ammo packs in chests and NPC drops.
+  NPCs never run dry.
+- **Auto-aim** — within ~320px and clear line of sight, your aim locks on (red reticle);
+  dragging the aim zone overrides it.
+- **Ruined buildings** — 10 seeded run-down structures with destructible cracked walls,
   door gaps, collapsed chunks, debris, and a broken roof that lifts when you walk inside.
-- **Guardians & special weapons** — each building is defended by a tough "Ruin Guardian"
-  (250 hp, red aura). Defeat it and it drops a special weapon beacon: the **Railgun**
-  (huge damage, long blue beam) or the **Minigun** (very high fire rate). In multiplayer
-  the party host's client simulates guardians and syncs them to everyone.
-- **Chests** — 14 per map, seeded loot (weapons, medkits, materials) with pop-open animation.
+- **Guardians, THE WARDEN & special weapons** — each building is defended by a "Ruin
+  Guardian" (250 hp, red aura) armed with a real gun; guardians never leave their house.
+  Each drops one of the 7 special weapons plus energy ammo. Kill all 10 and **THE
+  WARDEN** (800 hp boss) awakens at the map center, hunts players across the whole map,
+  and drops another special + supplies. In multiplayer the party host's client simulates
+  all NPCs and syncs them to everyone.
+- **Chests & ground loot** — 21 chests in four tiers (14 Normal, 4 Epic, 2 Legendary,
+  1 Mythic), color-coded with matching glows and minimap dots. Opening a chest spills
+  its loot onto the ground as rarity-colored pickups — stand on an item to see its name,
+  rarity and stats on an item card, then take only what you want.
 - **Presentation** — textured grass, drop shadows, cinematic vignette, red hurt flash,
   and a live minimap (buildings, chests, storm circle, you, teammates, guardians).
 - **Building** — grid-based wall/ramp/floor in 3 materials with per-piece HP; pieces are

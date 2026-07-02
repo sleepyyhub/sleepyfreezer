@@ -115,6 +115,12 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   padding:12px 26px;border-radius:12px;font-size:18px;font-weight:700;z-index:200;display:none}
 #rotateHint{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;align-items:center;
   justify-content:center;gap:12px;background:#101418f2;font-size:30px;font-weight:800;text-align:center;padding:24px}
+/* item card: shows name, rarity and stats of the loot you're standing on */
+#itemInfo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(104px + env(safe-area-inset-bottom));
+  background:rgba(8,14,24,.85);border:2px solid #888;border-radius:12px;padding:8px 18px;text-align:center;
+  display:none;pointer-events:none;max-width:380px}
+#itemInfo .nm{font-size:17px;font-weight:800}
+#itemInfo .st{font-size:13px;color:#cfd8e6;margin-top:2px}
 </style>
 </head>
 <body>
@@ -199,6 +205,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
   <div id="weaponInfo">Pistol</div>
   <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
+  <div id="itemInfo"><div class="nm"></div><div class="st"></div></div>
   <div id="buildMenu">
     <button class="pieceBtn sel" data-piece="wall">▮ WALL</button>
     <button class="pieceBtn" data-piece="ramp">◢ RAMP</button>
@@ -235,7 +242,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 
 /* ═══════════ 1. CONFIG ═══════════ */
 const CFG = {
-  world: 2400,            // square world size in px
+  world: 2800,            // square world size in px (roomier: 10 buildings)
   grid: 60,               // build grid cell size
   playerR: 16,            // player collision radius
   playerSpeed: 220,       // px per second
@@ -244,14 +251,18 @@ const CFG = {
   buildCost: 10,          // material cost per piece
   buildHp: { wood: 150, brick: 300, metal: 450, ruin: 200 },
   startMats: { wood: 60, brick: 30, metal: 15 },
-  chestCount: 14,
-  treeCount: 34,
-  rockCount: 18,
+  chestCount: 14,         // normal chests
+  epicChests: 4, legendaryChests: 2, mythicChests: 1,
+  treeCount: 44,
+  rockCount: 24,
   botCount: 7,            // opponents in solo mode
-  buildingCount: 5,       // run-down buildings with guardians inside
+  buildingCount: 10,      // run-down buildings with guardians inside
   guardHp: 250,           // special-enemy health
   guardAggro: 340,        // how far from home a guardian notices/chases you
+  bossHp: 800,            // THE WARDEN, spawns when every guardian is dead
   autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
+  startAmmo: { light: 120, shell: 24, energy: 0 },
+  ammoPack:  { light: 60,  shell: 12, energy: 15 }, // per ammo pickup
   netHz: 15,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
   stormPhases: [
@@ -259,17 +270,48 @@ const CFG = {
   ],
 };
 
+// Item rarity tiers: every weapon/chest/pickup is color-coded by these.
+const RARITY = {
+  common:    { name: 'Common',    col: '#b8c0cc' },
+  uncommon:  { name: 'Uncommon',  col: '#4fce5d' },
+  rare:      { name: 'Rare',      col: '#3f8cff' },
+  epic:      { name: 'Epic',      col: '#c45df0' },
+  legendary: { name: 'Legendary', col: '#ff9f2a' },
+  mythic:    { name: 'Mythic',    col: '#ffd94d' },
+};
+// Ammunition types. YOU consume ammo per shot; NPCs never run dry.
+const AMMO = {
+  light:  { name: 'Light' },
+  shell:  { name: 'Shell' },
+  energy: { name: 'Energy' },
+};
+// Chest tiers: better chests spill better loot.
+const CHEST_TIERS = {
+  normal:    { name: 'Normal',    col: '#e0a52a', glow: '#ffd94d' },
+  epic:      { name: 'Epic',      col: '#8a3fd9', glow: '#c45df0' },
+  legendary: { name: 'Legendary', col: '#d97a1e', glow: '#ff9f2a' },
+  mythic:    { name: 'Mythic',    col: '#c22e2e', glow: '#ffd94d' },
+};
+
 // Weapon table. range = how far a bullet travels before despawning.
 // col/len/wid style the tracer; kick = screen shake when YOU fire it.
-// railgun + minigun are "special" weapons dropped only by guardians.
+// pierce = passes through players; splash = area damage on impact.
+// The 7 `special` weapons only come from guardians, the boss, and
+// legendary/mythic chests.
 const WEAPONS = {
-  pistol:  { name: 'Pistol',  icon: '🔫', dmg: 20, rof: 2.5, range: 520, spread: 0.03, pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
-  smg:     { name: 'SMG',     icon: '🔫', dmg: 12, rof: 8.0, range: 430, spread: 0.09, pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 1.5 },
-  shotgun: { name: 'Shotgun', icon: '💥', dmg: 9,  rof: 1.1, range: 270, spread: 0.26, pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
-  railgun: { name: 'Railgun', icon: '⚡', dmg: 60, rof: 0.9, range: 900, spread: 0.005, pellets: 1, speed: 1600, col: '#8fdcff', len: 34, wid: 4, kick: 6, big: true },
-  minigun: { name: 'Minigun', icon: '🌀', dmg: 8,  rof: 13,  range: 520, spread: 0.12, pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2 },
-  guard:   { name: 'Guard Blaster', icon: '👁', dmg: 10, rof: 2.4, range: 400, spread: 0.14, pellets: 1, speed: 700, col: '#ff7bd0', len: 14, wid: 3 },
+  pistol:  { name: 'Rustfang',        icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 20, rof: 2.5, range: 520,  spread: 0.03,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
+  smg:     { name: 'Hornet',          icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 12, rof: 8.0, range: 430,  spread: 0.09,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 1.5 },
+  shotgun: { name: 'Gravedigger',     icon: '💥', rarity: 'rare',      ammo: 'shell',  dmg: 9,  rof: 1.1, range: 270,  spread: 0.26,  pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
+  minigun: { name: 'Meatgrinder',     icon: '🌀', rarity: 'epic',      ammo: 'light',  dmg: 8,  rof: 13,  range: 520,  spread: 0.12,  pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2, special: true },
+  hydra:   { name: 'Hydra',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 13, rof: 3.2, range: 560,  spread: 0.05,  pellets: 3, speed: 1000, col: '#7dff9b', len: 18, wid: 3, kick: 3,   special: true },
+  dragon:  { name: "Dragon's Breath", icon: '🔥', rarity: 'epic',      ammo: 'shell',  dmg: 7,  rof: 9,   range: 210,  spread: 0.34,  pellets: 2, speed: 480,  col: '#ff9b3d', len: 10, wid: 5, kick: 1,   special: true },
+  railgun: { name: 'Widowmaker',      icon: '⚡', rarity: 'legendary', ammo: 'energy', dmg: 60, rof: 0.9, range: 900,  spread: 0.005, pellets: 1, speed: 1600, col: '#8fdcff', len: 34, wid: 4, kick: 6, big: true, special: true },
+  deadeye: { name: 'Deadeye',         icon: '🎯', rarity: 'legendary', ammo: 'energy', dmg: 90, rof: 0.6, range: 1300, spread: 0.002, pellets: 1, speed: 2000, col: '#ffffff', len: 44, wid: 3, kick: 7, big: true, special: true },
+  phantom: { name: 'Phantom Lance',   icon: '👻', rarity: 'mythic',    ammo: 'energy', dmg: 45, rof: 1.6, range: 700,  spread: 0.004, pellets: 1, speed: 1400, col: '#c9f2ff', len: 40, wid: 4, kick: 5, big: true, pierce: true, special: true },
+  kaboom:  { name: 'Doomsday',        icon: '☄️', rarity: 'mythic',    ammo: 'energy', dmg: 55, rof: 0.8, range: 620,  spread: 0.01,  pellets: 1, speed: 620,  col: '#ff6b4a', len: 20, wid: 6, kick: 8, big: true, splash: 90, special: true },
 };
+const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom'];
+const NORMAL_GUNS = ['pistol', 'smg', 'shotgun']; // what NPCs actually carry
 
 const EYES    = ['Dot', 'Wide', 'Sleepy'];
 const HAIRS   = ['Spiky', 'Bowl', 'Cap'];
@@ -565,12 +607,12 @@ function generateMap(seed) {
          Each holds one guardian who drops a special weapon. --- */
   const buildings = [];
   let attempts = 0;
-  while (buildings.length < CFG.buildingCount && attempts++ < 80) {
+  while (buildings.length < CFG.buildingCount && attempts++ < 600) {
     const wc = 5 + (rng() * 4 | 0), hc = 5 + (rng() * 4 | 0);      // size in cells
     const gx0 = 4 + (rng() * (w / G - wc - 8) | 0);
     const gy0 = 4 + (rng() * (w / G - hc - 8) | 0);
     const b = { gx0, gy0, wc, hc, x0: gx0 * G, y0: gy0 * G, x1: (gx0 + wc) * G, y1: (gy0 + hc) * G };
-    if (buildings.some(o => b.x0 < o.x1 + 160 && b.x1 > o.x0 - 160 && b.y0 < o.y1 + 160 && b.y1 > o.y0 - 160)) continue;
+    if (buildings.some(o => b.x0 < o.x1 + 120 && b.x1 > o.x0 - 120 && b.y0 < o.y1 + 120 && b.y1 > o.y0 - 120)) continue;
     // perimeter wall cells, skipping doors and "collapsed" gaps
     const doors = new Set();
     const sides = [[1, 0, gy0, 'h'], [1, 0, gy0 + hc - 1, 'h'], [0, 1, gx0, 'v'], [0, 1, gx0 + wc - 1, 'v']];
@@ -595,7 +637,8 @@ function generateMap(seed) {
       b.rubble.push({ x: b.x0 + G + rng() * (b.x1 - b.x0 - 2 * G), y: b.y0 + G + rng() * (b.y1 - b.y0 - 2 * G), r: 5 + rng() * 10 });
     for (let i = 0; i < 4; i++)
       b.holes.push({ x: b.x0 + G + rng() * (b.x1 - b.x0 - 2 * G), y: b.y0 + G + rng() * (b.y1 - b.y0 - 2 * G), r: 18 + rng() * 26 });
-    b.drop = buildings.length % 2 ? 'minigun' : 'railgun';   // guardian's reward
+    b.drop = SPECIALS[buildings.length % SPECIALS.length];   // guardian's reward
+    b.gweapon = NORMAL_GUNS[(rng() * NORMAL_GUNS.length) | 0]; // guardian's own gun
     buildings.push(b);
   }
 
@@ -612,7 +655,11 @@ function generateMap(seed) {
   const trees = [], rocks = [], chests = [];
   for (let i = 0; i < CFG.treeCount; i++) { const p = place(100, w - 100, 20); trees.push({ ...p, r: 26 + rng() * 14 }); }
   for (let i = 0; i < CFG.rockCount; i++) { const p = place(100, w - 100, 40); rocks.push({ ...p, r: 20 + rng() * 18 }); }
-  for (let i = 0; i < CFG.chestCount; i++) { const p = place(160, w - 160, 40); chests.push({ id: i, ...p, opened: false, anim: 0 }); }
+  // chests come in four tiers; higher tiers are rarer and drop better loot
+  let cid = 0;
+  for (const [tier, n] of [['normal', CFG.chestCount], ['epic', CFG.epicChests],
+                           ['legendary', CFG.legendaryChests], ['mythic', CFG.mythicChests]])
+    for (let i = 0; i < n; i++) { const p = place(160, w - 160, 40); chests.push({ id: cid++, tier, ...p, opened: false, anim: 0 }); }
   return { trees, rocks, chests, buildings };
 }
 
@@ -649,6 +696,7 @@ function baseGame(seed, mode) {
     startTime: performance.now(),
     lastNetSend: 0, nearAction: null,
     buildMode: false, piece: 'wall', mat: 'wood',
+    ammo: { ...CFG.startAmmo }, bossSpawned: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
     npcAuthority: true,     // who simulates guardians (solo: me; MP: host)
   };
@@ -666,9 +714,9 @@ function spawnGuardians(g) {
   g.map.buildings.forEach((b, i) => {
     const gu = makePlayer('guard' + i, 'Ruin Guardian', { eye: 1, hair: 0, outfit: 1 }, 'G',
       (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, true);
-    gu.guard = true; gu.weapon = 'guard';
+    gu.guard = true; gu.weapon = b.gweapon; // guardians carry real guns
     gu.hp = gu.maxHp = CFG.guardHp;
-    gu.home = { x: gu.x, y: gu.y }; gu.drop = b.drop;
+    gu.home = { x: gu.x, y: gu.y }; gu.drop = b.drop; gu.bld = b;
     g.players[gu.id] = gu;
   });
 }
@@ -699,7 +747,9 @@ function startSoloMatch() {
   for (let i = 0; i < CFG.botCount; i++) {
     const p = spawnPos(seed, i + 1, total, g.map);
     const look = { eye: (rng() * 3) | 0, hair: (rng() * 3) | 0, outfit: (rng() * 4) | 0 };
-    g.players['bot' + i] = makePlayer('bot' + i, 'Bot ' + (i + 1), look, 'S', p.x, p.y, true);
+    const bot = makePlayer('bot' + i, 'Bot ' + (i + 1), look, 'S', p.x, p.y, true);
+    bot.weapon = NORMAL_GUNS[(rng() * NORMAL_GUNS.length) | 0]; // bots use real guns too
+    g.players['bot' + i] = bot;
   }
   spawnGuardians(g);
   game = g; showScreen(null); resetHudState();
@@ -723,7 +773,7 @@ function startNetworkMatch(m) {
 function resetHudState() {
   input.fire = false; input.joyId = input.aimId = null; input.joyVec = { x: 0, y: 0 };
   $('buildMenu').classList.remove('show'); $('buildBtn').classList.remove('on');
-  $('killFeed').innerHTML = '';
+  $('killFeed').innerHTML = ''; $('itemInfo').style.display = 'none';
 }
 
 /* ═══════════ 7. TOUCH INPUT ═══════════
@@ -825,8 +875,8 @@ press($('buildBtn'), () => {
 });
 press($('chestBtn'), () => {
   if (!game || !game.nearAction) return;
-  if (game.nearAction.kind === 'chest') openChestById(game.nearAction.id, game.me.id, true);
-  else takePickup(game.nearAction.id, true);
+  if (game.nearAction.kind === 'chest') openChestById(game.nearAction.c.id, game.me.id, true);
+  else takePickup(game.nearAction.pk.id, true);
 });
 document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => {
   game.piece = b.dataset.piece;
@@ -901,9 +951,17 @@ function autoAimPick() {
   }
   return hit;
 }
+let lastAmmoWarn = 0;
 function tryShoot(p, mine) {
   const w = WEAPONS[p.weapon], now = performance.now();
   if (now - p.lastShot < 1000 / w.rof) return;
+  if (p === game.me) { // only YOU consume ammo; NPCs never run dry
+    if (game.ammo[w.ammo] < 1) {
+      if (now - lastAmmoWarn > 900) { lastAmmoWarn = now; toast('Out of ' + AMMO[w.ammo].name + ' ammo!'); }
+      return;
+    }
+    game.ammo[w.ammo]--;
+  }
   p.lastShot = now;
   fireBullets(p, p.aim, mine);
   if (mine) net.send({ t: 'shoot', x: p.x, y: p.y, aim: p.aim, weapon: p.weapon });
@@ -919,11 +977,47 @@ function fireBullets(p, aim, mine) {
       owner: p.id, team: p.team, mine,
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
       col: w.col, len: w.len, wid: w.wid,    // tracer style
+      splash: w.splash || 0, pierce: !!w.pierce, hitIds: [],
     });
   }
   addEffect('muzzle', p.x + Math.cos(aim) * (CFG.playerR + 10), p.y + Math.sin(aim) * (CFG.playerR + 10), w.big);
   if (p === game.me) game.shake = Math.min(9, game.shake + (w.kick || 2));
 }
+// Damage authority (avoid double-hits since everyone simulates every
+// bullet): guardians/boss: their owner (solo me / MP host) applies
+// damage, other clients report via npc_damage. Bots: always local.
+// ME: solo takes bot hits directly; NPC bullets and my own splash are
+// self-authoritative like the storm; PvP hits arrive only via the
+// shooter's 'damage' message. Peers: reported by MY client only.
+function applyBulletDamage(p, id, dmg, b) {
+  if (p.guard && !game.npcAuthority) {
+    if (b.mine) net.send({ t: 'npc_damage', target: id, dmg });
+  } else if (p.isBot) {
+    hurtLocal(p, dmg, b.owner);
+  } else if (id === game.me.id) {
+    if (game.mode === 'solo' || b.npc || b.owner === game.me.id) hurtLocal(p, dmg, b.owner);
+  } else if (b.mine) {
+    net.send({ t: 'damage', target: id, dmg });
+  }
+}
+
+// area damage: hurts builds and everyone (including the shooter!) nearby
+function explode(b) {
+  const g = game, R = b.splash;
+  addEffect('boom', b.x, b.y);
+  g.shake = Math.min(14, g.shake + 6);
+  for (const [, bd] of g.builds)
+    if (dist2(b.x, b.y, bd.gx * CFG.grid + CFG.grid / 2, bd.gy * CFG.grid + CFG.grid / 2) < (R + 24) ** 2)
+      if (b.mine || g.mode === 'solo') damageBuild(bd.gx, bd.gy, b.dmg, b.mine);
+  const sd = Math.round(b.dmg * 0.6);
+  for (const id in g.players) {
+    const p = g.players[id];
+    if (!p.alive) continue;
+    if (p.team !== 'S' && p.team === b.team && id !== b.owner) continue; // no friendly splash
+    if (dist2(b.x, b.y, p.x, p.y) < R * R) { addDmgNum(p.x, p.y, sd); applyBulletDamage(p, id, sd, b); }
+  }
+}
+
 // a peer fired: replay it locally as a purely visual/simulated event
 function applyPeerShoot(m) {
   const p = game.players[m.by]; if (!p) return;
@@ -941,6 +1035,7 @@ function updateBullets(dt) {
       b.x += b.dx * s; b.y += b.dy * s; b.dist += s;
       // out of range or out of world
       if (b.dist >= b.maxDist || b.x < 0 || b.y < 0 || b.x > CFG.world || b.y > CFG.world) {
+        if (b.splash) explode(b); // Doomsday shells detonate at max range
         g.bullets.splice(bi, 1); continue outer;
       }
       // builds: walls and ramps stop bullets (floors don't)
@@ -950,39 +1045,30 @@ function updateBullets(dt) {
         // apply damage: the bullet's owner in multiplayer (who then
         // broadcasts build_hit), or this client in solo. Peers just see
         // the bullet stop and wait for the build_hit message.
-        if (b.mine || game.mode === 'solo') damageBuild(bd.gx, bd.gy, b.dmg, b.mine);
+        if (b.splash) { explode(b); }
+        else if (b.mine || game.mode === 'solo') damageBuild(bd.gx, bd.gy, b.dmg, b.mine);
         addEffect('hit', b.x, b.y);
         g.bullets.splice(bi, 1); continue outer;
       }
       // rocks block bullets (trees are canopy — bullets fly under them)
       for (const r of g.map.rocks)
-        if (dist2(b.x, b.y, r.x, r.y) < r.r * r.r) { addEffect('hit', b.x, b.y); g.bullets.splice(bi, 1); continue outer; }
-      // players
+        if (dist2(b.x, b.y, r.x, r.y) < r.r * r.r) {
+          if (b.splash) explode(b);
+          addEffect('hit', b.x, b.y); g.bullets.splice(bi, 1); continue outer;
+        }
+      // players (see applyBulletDamage for the authority rules)
       for (const id in g.players) {
         const p = g.players[id];
         if (!p.alive || id === b.owner) continue;
         if (p.team !== 'S' && p.team === b.team) continue; // no friendly fire
-        if (dist2(b.x, b.y, p.x, p.y) < (CFG.playerR + 2) ** 2) {
+        if (b.pierce && b.hitIds.indexOf(id) >= 0) continue; // already lanced
+        const pr = (p.boss ? 27 : CFG.playerR) + 2;
+        if (dist2(b.x, b.y, p.x, p.y) < pr * pr) {
           addEffect('hit', b.x, b.y);
           addDmgNum(p.x, p.y, b.dmg);
-          // Damage authority (avoid double-hits since everyone simulates
-          // every bullet):
-          //  - guardians: their owner (solo me / MP host) applies damage;
-          //    other clients report hits via npc_damage
-          //  - bots: always local (solo only)
-          //  - ME: solo takes bot hits directly; guardian (npc) bullets
-          //    are self-authoritative like the storm; PvP hits arrive
-          //    only via the shooter's 'damage' message
-          //  - peers: reported to the server by MY client only
-          if (p.guard && !g.npcAuthority) {
-            if (b.mine) net.send({ t: 'npc_damage', target: id, dmg: b.dmg });
-          } else if (p.isBot) {
-            hurtLocal(p, b.dmg, b.owner);
-          } else if (id === g.me.id) {
-            if (game.mode === 'solo' || b.npc) hurtLocal(p, b.dmg, b.owner);
-          } else if (b.mine) {
-            net.send({ t: 'damage', target: id, dmg: b.dmg });
-          }
+          applyBulletDamage(p, id, b.dmg, b);
+          if (b.splash) { explode(b); g.bullets.splice(bi, 1); continue outer; }
+          if (b.pierce) { b.hitIds.push(id); continue; } // lance keeps flying
           g.bullets.splice(bi, 1); continue outer;
         }
       }
@@ -1002,13 +1088,43 @@ function hurtLocal(p, dmg, by) {
   }
 }
 
-// A guardian fell: drop its special weapon where it stood. Runs once per
-// guardian on every client (authority via hurtLocal, peers via npc_state).
+// A guardian (or the boss) fell: drop loot where it stood. Runs once per
+// NPC on every client (authority via hurtLocal, peers via npc_state), and
+// all drops are deterministic so clients agree without extra messages.
 function guardianDied(p) {
   if (p.dropDone) return;
   p.dropDone = true;
-  game.pickups.push({ id: 'drop_' + p.id, x: p.x, y: p.y, weapon: p.drop, taken: false });
+  if (p.boss) {
+    // the boss reward: 1 of the 7 specials (seeded) + supplies
+    const w = SPECIALS[(seededRng(game.seed + 555)() * SPECIALS.length) | 0];
+    spawnItem({ id: 'boss_w', x: p.x, y: p.y, kind: 'weapon', weapon: w });
+    spawnItem({ id: 'boss_a', x: p.x + 46, y: p.y + 12, kind: 'ammo', ammo: 'energy' });
+    spawnItem({ id: 'boss_h', x: p.x - 46, y: p.y + 12, kind: 'heal', amount: 80 });
+    addKillFeed('👑 THE WARDEN has fallen!');
+  } else {
+    spawnItem({ id: 'drop_' + p.id, x: p.x, y: p.y, kind: 'weapon', weapon: p.drop });
+    spawnItem({ id: 'dropa_' + p.id, x: p.x + 42, y: p.y + 10, kind: 'ammo', ammo: 'energy' });
+    // last guardian down -> THE WARDEN awakens
+    const left = Object.values(game.players).some(o => o.guard && !o.boss && o.alive);
+    if (!left && !game.bossSpawned) spawnBoss(game);
+  }
   addEffect('break', p.x, p.y);
+}
+
+// THE WARDEN: spawns at the map center once every guardian is dead.
+// Deterministic, so each client spawns it locally the moment it sees the
+// final guardian die; the NPC authority then simulates it like any NPC.
+function spawnBoss(g) {
+  g.bossSpawned = true;
+  let x = CFG.world / 2, y = CFG.world / 2;
+  for (let t = 0; t < 20 && (buildingRectAt(g.map, x, y, 50) ||
+       g.map.rocks.some(r => dist2(x, y, r.x, r.y) < (r.r + 44) ** 2)); t++) { x += 70; y += 35; }
+  const b = makePlayer('boss', 'THE WARDEN', { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
+  b.guard = true; b.boss = true; b.weapon = 'shotgun';
+  b.hp = b.maxHp = CFG.bossHp; b.home = { x, y };
+  g.players.boss = b;
+  addKillFeed('⚠ THE WARDEN has awakened!');
+  toast('⚠ THE WARDEN has awakened!', 2600);
 }
 
 function takePickup(id, mine) {
@@ -1016,14 +1132,17 @@ function takePickup(id, mine) {
   if (!pk || pk.taken) return;
   pk.taken = true;
   if (mine) {
-    game.me.weapon = pk.weapon;
-    toast(WEAPONS[pk.weapon].icon + ' ' + WEAPONS[pk.weapon].name + ' acquired!');
+    if (pk.kind === 'weapon') game.me.weapon = pk.weapon;
+    else if (pk.kind === 'heal') game.me.hp = Math.min(CFG.maxHp, game.me.hp + pk.amount);
+    else if (pk.kind === 'mat') game.mats[pk.mat] += pk.amount;
+    else game.ammo[pk.ammo] += CFG.ammoPack[pk.ammo];
+    toast(pk.icon + ' ' + pk.label);
     net.send({ t: 'pickup_taken', id });
   }
 }
 
 function addDmgNum(x, y, n) { game.dmgNums.push({ x, y: y - 20, n, life: 0.8 }); }
-function addEffect(kind, x, y, big) { game.effects.push({ kind, x, y, big, life: kind === 'muzzle' ? 0.07 : 0.3 }); }
+function addEffect(kind, x, y, big) { game.effects.push({ kind, x, y, big, life: kind === 'muzzle' ? 0.07 : kind === 'boom' ? 0.35 : 0.3 }); }
 function addKillFeed(txt) {
   const d = document.createElement('div'); d.textContent = txt;
   $('killFeed').prepend(d);
@@ -1031,27 +1150,71 @@ function addKillFeed(txt) {
   setTimeout(() => d.remove(), 5000);
 }
 
-/* ---------- chests ---------- */
-const LOOT = [
-  { kind: 'weapon', v: 'smg',     label: '🔫 SMG!' },
-  { kind: 'weapon', v: 'shotgun', label: '💥 Shotgun!' },
-  { kind: 'heal',   v: 40,        label: '❤️ Medkit +40' },
-  { kind: 'mat',    v: 'wood',    label: '🪵 +40 wood' },
-  { kind: 'mat',    v: 'brick',   label: '🧱 +40 brick' },
-  { kind: 'mat',    v: 'metal',   label: '⛓️ +40 metal' },
-];
+/* ---------- chests & ground loot ----------
+   Opening a chest no longer auto-equips anything: the loot SPILLS onto
+   the ground as pickups and you grab only what you want. Loot is rolled
+   from a seeded RNG per chest, so every client spawns identical items. */
+function chestLoot(tier, rng) {
+  const pick = a => a[(rng() * a.length) | 0];
+  if (tier === 'epic') return [
+    { kind: 'weapon', weapon: rng() < 0.35 ? pick(['minigun', 'hydra', 'dragon']) : pick(['smg', 'shotgun']) },
+    { kind: 'heal', amount: 50 },
+    { kind: 'ammo', ammo: pick(['light', 'shell', 'energy']) },
+  ];
+  if (tier === 'legendary') return [
+    { kind: 'weapon', weapon: rng() < 0.45 ? pick(['railgun', 'deadeye']) : pick(['minigun', 'hydra', 'dragon']) },
+    { kind: 'heal', amount: 50 },
+    { kind: 'ammo', ammo: 'energy' },
+    { kind: 'mat', mat: pick(['brick', 'metal']), amount: 60 },
+  ];
+  if (tier === 'mythic') return [
+    { kind: 'weapon', weapon: pick(SPECIALS) },
+    { kind: 'weapon', weapon: pick(['phantom', 'kaboom', 'railgun', 'deadeye']) },
+    { kind: 'ammo', ammo: 'energy' },
+    { kind: 'heal', amount: 80 },
+  ];
+  return [ // normal
+    { kind: 'weapon', weapon: pick(NORMAL_GUNS) },
+    rng() < 0.5 ? { kind: 'heal', amount: 30 } : { kind: 'mat', mat: pick(['wood', 'brick', 'metal']), amount: 40 },
+    { kind: 'ammo', ammo: pick(['light', 'shell']) },
+  ];
+}
+
+// Attach display metadata (icon, label, rarity color, stat line) so the
+// HUD can show what an item is before you commit to picking it up.
+function spawnItem(def) {
+  const it = { taken: false, ...def };
+  if (it.kind === 'weapon') {
+    const w = WEAPONS[it.weapon];
+    it.icon = w.icon; it.label = w.name; it.rarity = w.rarity;
+    it.stats = `DMG ${w.dmg}${w.pellets > 1 ? '×' + w.pellets : ''} · ${w.rof}/s · RANGE ${w.range} · ${AMMO[w.ammo].name} ammo`
+      + (w.splash ? ' · SPLASH' : '') + (w.pierce ? ' · PIERCES' : '');
+  } else if (it.kind === 'heal') {
+    it.icon = '❤️'; it.label = `Medkit +${it.amount} HP`;
+    it.rarity = it.amount >= 50 ? 'rare' : 'common'; it.stats = 'Heals instantly on pickup';
+  } else if (it.kind === 'mat') {
+    it.icon = it.mat === 'wood' ? '🪵' : it.mat === 'brick' ? '🧱' : '⛓️';
+    it.label = `+${it.amount} ${it.mat}`; it.rarity = 'common'; it.stats = 'Building materials';
+  } else { // ammo
+    it.icon = it.ammo === 'energy' ? '🔋' : it.ammo === 'shell' ? '🔻' : '🔸';
+    it.label = `+${CFG.ammoPack[it.ammo]} ${AMMO[it.ammo].name} ammo`;
+    it.rarity = it.ammo === 'energy' ? 'rare' : 'common'; it.stats = 'Ammunition';
+  }
+  game.pickups.push(it);
+  return it;
+}
+
 function openChestById(id, by, mine) {
   const c = game.map.chests.find(c => c.id === id);
   if (!c || c.opened) return;
   c.opened = true; c.anim = 0.6; // pop-open animation timer
-  if (by === game.me.id) {
-    // Loot is seeded per chest so it's fair but deterministic.
-    const loot = LOOT[(seededRng(game.seed + id * 31)() * LOOT.length) | 0];
-    if (loot.kind === 'weapon') game.me.weapon = loot.v;
-    if (loot.kind === 'heal') game.me.hp = Math.min(CFG.maxHp, game.me.hp + loot.v);
-    if (loot.kind === 'mat') game.mats[loot.v] += 40;
-    toast(loot.label);
-  }
+  const rng = seededRng(game.seed + id * 31);
+  chestLoot(c.tier, rng).forEach((def, i) => {
+    const a = rng() * Math.PI * 2, d = 42 + rng() * 30; // scatter around the chest
+    spawnItem({ id: 'c' + id + '_' + i, ...def,
+      x: clamp(c.x + Math.cos(a) * d, 30, CFG.world - 30),
+      y: clamp(c.y + Math.sin(a) * d, 30, CFG.world - 30) });
+  });
   addEffect('place', c.x, c.y);
   if (mine) net.send({ t: 'chest_open', id });
 }
@@ -1103,40 +1266,47 @@ function updateBots(dt) {
   }
 }
 
-/* Guardians: tough special enemies that defend their ruined building.
-   They aggro anyone near their home, strafe while shooting, and never
-   wander far. Simulated only by the NPC authority (solo: you; MP: host). */
+/* Guardians: tough special enemies that defend their ruined building —
+   they are hard-clamped inside it and can never leave. THE WARDEN (boss)
+   has no leash and hunts the nearest player across the whole map.
+   Simulated only by the NPC authority (solo: you; MP: host). */
 function updateGuardians(dt) {
   const g = game;
   for (const id in g.players) {
     const gu = g.players[id];
     if (!gu.guard || !gu.alive) continue;
-    // nearest living non-guardian near this guardian's home
-    let target = null, best = CFG.guardAggro ** 2;
+    // nearest living non-NPC target (guardians measure from their home;
+    // the boss measures from wherever it currently stands)
+    const hx = gu.boss ? gu.x : gu.home.x, hy = gu.boss ? gu.y : gu.home.y;
+    let target = null, best = gu.boss ? Infinity : CFG.guardAggro ** 2;
     for (const oid in g.players) {
       const o = g.players[oid];
       if (o.guard || !o.alive) continue;
-      const d = dist2(gu.home.x, gu.home.y, o.x, o.y);
+      const d = dist2(hx, hy, o.x, o.y);
       if (d < best) { best = d; target = o; }
     }
     let mx = 0, my = 0;
     if (target) {
-      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * 0.18;
-      // strafe sideways around the intruder, but stay near home
-      const side = (id.charCodeAt(5) % 2 ? 1 : -1);
-      mx = -Math.sin(gu.aim) * side; my = Math.cos(gu.aim) * side;
+      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.12 : 0.18);
+      const dts = Math.sqrt(dist2(gu.x, gu.y, target.x, target.y));
+      if (gu.boss && dts > 230) {          // boss closes the distance
+        mx = Math.cos(gu.aim); my = Math.sin(gu.aim);
+      } else {                             // strafe around the target
+        const side = (id.charCodeAt(id.length - 1) % 2 ? 1 : -1);
+        mx = -Math.sin(gu.aim) * side; my = Math.cos(gu.aim) * side;
+      }
       const w = WEAPONS[gu.weapon], now = performance.now();
-      if (now - gu.lastShot > 1000 / w.rof) {
+      if (now - gu.lastShot > 1000 / w.rof && dts < w.range + 60) {
         gu.lastShot = now;
         fireBullets(gu, gu.aim, false);
         if (g.mode !== 'solo') net.send({ t: 'npc_shoot', id, x: gu.x, y: gu.y, aim: gu.aim });
       }
     }
-    // leash back toward home
-    if (dist2(gu.x, gu.y, gu.home.x, gu.home.y) > 200 * 200) {
-      mx = gu.home.x - gu.x; my = gu.home.y - gu.y;
+    movePlayer(gu, mx, my, dt, gu.boss ? 0.75 : 0.5);
+    if (!gu.boss && gu.bld) { // guardians stay in the house, always
+      gu.x = clamp(gu.x, gu.bld.x0 + 34, gu.bld.x1 - 34);
+      gu.y = clamp(gu.y, gu.bld.y0 + 34, gu.bld.y1 - 34);
     }
-    movePlayer(gu, mx, my, dt, 0.5);
   }
 }
 
@@ -1248,23 +1418,38 @@ function update(dt) {
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
   } else g.aimLock = null;
 
-  // proximity -> contextual interact button (chests + weapon drops)
+  // proximity -> contextual interact button (chests + ground loot),
+  // preferring loot when both are in range so chests can't shadow items
   g.nearAction = null;
+  for (const pk of g.pickups)
+    if (!pk.taken && dist2(g.me.x, g.me.y, pk.x, pk.y) < 60 * 60) {
+      g.nearAction = { kind: 'pickup', pk }; break;
+    }
   for (const c of g.map.chests) {
     if (c.anim > 0) c.anim -= dt;
     if (!g.nearAction && !c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70)
-      g.nearAction = { kind: 'chest', id: c.id };
+      g.nearAction = { kind: 'chest', c };
   }
-  if (!g.nearAction)
-    for (const pk of g.pickups)
-      if (!pk.taken && dist2(g.me.x, g.me.y, pk.x, pk.y) < 70 * 70) {
-        g.nearAction = { kind: 'pickup', id: pk.id, weapon: pk.weapon }; break;
-      }
-  const btn = $('chestBtn');
+  const btn = $('chestBtn'), info = $('itemInfo');
   btn.classList.toggle('show', !!g.nearAction && g.me.alive);
-  if (g.nearAction)
-    btn.textContent = g.nearAction.kind === 'chest' ? '📦 OPEN CHEST'
-      : WEAPONS[g.nearAction.weapon].icon + ' TAKE ' + WEAPONS[g.nearAction.weapon].name.toUpperCase();
+  if (g.nearAction && g.me.alive) {
+    info.style.display = 'block';
+    if (g.nearAction.kind === 'chest') {
+      const t = CHEST_TIERS[g.nearAction.c.tier];
+      btn.textContent = '📦 OPEN CHEST';
+      info.firstElementChild.textContent = '📦 ' + t.name.toUpperCase() + ' CHEST';
+      info.firstElementChild.style.color = t.glow;
+      info.lastElementChild.textContent = 'Loot spills out — grab what you want';
+      info.style.borderColor = t.glow;
+    } else {
+      const pk = g.nearAction.pk, rc = RARITY[pk.rarity];
+      btn.textContent = '🖐 PICK UP';
+      info.firstElementChild.textContent = pk.icon + ' ' + pk.label + ' — ' + rc.name.toUpperCase();
+      info.firstElementChild.style.color = rc.col;
+      info.lastElementChild.textContent = pk.stats;
+      info.style.borderColor = rc.col;
+    }
+  } else info.style.display = 'none';
 
   updateBullets(dt);
   updateStorm(dt);
@@ -1414,33 +1599,40 @@ function render() {
     const x = c.x - cx, y = c.y - cy;
     if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
     const pop = c.opened ? Math.max(0, c.anim) : 0;
+    const tier = CHEST_TIERS[c.tier];
     drawShadow(x, y + 6, 16);
     ctx.save(); ctx.translate(x, y); ctx.scale(1 + pop, 1 + pop);
-    ctx.fillStyle = c.opened ? '#6b5a2a' : '#e0a52a';
+    ctx.fillStyle = c.opened ? '#6b5a2a' : tier.col;   // body color = chest tier
     ctx.fillRect(-16, -12, 32, 24);
-    ctx.strokeStyle = '#5a3d00'; ctx.lineWidth = 3; ctx.strokeRect(-16, -12, 32, 24);
-    ctx.fillStyle = '#5a3d00'; ctx.fillRect(-16, -3, 32, 4);
-    if (!c.opened) { // glow so chests are easy to spot
-      ctx.strokeStyle = '#ffd94d88'; ctx.lineWidth = 3;
+    ctx.strokeStyle = '#3a2800'; ctx.lineWidth = 3; ctx.strokeRect(-16, -12, 32, 24);
+    ctx.fillStyle = '#3a2800'; ctx.fillRect(-16, -3, 32, 4);
+    if (!c.opened) { // tier-colored glow so rare chests stand out
+      ctx.strokeStyle = tier.glow + '88'; ctx.lineWidth = c.tier === 'normal' ? 3 : 4;
       ctx.beginPath(); ctx.arc(0, 0, 26 + Math.sin(performance.now() / 300) * 3, 0, 7); ctx.stroke();
+      if (c.tier !== 'normal') { // second pulse ring on special chests
+        ctx.strokeStyle = tier.glow + '44';
+        ctx.beginPath(); ctx.arc(0, 0, 34 + Math.sin(performance.now() / 220) * 5, 0, 7); ctx.stroke();
+      }
     }
     ctx.restore();
   }
 
-  // special weapon drops from defeated guardians (pulsing beacon)
+  // ground loot: chest spills + guardian/boss drops, rarity-colored
   for (const pk of g.pickups) {
     if (pk.taken) continue;
     const x = pk.x - cx, y = pk.y - cy;
     if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
-    const w = WEAPONS[pk.weapon], pulse = 1 + Math.sin(performance.now() / 200) * 0.12;
-    drawShadow(x, y + 4, 14);
-    ctx.strokeStyle = w.col; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(x, y, 22 * pulse, 0, 7); ctx.stroke();
-    ctx.fillStyle = '#1c2434'; ctx.fillRect(x - 13, y - 13, 26, 26);
-    ctx.strokeStyle = w.col; ctx.lineWidth = 2; ctx.strokeRect(x - 13, y - 13, 26, 26);
-    ctx.font = '15px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(w.icon, x, y + 5);
-    ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = w.col;
-    ctx.fillText(w.name.toUpperCase(), x, y - 26);
+    const rc = RARITY[pk.rarity].col, pulse = 1 + Math.sin(performance.now() / 200) * 0.12;
+    drawShadow(x, y + 4, 13);
+    ctx.strokeStyle = rc; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, (pk.kind === 'weapon' ? 21 : 16) * pulse, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#1c2434'; ctx.fillRect(x - 12, y - 12, 24, 24);
+    ctx.strokeStyle = rc; ctx.lineWidth = 2; ctx.strokeRect(x - 12, y - 12, 24, 24);
+    ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(pk.icon, x, y + 5);
+    if (pk.kind === 'weapon') { // weapons flaunt their tough name
+      ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = rc;
+      ctx.fillText(pk.label.toUpperCase(), x, y - 24);
+    }
   }
 
   // trees & rocks
@@ -1466,16 +1658,17 @@ function render() {
     const p = g.players[id];
     const x = p.x - cx, y = p.y - cy;
     if (!p.alive || x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
-    drawShadow(x, y + 4, CFG.playerR);
+    const bodyR = p.boss ? 26 : CFG.playerR; // THE WARDEN towers over everyone
+    drawShadow(x, y + 4, bodyR);
     if (p.guard) { // menacing pulsing red aura on special enemies
       const pulse = 4 + Math.sin(performance.now() / 180) * 3;
-      ctx.strokeStyle = '#ff3838aa'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(x, y, CFG.playerR + pulse + 4, 0, 7); ctx.stroke();
+      ctx.strokeStyle = '#ff3838aa'; ctx.lineWidth = p.boss ? 5 : 3;
+      ctx.beginPath(); ctx.arc(x, y, bodyR + pulse + 4, 0, 7); ctx.stroke();
     } else if (p.team !== 'S' && p.team !== 'G') { // team ring
       ctx.strokeStyle = p.team === 'A' ? '#2a6de0' : '#d93030'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 5, 0, 7); ctx.stroke();
     }
-    drawCharacter(ctx, x, y, p.aim, p.look);
+    drawCharacter(ctx, x, y, p.aim, p.look, bodyR);
     if (p.hurtFlash > 0) { // red flash when hit
       ctx.fillStyle = `rgba(255,40,40,${p.hurtFlash * 2})`;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 2, 0, 7); ctx.fill();
@@ -1508,6 +1701,12 @@ function render() {
       ctx.beginPath();
       ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6);
       ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+    } else if (e.kind === 'boom') { // Doomsday explosion
+      const rr = (0.35 - e.life) * 320 + 24;
+      ctx.fillStyle = `rgba(255,130,50,${e.life * 1.6})`;
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.4})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.stroke();
     } else { // place / break dust ring
       ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.5})`; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, (0.3 - e.life) * 120 + 8, 0, 7); ctx.stroke();
@@ -1596,7 +1795,8 @@ function render() {
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
   $('aliveInfo').textContent = countAlive() + ' alive';
   const wpn = WEAPONS[g.me.weapon];
-  $('weaponInfo').textContent = wpn.icon + ' ' + wpn.name;
+  $('weaponInfo').textContent = `${wpn.icon} ${wpn.name} · ${g.ammo[wpn.ammo]}`;
+  $('weaponInfo').style.color = RARITY[wpn.rarity].col;
 }
 
 // Minimap (top-right): buildings, chests, storm circle, you, teammates,
@@ -1611,9 +1811,12 @@ function drawMinimap() {
   ctx.fillStyle = '#8a6d4a';
   for (const b of g.map.buildings)
     ctx.fillRect(mx + b.x0 * sc, my + b.y0 * sc, (b.x1 - b.x0) * sc, (b.y1 - b.y0) * sc);
-  ctx.fillStyle = '#ffd94d';
   for (const c of g.map.chests)
-    if (!c.opened) ctx.fillRect(mx + c.x * sc - 1, my + c.y * sc - 1, 2.5, 2.5);
+    if (!c.opened) {
+      ctx.fillStyle = CHEST_TIERS[c.tier].glow;
+      const s2 = c.tier === 'normal' ? 2.5 : 3.5; // special chests pop on the map
+      ctx.fillRect(mx + c.x * sc - 1, my + c.y * sc - 1, s2, s2);
+    }
   const s = g.storm;                              // storm ring + outside tint
   ctx.fillStyle = 'rgba(120,40,190,0.28)';
   ctx.beginPath(); ctx.rect(mx, my, M, M);
