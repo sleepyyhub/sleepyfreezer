@@ -4,6 +4,11 @@ A 2D battle-royale game inspired by Fortnite, built for **touch play in landscap
 iPads first, but any phone works too: small screens automatically zoom the camera out
 and switch to a compact HUD (media query at 500px height), so every iPhone/Android
 model gets full-size gameplay with thumb-sized controls.
+
+There's also a full **PC mode**, auto-detected on mouse+keyboard devices: WASD/arrows
+to move, mouse to aim (custom crosshair), click to shoot or place builds, **E**
+interact, **B** build, **F** shield, **1–3** piece, **4–6** material. Auto-aim is
+touch-only — on PC the mouse is the aim.
 The whole client is a single `index.html` (canvas rendering, procedural shapes, zero
 external assets); `server.js` is a tiny Node.js + `ws` server for parties, lobbies and
 real-time sync.

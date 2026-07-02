@@ -172,6 +172,12 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   .lobbyRow{min-height:44px;padding:4px 10px}
   .codebox{font-size:28px;padding:6px 16px}
 }
+/* PC mode: hide the native cursor over the game (a crosshair is drawn
+   instead) and show a small key-binding hint bottom-left */
+body.pc canvas#game{cursor:none}
+#pcHint{position:absolute;left:14px;bottom:calc(10px + env(safe-area-inset-bottom));
+  font-size:12px;color:#cfe3ff99;text-shadow:0 1px 2px #000;pointer-events:none;display:none}
+body.pc #pcHint{display:block}
 /* item card: shows name, rarity and stats of the loot you're standing on */
 #itemInfo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(104px + env(safe-area-inset-bottom));
   background:rgba(8,14,24,.85);border:2px solid #888;border-radius:12px;padding:8px 18px;text-align:center;
@@ -258,6 +264,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
   </div>
   <div id="killFeed"></div>
+  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · B build · F shield · 1-3 piece · 4-6 material</div>
   <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
   <button class="hbtn" id="shieldBtn">🛡<br>SHIELD</button>
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
@@ -639,7 +646,9 @@ function resize() {
   hurtVignette = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
   hurtVignette.addColorStop(0, 'rgba(255,30,30,0)'); hurtVignette.addColorStop(1, 'rgba(255,30,30,0.55)');
   // the game is designed for two-handed landscape; nudge portrait users
-  $('rotateHint').style.display = H > W ? 'flex' : 'none';
+  // (PC mode exempt — tall desktop windows are fine; checked via the
+  // body class because resize() first runs before `pc` is declared)
+  $('rotateHint').style.display = H > W && !document.body.classList.contains('pc') ? 'flex' : 'none';
 }
 // iOS Safari quirk: after rotating, innerWidth/innerHeight can be stale
 // when 'resize' fires (or it doesn't fire at all in some cases). Listen
@@ -939,13 +948,50 @@ canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
 canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
-// Desktop debug fallback ONLY (mouse pretends to be a single touch so you
-// can test in a normal browser). Real gameplay targets touch events above.
-let mouseDown = false;
-function fakeTouch(e) { return { changedTouches: [{ identifier: 'mouse', clientX: e.clientX, clientY: e.clientY }], preventDefault: () => {} }; }
-canvas.addEventListener('mousedown', e => { mouseDown = true; handleTouchStart(fakeTouch(e)); });
-canvas.addEventListener('mousemove', e => { if (mouseDown) handleTouchMove(fakeTouch(e)); });
-canvas.addEventListener('mouseup', e => { mouseDown = false; handleTouchEnd(fakeTouch(e)); });
+/* ---------- PC MODE (keyboard + mouse) ----------
+   Auto-enabled on devices with a fine pointer and no touch screen, or
+   the moment a movement key is pressed. Touch devices are unaffected.
+   Controls: WASD/arrows move · mouse aims · click shoots (or places a
+   piece in build mode) · E interact · B build · F shield · 1-3 piece
+   · 4-6 material. Auto-aim is disabled — the mouse IS the aim. */
+const pc = { active: false, keys: {}, mx: 0, my: 0 };
+function enablePcMode() {
+  if (pc.active) return;
+  pc.active = true;
+  document.body.classList.add('pc');
+  $('rotateHint').style.display = 'none'; // tall desktop windows are fine
+}
+if (window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches && !('ontouchstart' in window))
+  enablePcMode();
+
+const MOVE_KEYS = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0], arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0] };
+window.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return; // typing a name/code
+  const k = e.key.toLowerCase();
+  if (MOVE_KEYS[k]) { enablePcMode(); pc.keys[k] = true; e.preventDefault(); }
+  if (!pc.active || !game || e.repeat) return;
+  if (k === 'e') doInteract();
+  else if (k === 'b' || k === 'q') toggleBuildMode();
+  else if (k === 'f') deployShield();
+  else if (k === '1') selectPiece('wall');
+  else if (k === '2') selectPiece('ramp');
+  else if (k === '3') selectPiece('floor');
+  else if (k === '4') selectMat('wood');
+  else if (k === '5') selectMat('brick');
+  else if (k === '6') selectMat('metal');
+});
+window.addEventListener('keyup', e => { pc.keys[e.key.toLowerCase()] = false; });
+
+canvas.addEventListener('mousemove', e => { pc.mx = e.clientX; pc.my = e.clientY; });
+canvas.addEventListener('mousedown', e => {
+  if (!pc.active || !game) return;
+  e.preventDefault();
+  pc.mx = e.clientX; pc.my = e.clientY;
+  if (game.buildMode) { const w = screenToWorld(e.clientX, e.clientY); tryPlaceAt(w.x, w.y); }
+  else input.fire = true;
+});
+window.addEventListener('mouseup', () => { if (pc.active) input.fire = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 // --- HUD buttons (touchstart/touchend, with click fallback for desktop) ---
 function press(el, down, up) {
@@ -954,16 +1000,16 @@ function press(el, down, up) {
   el.addEventListener('mousedown', down);
   if (up) el.addEventListener('mouseup', up);
 }
-press($('fireBtn'), () => input.fire = true, () => input.fire = false);
-press($('buildBtn'), () => {
+// Shared actions — used by both the touch buttons and PC-mode hotkeys.
+function toggleBuildMode() {
   if (!game) return;
   game.buildMode = !game.buildMode;
   $('buildBtn').classList.toggle('on', game.buildMode);
   $('buildMenu').classList.toggle('show', game.buildMode);
-});
+}
 // Shield: costs wood (loot it from chests), raises a barrier in front of
 // you that soaks CFG.shieldHits enemy bullets, then shatters.
-press($('shieldBtn'), () => {
+function deployShield() {
   if (!game || !game.me.alive) return;
   if (game.me.shieldHits > 0) return toast('Shield already up!');
   if (game.mats.wood < CFG.shieldCost) return toast(`Need ${CFG.shieldCost} wood for a shield`);
@@ -971,20 +1017,26 @@ press($('shieldBtn'), () => {
   game.me.shieldHits = CFG.shieldHits;
   addEffect('shield', game.me.x + Math.cos(game.me.aim) * 26, game.me.y + Math.sin(game.me.aim) * 26);
   toast('🛡 Shield up! Blocks ' + CFG.shieldHits + ' hits');
-});
-press($('chestBtn'), () => {
+}
+function doInteract() {
   if (!game || !game.nearAction) return;
   if (game.nearAction.kind === 'chest') openChestById(game.nearAction.c.id, game.me.id, true);
   else takePickup(game.nearAction.pk.id, true);
-});
-document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => {
-  game.piece = b.dataset.piece;
-  document.querySelectorAll('.pieceBtn').forEach(x => x.classList.toggle('sel', x === b));
-}));
-document.querySelectorAll('.matBtn').forEach(b => press(b, () => {
-  game.mat = b.dataset.mat;
-  document.querySelectorAll('.matBtn').forEach(x => x.classList.toggle('sel', x === b));
-}));
+}
+function selectPiece(piece) {
+  game.piece = piece;
+  document.querySelectorAll('.pieceBtn').forEach(x => x.classList.toggle('sel', x.dataset.piece === piece));
+}
+function selectMat(mat) {
+  game.mat = mat;
+  document.querySelectorAll('.matBtn').forEach(x => x.classList.toggle('sel', x.dataset.mat === mat));
+}
+press($('fireBtn'), () => input.fire = true, () => input.fire = false);
+press($('buildBtn'), toggleBuildMode);
+press($('shieldBtn'), deployShield);
+press($('chestBtn'), doInteract);
+document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => selectPiece(b.dataset.piece)));
+document.querySelectorAll('.matBtn').forEach(b => press(b, () => selectMat(b.dataset.mat)));
 
 /* ═══════════ 8. BUILDING ═══════════
    Pieces live on a grid keyed "gx,gy".
@@ -1532,12 +1584,25 @@ function update(dt) {
   const g = game;
 
   if (g.me.alive) {
-    movePlayer(g.me, input.joyVec.x, input.joyVec.y, dt);
-    // auto-aim: track the locked enemy unless the player is actively
-    // dragging in the aim zone (manual aim always wins)
-    g.aimLock = g.buildMode ? null : autoAimPick();
-    if (g.aimLock && input.aimId === null)
-      g.me.aim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
+    // movement: WASD/arrows in PC mode, virtual joystick on touch
+    let mvx = input.joyVec.x, mvy = input.joyVec.y;
+    if (pc.active) {
+      for (const k in MOVE_KEYS) if (pc.keys[k]) { mvx += MOVE_KEYS[k][0]; mvy += MOVE_KEYS[k][1]; }
+    }
+    movePlayer(g.me, mvx, mvy, dt);
+    if (pc.active) {
+      // the mouse cursor IS the aim — recomputed every frame so walking
+      // (which moves the camera under the cursor) keeps the aim true
+      g.aimLock = null;
+      if (!g.buildMode)
+        g.me.aim = Math.atan2(pc.my / ZOOM + g.camY - g.me.y, pc.mx / ZOOM + g.camX - g.me.x);
+    } else {
+      // auto-aim (touch only): track the locked enemy unless the player
+      // is actively dragging in the aim zone (manual aim always wins)
+      g.aimLock = g.buildMode ? null : autoAimPick();
+      if (g.aimLock && input.aimId === null)
+        g.me.aim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
+    }
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
   } else g.aimLock = null;
 
@@ -1963,6 +2028,18 @@ function render() {
     ctx.beginPath(); ctx.arc(input.joyOrigin.x, input.joyOrigin.y, JOY_MAX, 0, 7); ctx.stroke();
     ctx.fillStyle = '#ffffffaa';
     ctx.beginPath(); ctx.arc(input.joyPos.x, input.joyPos.y, 26, 0, 7); ctx.fill();
+  }
+
+  // PC mode: crosshair at the mouse cursor (the native cursor is hidden)
+  if (pc.active) {
+    ctx.strokeStyle = g.buildMode ? '#ffe28a' : '#ffffffcc'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(pc.mx, pc.my, 9, 0, 7); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(pc.mx - 14, pc.my); ctx.lineTo(pc.mx - 5, pc.my);
+    ctx.moveTo(pc.mx + 5, pc.my); ctx.lineTo(pc.mx + 14, pc.my);
+    ctx.moveTo(pc.mx, pc.my - 14); ctx.lineTo(pc.mx, pc.my - 5);
+    ctx.moveTo(pc.mx, pc.my + 5); ctx.lineTo(pc.mx, pc.my + 14);
+    ctx.stroke();
   }
 
   drawMinimap();
