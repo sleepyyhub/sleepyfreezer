@@ -1603,6 +1603,7 @@ function explode(b) {
   for (const id in g.players) {
     const p = g.players[id];
     if (!p.alive) continue;
+    if (b.npc && p.guard) continue; // guardians/bosses never hurt each other
     if (p.team !== 'S' && p.team === b.team && id !== b.owner) continue; // no friendly splash
     if (dist2(b.x, b.y, p.x, p.y) < R * R) { addDmgNum(p.x, p.y, sd); applyBulletDamage(p, id, sd, b); }
   }
@@ -1661,6 +1662,7 @@ function updateBullets(dt) {
       for (const id in g.players) {
         const p = g.players[id];
         if (!p.alive || id === b.owner) continue;
+        if (b.npc && p.guard) continue; // guardians/bosses never shoot each other
         if (p.team !== 'S' && p.team === b.team) continue; // no friendly fire
         if (b.pierce && b.hitIds.indexOf(id) >= 0) continue; // already lanced
         const pr = (p.boss ? 27 : CFG.playerR) + 2;
