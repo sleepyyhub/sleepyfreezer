@@ -160,6 +160,25 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #powerPanel{position:absolute;left:calc(14px + env(safe-area-inset-left));top:96px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .powerLine{min-width:190px;background:rgba(8,14,24,.64);border:1px solid #ffffff22;border-left:4px solid #888;border-radius:8px;padding:7px 10px;font-size:12px;box-shadow:0 4px 14px #0006}
 .powerLine .t{font-weight:1000;letter-spacing:1px}.powerLine .s{color:#cfe3ff;font-size:11px;margin-top:2px}
+#invBtn{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(22px + env(safe-area-inset-bottom));
+  pointer-events:auto;border:none;border-radius:12px;background:#1b2739;color:#fff;font-weight:1000;font-size:13px;padding:10px 14px;box-shadow:0 0 0 3px #ffffff22}
+#inventoryGui{position:fixed;inset:0;background:rgba(4,8,16,.78);z-index:170;display:none;align-items:center;justify-content:center;padding:18px;pointer-events:auto}
+#inventoryGui.show{display:flex}
+#invPanel{width:min(920px,96vw);max-height:90vh;overflow:auto;background:#0e1728;border:2px solid #ffffff24;border-radius:8px;box-shadow:0 18px 60px #000d;padding:16px}
+#invTop{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+#invTop h2{margin:0;font-size:28px}
+#invClose{border:none;border-radius:8px;background:#33445f;color:#fff;font-weight:1000;padding:10px 14px}
+.invGrid{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+.invSection{background:#142137;border:1px solid #ffffff1f;border-radius:8px;padding:12px}
+.invSection h3{margin:0 0 10px;font-size:16px;color:#cfe3ff}
+.invWeapon{display:grid;grid-template-columns:44px 1fr auto auto;gap:10px;align-items:center;background:#0d1627;border:1px solid #ffffff18;border-left:5px solid #888;border-radius:8px;padding:9px;margin-bottom:8px}
+.invWeapon .ico{font-size:26px}.invWeapon .nm{font-weight:1000}.invWeapon .st{font-size:11px;color:#b9c8dd;margin-top:3px}
+.invWeapon button,.invDrop{border:none;border-radius:7px;background:#2a6de0;color:#fff;font-weight:900;padding:8px}
+.invDrop{background:#7f2630}
+.invStats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.invStat{background:#0d1627;border:1px solid #ffffff18;border-radius:8px;padding:10px;font-size:13px}
+.invStat b{display:block;color:#fff;margin-bottom:4px}
+@media (max-width:700px){.invGrid{grid-template-columns:1fr}.invWeapon{grid-template-columns:36px 1fr}.invWeapon button{min-height:38px}}
 #killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:184px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
 
@@ -387,6 +406,7 @@ body.pc #touchHint{display:none}
     <div class="powerLine" id="grimoirePower"><div class="t">📖 NO GRIMOIRE</div><div class="s">Defeat the Wizard King, then roll once.</div></div>
     <div class="powerLine" id="devilPower"><div class="t">契 NO CONTRACT</div><div class="s">Devil contracts appear after forbidden feats.</div></div>
   </div>
+  <button id="invBtn">🎒 BAG</button>
   <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
   <div id="itemInfo"><div class="nm"></div><div class="st"></div></div>
   <div id="buildMenu">
@@ -400,6 +420,15 @@ body.pc #touchHint{display:none}
 </div>
 
 <div id="toast"></div>
+<div id="inventoryGui">
+  <div id="invPanel">
+    <div id="invTop"><h2>Inventory</h2><button id="invClose">CLOSE</button></div>
+    <div class="invGrid">
+      <div class="invSection"><h3>Weapons</h3><div id="invWeapons"></div></div>
+      <div class="invSection"><h3>Loadout</h3><div class="invStats" id="invStats"></div></div>
+    </div>
+  </div>
+</div>
 <div id="upgradeDraft">
   <div id="upgradeBox">
     <h2>Choose an Upgrade</h2>
@@ -619,6 +648,8 @@ const WEAPONS = {
   mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 46,  rof: 9,   range: 580,  spread: 0.04,  pellets: 2, speed: 1300, len: 22, wid: 5, kick: 2,  big: true, special: true, exotic: true, shape: 'mirror' },
   nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 145, rof: 0.9, range: 720,  spread: 0.006, pellets: 1, speed: 920,  len: 30, wid: 8, kick: 10, big: true, splash: 160, special: true, exotic: true, shape: 'nova' },
   heavenfang:{ name: 'Heavenfang',     icon: '🌌', rarity: 'universal', ammo: 'energy', dmg: 340, rof: 1.8, range: 1700, spread: 0, pellets: 1, speed: 2600, len: 90, wid: 10, kick: 14, big: true, pierce: true, splash: 190, universal: true, shape: 'nova' },
+  seraphimhowl:{ name: 'Seraphim Howl', icon: '🪽', rarity: 'universal', ammo: 'energy', dmg: 220, rof: 3.4, range: 1100, spread: 0.018, pellets: 3, speed: 2200, len: 58, wid: 7, kick: 8, big: true, splash: 95, universal: true, shape: 'comet' },
+  astralpack:{ name: 'Astral Pack',     icon: '✦', rarity: 'universal', ammo: 'energy', dmg: 120, rof: 7.5, range: 900, spread: 0.055, pellets: 4, speed: 1900, len: 34, wid: 5, kick: 5, big: true, universal: true, shape: 'storm' },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
@@ -1360,6 +1391,46 @@ function addWeaponToInventory(key, confirmed = false) {
   selectWeaponSlot(game.me.activeSlot);
   return true;
 }
+function dropWeaponSlot(i) {
+  if (!game || i === 0 || !game.me.weapons[i]) return;
+  const key = game.me.weapons[i];
+  spawnItem({ id: 'dropwpn_' + performance.now(), x: game.me.x + Math.cos(game.me.aim) * 38, y: game.me.y + Math.sin(game.me.aim) * 38, kind: 'weapon', weapon: key });
+  game.me.weapons.splice(i, 1);
+  game.me.activeSlot = Math.min(game.me.activeSlot, game.me.weapons.length - 1);
+  selectWeaponSlot(game.me.activeSlot);
+  renderInventoryGui();
+}
+function toggleInventoryGui(force) {
+  if (!game) return;
+  const el = $('inventoryGui');
+  const show = force === undefined ? !el.classList.contains('show') : force;
+  el.classList.toggle('show', show);
+  if (show) renderInventoryGui();
+}
+function renderInventoryGui() {
+  if (!game || !$('inventoryGui').classList.contains('show')) return;
+  const wrap = $('invWeapons'); wrap.innerHTML = '';
+  game.me.weapons.forEach((key, i) => {
+    const w = WEAPONS[key], col = rarityCol(w.rarity);
+    const row = document.createElement('div'); row.className = 'invWeapon'; row.style.borderLeftColor = col;
+    row.innerHTML = `<div class="ico">${w.icon}</div><div><div class="nm" style="color:${col}">${i + 1}. ${w.name}</div><div class="st">${rarityLabel(w.rarity)} · DMG ${w.dmg}${w.pellets > 1 ? 'x' + w.pellets : ''} · ${w.rof}/s · ${AMMO[w.ammo].name}</div></div>`;
+    const eq = document.createElement('button'); eq.textContent = i === game.me.activeSlot ? 'EQUIPPED' : 'EQUIP'; eq.addEventListener('click', () => { selectWeaponSlot(i); renderInventoryGui(); });
+    const dr = document.createElement('button'); dr.className = 'invDrop'; dr.textContent = 'DROP'; dr.disabled = i === 0; dr.addEventListener('click', () => dropWeaponSlot(i));
+    row.appendChild(eq); row.appendChild(dr); wrap.appendChild(row);
+  });
+  const A = game.me.armorTier ? ARMOR[game.me.armorTier] : null;
+  const gr = game.me.grimoire ? GRIMOIRES[game.me.grimoire] : null;
+  const devil = DEVIL_CONTRACTS.find(c => game.contracts[c.id]);
+  const wolfText = `Tier ${game.wolfTier || 0} · XP ${game.wolfXp || 0}/${wolfNextXp()}`;
+  $('invStats').innerHTML = [
+    ['Armor', A ? `${A.icon} ${A.name} · ${game.me.armorDur} durability` : 'None'],
+    ['Grimoire', gr ? gr.name + ' · ' + gr.moves.join(', ') : 'None'],
+    ['Devil', devil ? devil.name + ' · ' + devil.moves.join(', ') : 'None'],
+    ['Wolves', wolfText],
+    ['Ammo', `Light ${game.ammo.light} · Shell ${game.ammo.shell} · Energy ${game.ammo.energy}`],
+    ['Materials', `Wood ${game.mats.wood} · Brick ${game.mats.brick} · Metal ${game.mats.metal}`],
+  ].map(([k, v]) => `<div class="invStat"><b>${k}</b>${v}</div>`).join('');
+}
 function awardXP(n, reason) {
   if (!game || !game.me) return;
   game.xp += n;
@@ -1584,6 +1655,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'b' || k === 'q') toggleBuildMode();
   else if (k === 'f') deployShield();
   else if (k === 'r') summonHeavenWolves();
+  else if (k === 'tab') { e.preventDefault(); toggleInventoryGui(); }
   else if (['t', 'y', 'u', 'i'].includes(k)) activateGrimoire(['t', 'y', 'u', 'i'].indexOf(k));
   else if (['o', 'p', '[', ']'].includes(k)) activateDevilPower(['o', 'p', '[', ']'].indexOf(k));
   else if (['1', '2', '3', '4', '5'].includes(k)) selectWeaponSlot(+k - 1);
@@ -1634,25 +1706,45 @@ function deployShield() {
 }
 function summonHeavenWolves() {
   if (!game || !game.me.alive) return;
-  if (game.me.weapon !== 'heavenfang') return toast('Equip Heavenfang to summon wolves');
+  if (!heavenlyWolfWeapon()) return toast('Equip a Heavenly wolf weapon');
   const now = performance.now(), ready = game.nextWolfSummon || 0;
   if (now < ready) return toast('Wolves ready in ' + Math.ceil((ready - now) / 1000) + 's');
+  const tier = (game.wolfTier || 0) + (game.me.weapon === 'astralpack' ? 2 : game.me.weapon === 'seraphimhowl' ? 1 : 0);
+  const count = Math.min(6, 3 + Math.floor(tier / 2));
   for (const id in game.players) {
     const p = game.players[id];
     if (p.allyWolf && p.owner === game.me.id) { p.alive = false; addEffect('break', p.x, p.y); }
   }
-  for (let i = 0; i < 3; i++) {
-    const a = game.me.aim + (i - 1) * 0.7;
-    const wolf = makePlayer('allyWolf_' + game.me.id + '_' + now + '_' + i, 'Heaven Wolf', { eye: 5, hair: 3, outfit: 4 }, game.me.team, game.me.x + Math.cos(a) * 72, game.me.y + Math.sin(a) * 72, true);
-    wolf.guard = true; wolf.allyWolf = true; wolf.owner = game.me.id; wolf.weapon = 'arcbolt';
-    wolf.hp = wolf.maxHp = 180; wolf.home = { x: game.me.x, y: game.me.y }; wolf.dmgMul = 0.9;
+  for (let i = 0; i < count; i++) {
+    const a = game.me.aim + (i - (count - 1) / 2) * 0.55;
+    const wolf = makePlayer('allyWolf_' + game.me.id + '_' + now + '_' + i, wolfNameForTier(tier), { eye: 5, hair: 3, outfit: 4 }, game.me.team, game.me.x + Math.cos(a) * 72, game.me.y + Math.sin(a) * 72, true);
+    wolf.guard = true; wolf.allyWolf = true; wolf.owner = game.me.id; wolf.weapon = tier >= 4 ? 'stormc' : tier >= 2 ? 'arcbolt' : 'arcbolt';
+    wolf.hp = wolf.maxHp = 180 + tier * 45; wolf.home = { x: game.me.x, y: game.me.y }; wolf.dmgMul = 0.9 + tier * 0.16;
     wolf.spawnT = now; wolf.lastBite = 0;
     game.players[wolf.id] = wolf;
     addEffect('skybeam', wolf.x, wolf.y, true);
   }
-  game.nextWolfSummon = now + 30000;
+  game.nextWolfSummon = now + Math.max(15000, 30000 - tier * 2200);
   addEffect('heaven', game.me.x, game.me.y, true);
-  toast('Heaven Wolves summoned');
+  toast(wolfNameForTier(tier) + ' pack summoned');
+}
+function heavenlyWolfWeapon() {
+  return game && ['heavenfang', 'seraphimhowl', 'astralpack'].includes(game.me.weapon);
+}
+function wolfNextXp() { return 2 + (game?.wolfTier || 0) * 2; }
+function wolfNameForTier(t) {
+  return t >= 5 ? 'Astral Alpha' : t >= 4 ? 'Thunder Wolf' : t >= 3 ? 'Aegis Wolf' : t >= 2 ? 'Swift Wolf' : t >= 1 ? 'Hunter Wolf' : 'Heaven Wolf';
+}
+function awardWolfXp(n = 1) {
+  if (!game) return;
+  game.wolfXp = (game.wolfXp || 0) + n;
+  while ((game.wolfTier || 0) < 5 && game.wolfXp >= wolfNextXp()) {
+    game.wolfXp -= wolfNextXp(); game.wolfTier = (game.wolfTier || 0) + 1;
+    addEffect('heaven', game.me.x, game.me.y, true);
+    toast('Wolf upgrade: ' + wolfNameForTier(game.wolfTier), 2400);
+    if (game.wolfTier === 3) spawnItem({ id: 'seraphim_trial_' + performance.now(), x: game.me.x + 55, y: game.me.y, kind: 'weapon', weapon: 'seraphimhowl' });
+    if (game.wolfTier === 5) spawnItem({ id: 'astral_trial_' + performance.now(), x: game.me.x + 65, y: game.me.y + 18, kind: 'weapon', weapon: 'astralpack' });
+  }
 }
 function damageEnemiesAround(x, y, radius, dmg, by, knock = 0) {
   for (const id in game.players) {
@@ -1790,6 +1882,8 @@ document.querySelectorAll('.grimBtn').forEach(b => press(b, () => activateGrimoi
 document.querySelectorAll('.devilBtn').forEach(b => press(b, () => activateDevilPower(+b.dataset.ability)));
 press($('shieldBtn'), deployShield);
 press($('wolfBtn'), summonHeavenWolves);
+press($('invBtn'), () => toggleInventoryGui());
+press($('invClose'), () => toggleInventoryGui(false));
 press($('chestBtn'), doInteract);
 press($('confirmEquip'), confirmWeaponPickup);
 press($('confirmCancel'), closePickupConfirm);
@@ -2109,6 +2203,7 @@ function guardianDied(p) {
   }
   if (p.heavenly) {
     spawnItem({ id: 'universal_weapon', x: p.x, y: p.y, kind: 'weapon', weapon: 'heavenfang' });
+    spawnItem({ id: 'universal_howl', x: p.x + 58, y: p.y + 18, kind: 'weapon', weapon: 'seraphimhowl' });
     spawnItem({ id: 'universal_armor', x: p.x + 46, y: p.y, kind: 'armor', tier: 6 });
     addKillFeed('🌌 UNIVERSAL weapon dropped!');
     return addEffect('heaven', p.x, p.y, true);
@@ -2329,6 +2424,7 @@ function maybeSpawnHeavenlyRestrictor() {
   if (game.heavenlySpawned || !game.grimoireTower.open || game.ruinBossKills < 2) return;
   game.heavenlySpawned = true;
   const t = game.grimoireTower;
+  if (game.me && game.me.grimoire === 'antimagic') spawnItem({ id: 'astral_tower_' + performance.now(), x: t.x - 95, y: t.y + 35, kind: 'weapon', weapon: 'astralpack' });
   addEffect('heaven', t.x, t.y, true);
   for (let i = 0; i < 8; i++) {
     const a = i / 8 * Math.PI * 2;
@@ -2375,6 +2471,7 @@ function updateAllyWolves(dt) {
       wolf.lastBite = now;
       const dmg = target.boss ? 42 : target.guard ? 34 : 24;
       hurtLocal(target, dmg, wolf.id);
+      awardWolfXp(target.boss ? 2 : 1);
       addEffect('skybeam', target.x, target.y, true);
     }
   }
@@ -3339,7 +3436,7 @@ function render() {
   sbtn.innerHTML = g.me.shieldHits > 0 ? `🛡<br>${g.me.shieldHits} HIT${g.me.shieldHits > 1 ? 'S' : ''}` : `🛡<br>${CFG.shieldCost}🪵`;
   sbtn.classList.toggle('off', g.me.shieldHits === 0 && g.mats.wood < CFG.shieldCost);
   const wbtn = $('wolfBtn'), wolfReady = Math.max(0, (g.nextWolfSummon || 0) - performance.now());
-  wbtn.classList.toggle('show', g.me.weapon === 'heavenfang');
+  wbtn.classList.toggle('show', heavenlyWolfWeapon());
   wbtn.classList.toggle('off', wolfReady > 0);
   wbtn.innerHTML = wolfReady > 0 ? `☄<br>${Math.ceil(wolfReady / 1000)}s` : '☄<br>WOLVES';
   const hasDevil = Object.keys(g.contracts).some(k => g.contracts[k]);
@@ -3404,6 +3501,7 @@ function render() {
       slot.style.borderColor = '#ffffff24';
     }
   });
+  renderInventoryGui();
 }
 
 function spawnWizardBoss(g) {
