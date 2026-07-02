@@ -456,7 +456,7 @@ const CFG = {
   guardDmgMul: 0.7,       // guardians hit softer than players
   guardRofMul: 0.55,      // ...and fire slower than their gun allows
   guardAimErr: 0.28,      // ...with shaky aim
-  bossHp: 500,            // RUIN BOSS: spawns when a building is cleared
+  bossHp: 420,            // RUIN BOSS: spawns when a building is cleared
   regenDelay: 5,          // seconds without damage before you regenerate
   regenRate: 4,           // hp per second while regenerating
   autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
@@ -1688,19 +1688,20 @@ function fireBullets(p, aim, mine) {
   const spreadMul = p === game.me ? game.upgrades.spreadMul : 1;
   const grimMul = p === game.me && game.me.grimoire === 'flame' ? 0.08 : 0;
   const dmgMul = p === game.me ? 1 + game.upgrades.dmgMul + grimMul : 1;
+  const npcBossMul = p.heavenly ? 0.28 : p.wizard ? 0.42 : p.boss ? 0.62 : 1;
   for (let i = 0; i < w.pellets; i++) {
     const a = aim + (Math.random() - 0.5) * 2 * w.spread * spreadMul;
     game.bullets.push({
       x: p.x + Math.cos(a) * (CFG.playerR + 8), y: p.y + Math.sin(a) * (CFG.playerR + 8),
       dx: Math.cos(a), dy: Math.sin(a), speed: w.speed,
-      dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1) * dmgMul),
+      dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1) * dmgMul * npcBossMul),
       owner: p.id, team: p.team, mine,
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
       col: w.col || '#fff', len: w.len, wid: w.wid, // tracer style
       exo: !!w.exotic,                       // exotic tracers cycle the rainbow
       universal: !!w.universal,
       shape: w.shape || 'line',
-      splash: w.splash || 0, pierce: !!w.pierce, hitIds: [],
+      splash: p.heavenly ? Math.min(w.splash || 0, 85) : w.splash || 0, pierce: !!w.pierce, hitIds: [],
       homingTarget: null,
     });
   }
@@ -2090,12 +2091,12 @@ function maybeSpawnHeavenlyRestrictor() {
   }
   const h = makePlayer('heavenlyRestrictor', 'HEAVENLY RESTRICTOR', { eye: 5, hair: 5, outfit: 4 }, 'G', t.x, t.y, true);
   h.guard = true; h.boss = true; h.heavenly = true; h.weapon = 'heavenfang';
-  h.hp = h.maxHp = 2600; h.home = { x: t.x, y: t.y }; h.dmgMul = 1.4;
+  h.hp = h.maxHp = 1600; h.home = { x: t.x, y: t.y }; h.dmgMul = 0.85;
   game.players[h.id] = h;
   for (let i = 0; i < 4; i++) {
     const a = i / 4 * Math.PI * 2;
     const wolf = makePlayer('heavenWolf' + i, 'Star Wolf', { eye: 5, hair: 3, outfit: 4 }, 'G', t.x + Math.cos(a) * 90, t.y + Math.sin(a) * 90, true);
-    wolf.guard = true; wolf.heavenWolf = true; wolf.weapon = 'arcbolt'; wolf.hp = wolf.maxHp = 180; wolf.home = { x: t.x, y: t.y };
+    wolf.guard = true; wolf.heavenWolf = true; wolf.weapon = 'arcbolt'; wolf.hp = wolf.maxHp = 110; wolf.home = { x: t.x, y: t.y }; wolf.dmgMul = 0.65;
     game.players[wolf.id] = wolf;
   }
   addKillFeed('🌌 HEAVENLY RESTRICTOR has descended!');
@@ -2172,17 +2173,18 @@ function updateGuardians(dt) {
     let mx = 0, my = 0;
     if (target) {
       // guardians are deliberately sloppy shots; the boss is sharper
-      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.12 : CFG.guardAimErr);
+      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.26 : CFG.guardAimErr);
       const dts = Math.sqrt(dist2(gu.x, gu.y, target.x, target.y));
-      if (gu.boss && dts > 230) {          // boss closes the distance
+      if (gu.boss && dts > 300) {          // boss closes the distance
         mx = Math.cos(gu.aim); my = Math.sin(gu.aim);
       } else {                             // strafe around the target
         const side = (id.charCodeAt(id.length - 1) % 2 ? 1 : -1);
         mx = -Math.sin(gu.aim) * side; my = Math.cos(gu.aim) * side;
       }
       const w = WEAPONS[gu.weapon], now = performance.now();
-      const rof = w.rof * (gu.boss ? 1 : CFG.guardRofMul); // nerfed cadence
-      if (gu.wizard && now - (gu.lastAoE || 0) > 2800) {
+      const bossRof = gu.wizard ? 0.45 : gu.heavenly ? 0.42 : gu.boss ? 0.58 : CFG.guardRofMul;
+      const rof = w.rof * bossRof; // nerfed cadence
+      if (gu.wizard && now - (gu.lastAoE || 0) > 5200) {
         gu.lastAoE = now;
         addEffect('sigil', target.x, target.y, true);
         addEffect('skybeam', target.x, target.y, true);
@@ -2193,7 +2195,7 @@ function updateGuardians(dt) {
         for (const oid in g.players) {
           const o = g.players[oid];
           if (!o.alive || o.guard) continue;
-          if (dist2(o.x, o.y, target.x, target.y) < 170 * 170) hurtLocal(o, 38, gu.id);
+          if (dist2(o.x, o.y, target.x, target.y) < 125 * 125) hurtLocal(o, 22, gu.id);
         }
       }
       if (now - gu.lastShot > 1000 / rof && dts < w.range + 60) {
@@ -2207,7 +2209,7 @@ function updateGuardians(dt) {
       const a = Math.atan2(gu.home.y - gu.y, gu.home.x - gu.x);
       mx = Math.cos(a); my = Math.sin(a); gu.aim = a;
     }
-    movePlayer(gu, mx, my, dt, gu.boss ? 0.75 : 0.5);
+    movePlayer(gu, mx, my, dt, gu.boss ? 0.58 : 0.5);
     if (gu.wizard && dist2(gu.x, gu.y, gu.home.x, gu.home.y) > 170 * 170) {
       const a = Math.atan2(gu.home.y - gu.y, gu.home.x - gu.x);
       gu.x = gu.home.x + Math.cos(a + Math.PI) * 160;
@@ -3049,7 +3051,7 @@ function spawnWizardBoss(g) {
   const t = g.grimoireTower;
   const w = makePlayer('wizardBoss', 'WIZARD KING', { eye: 4, hair: 5, outfit: 6 }, 'G', t.x, t.y, true);
   w.guard = true; w.boss = true; w.wizard = true; w.weapon = 'zeus';
-  w.hp = w.maxHp = 1800; w.home = { x: t.x, y: t.y }; w.lastAoE = 0;
+  w.hp = w.maxHp = 1150; w.home = { x: t.x, y: t.y }; w.lastAoE = 0; w.dmgMul = 0.75;
   g.players[w.id] = w;
 }
 
