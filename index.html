@@ -821,7 +821,7 @@ function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
   // head (skin tone)
   ctx.fillStyle = '#ffd9a8'; ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill();
   // hair styles
-  ctx.fillStyle = '#4a2f18';
+  ctx.fillStyle = look.hairCol || '#4a2f18';
   if (look.hair === 0) {            // spiky: three triangles on top
     for (let i = -1; i <= 1; i++) {
       ctx.beginPath();
@@ -838,7 +838,7 @@ function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
     ctx.fillStyle = '#f0d060';
     ctx.beginPath(); ctx.moveTo(-3, -r * 0.2); ctx.lineTo(0, -r * 1.15); ctx.lineTo(3, -r * 0.2); ctx.fill();
   } else if (look.hair === 4) {     // long
-    ctx.fillStyle = '#2b1a10';
+    ctx.fillStyle = look.hairCol || '#2b1a10';
     ctx.beginPath(); ctx.ellipse(0, 5, r * 0.72, r * 0.85, 0, 0, 7); ctx.fill();
     ctx.fillStyle = '#ffd9a8'; ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill();
   } else {                          // crown
@@ -1507,7 +1507,7 @@ function adminSpawn() {
       if (type === 'weapon') spawnItem({ id: 'admin_w_' + performance.now() + '_' + i, ...p, kind: 'weapon', weapon: item });
       else if (type === 'armor') spawnItem({ id: 'admin_a_' + performance.now() + '_' + i, ...p, kind: 'armor', tier: +item });
       else if (type === 'grimoire') spawnItem({ id: 'admin_g_' + performance.now() + '_' + i, ...p, kind: 'grimoire', grimoire: item });
-      else if (type === 'boss') spawnAdminBoss(item, p.x, p.y);
+      else if (type === 'boss') spawnAdminBoss(item);
       else if (type === 'ammo') spawnItem({ id: 'admin_am_' + performance.now() + '_' + i, ...p, kind: 'ammo', ammo: item });
       else if (type === 'material') spawnItem({ id: 'admin_m_' + performance.now() + '_' + i, ...p, kind: 'mat', mat: item, amount });
       else spawnItem({ id: 'admin_h_' + performance.now() + '_' + i, ...p, kind: item, amount: item === 'heal' ? 80 : 50 });
@@ -1516,10 +1516,19 @@ function adminSpawn() {
   toast('Admin spawned: ' + item);
   renderInventoryGui();
 }
-function spawnAdminBoss(kind, x = game.me.x + 220, y = game.me.y) {
+function grantAdminBossProtection() {
+  const until = performance.now() + 30000;
+  for (const id in game.players) {
+    const p = game.players[id];
+    if (!p.guard) { p.protectedUntil = until; addEffect('shield', p.x, p.y, true); }
+  }
+  toast('30s protection for everyone', 2600);
+}
+function spawnAdminBoss(kind, x = CFG.world / 2, y = CFG.world / 2) {
   let b;
+  x = CFG.world / 2; y = CFG.world / 2;
   if (kind === 'herrernst') {
-    b = makePlayer('herrErnst_' + performance.now(), 'HERR ERNST', { eye: 1, hair: 4, outfit: 4 }, 'G', x, y, true);
+    b = makePlayer('herrErnst_' + performance.now(), 'HERR ERNST', { eye: 1, hair: 4, outfit: 4, hairCol: '#ffe680' }, 'G', x, y, true);
     b.guard = true; b.boss = true; b.adminBoss = true; b.heavenly = true; b.weapon = 'ernstbeam';
     b.hp = b.maxHp = 12000; b.dmgMul = 1.25; b.home = { x, y };
     b.ernst = true;
@@ -1536,6 +1545,7 @@ function spawnAdminBoss(kind, x = game.me.x + 220, y = game.me.y) {
     b.guard = true; b.boss = true; b.adminBoss = true; b.weapon = 'dragonfire'; b.hp = b.maxHp = CFG.bossHp; b.home = { x, y };
   }
   game.players[b.id] = b;
+  grantAdminBossProtection();
   addEffect(kind === 'herrernst' ? 'heaven' : 'boom', x, y, true);
   return b;
 }
@@ -2263,6 +2273,11 @@ function updateBullets(dt) {
 }
 
 function hurtLocal(p, dmg, by) {
+  if (p.protectedUntil && performance.now() < p.protectedUntil) {
+    addEffect('shield', p.x, p.y, true);
+    if (p === game.me) toast('Protected');
+    return;
+  }
   // 1) armor soaks a % of the hit while its durability lasts
   if (p.armorTier) {
     const soaked = Math.min(Math.round(dmg * ARMOR[p.armorTier].reduce), p.armorDur);
@@ -3284,6 +3299,11 @@ function render() {
     } else if (p.team !== 'S' && p.team !== 'G') { // team ring
       ctx.strokeStyle = p.team === 'A' ? '#2a6de0' : '#d93030'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 5, 0, 7); ctx.stroke();
+    }
+    if (p.protectedUntil && performance.now() < p.protectedUntil) {
+      const pulse = 7 + Math.sin(performance.now() / 130) * 3;
+      ctx.strokeStyle = rarityCol('universal'); ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, bodyR + pulse + 8, 0, 7); ctx.stroke();
     }
     if (p.chargeShot) {
       const pct = clamp((performance.now() - p.chargeShot.start) / (p.chargeShot.ready - p.chargeShot.start), 0, 1);
