@@ -101,8 +101,20 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   justify-content:space-between;padding:0 18px;pointer-events:none;align-items:flex-start}
 /* glassy panels behind the HUD readouts */
 #hpWrap,#stormInfo,#matInfo{background:rgba(8,14,24,.55);border:1px solid #ffffff22;
-  border-radius:12px;padding:8px 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  border-radius:12px;padding:8px 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  box-shadow:0 4px 14px #0006}
 #hpWrap{width:250px}
+/* segment ticks over the health bar for a proper game feel */
+#hpOuter{position:relative}
+#hpOuter::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(90deg,transparent 0 21px,#0007 21px 23px)}
+/* storm phase progress bar under the storm label */
+#stormBarO{height:5px;background:#0008;border-radius:3px;overflow:hidden;margin-top:5px}
+#stormBar{height:100%;width:0;background:linear-gradient(90deg,#8a4fd0,#d9b6ff);transition:width .3s}
+/* buttons squash slightly when pressed — juicy feedback */
+#hud .hbtn:active{transform:scale(.9)}
+#hud #chestBtn:active{transform:translateX(-50%) scale(.95)} /* keeps its centering */
+#weaponPanel,#itemInfo{box-shadow:0 4px 14px #0006}
 #hpOuter{height:22px;background:#0008;border-radius:11px;overflow:hidden;border:2px solid #fff5}
 #hpFill{height:100%;width:100%;background:linear-gradient(#5dff7a,#25a03e);transition:width .15s}
 #hpText{font-size:13px;margin-top:3px;color:#cfe3ff;text-shadow:0 1px 2px #000}
@@ -259,8 +271,8 @@ body.pc #pcHint{display:block}
 <!-- ================= IN-GAME HUD ================= -->
 <div id="hud">
   <div id="topHud">
-    <div id="hpWrap"><div id="hpOuter"><div id="hpFill"></div></div><div id="hpText">100 / 100</div></div>
-    <div id="stormInfo">storm</div>
+    <div id="hpWrap"><div id="hpOuter"><div id="hpFill"></div></div><div id="hpText">❤️ 100 / 100</div></div>
+    <div id="stormInfo"><span id="stormText">storm</span><div id="stormBarO"><div id="stormBar"></div></div></div>
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
   </div>
   <div id="killFeed"></div>
@@ -325,13 +337,16 @@ const CFG = {
   treeCount: 110,
   rockCount: 60,
   botCount: 11,           // opponents in solo mode
-  buildingCount: 14,      // run-down buildings with guardians inside
-  guardHp: 180,           // special-enemy health
+  buildingCount: 10,      // run-down buildings, each a guarded compound
+  guardsPerBld: [3, 5],   // 3-5 occupants per building
+  guardHp: 120,           // per-occupant health (they come in packs now)
   guardAggro: 300,        // how far from home a guardian notices/chases you
   guardDmgMul: 0.7,       // guardians hit softer than players
   guardRofMul: 0.55,      // ...and fire slower than their gun allows
   guardAimErr: 0.28,      // ...with shaky aim
-  bossHp: 800,            // THE WARDEN, spawns when every guardian is dead
+  bossHp: 500,            // RUIN BOSS: spawns when a building is cleared
+  regenDelay: 5,          // seconds without damage before you regenerate
+  regenRate: 4,           // hp per second while regenerating
   autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
   startAmmo: { light: 120, shell: 24, energy: 0 },
   ammoPack:  { light: 60,  shell: 12, energy: 15 }, // per ammo pickup
@@ -348,6 +363,8 @@ const CFG = {
 };
 
 // Item rarity tiers: every weapon/chest/pickup is color-coded by these.
+// `animated` tiers have no fixed color — rarityCol() cycles the hue, so
+// Exotic gear visibly shimmers through the rainbow everywhere it appears.
 const RARITY = {
   common:    { name: 'Common',    col: '#b8c0cc' },
   uncommon:  { name: 'Uncommon',  col: '#4fce5d' },
@@ -355,7 +372,12 @@ const RARITY = {
   epic:      { name: 'Epic',      col: '#c45df0' },
   legendary: { name: 'Legendary', col: '#ff9f2a' },
   mythic:    { name: 'Mythic',    col: '#ffd94d' },
+  exotic:    { name: 'Exotic',    col: '#ff5fd0', animated: true },
 };
+function rarityCol(r) {
+  const def = RARITY[r];
+  return def.animated ? `hsl(${(performance.now() / 10) % 360},95%,62%)` : def.col;
+}
 // Ammunition types. YOU consume ammo per shot; NPCs never run dry.
 const AMMO = {
   light:  { name: 'Light' },
@@ -386,8 +408,14 @@ const WEAPONS = {
   deadeye: { name: 'Deadeye',         icon: '🎯', rarity: 'legendary', ammo: 'energy', dmg: 90, rof: 0.85, range: 1300, spread: 0.002, pellets: 1, speed: 2000, col: '#ffffff', len: 44, wid: 3, kick: 7, big: true, special: true },
   phantom: { name: 'Phantom Lance',   icon: '👻', rarity: 'mythic',    ammo: 'energy', dmg: 45, rof: 2.2,  range: 700,  spread: 0.004, pellets: 1, speed: 1400, col: '#c9f2ff', len: 40, wid: 4, kick: 5, big: true, pierce: true, special: true },
   kaboom:  { name: 'Doomsday',        icon: '☄️', rarity: 'mythic',    ammo: 'energy', dmg: 55, rof: 1.1,  range: 620,  spread: 0.01,  pellets: 1, speed: 620,  col: '#ff6b4a', len: 20, wid: 6, kick: 8, big: true, splash: 90, special: true },
+  // ---- EXOTIC weapons: only Ruin Bosses drop these; their color (and
+  //      tracers) constantly shift through the rainbow ----
+  stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 30, rof: 7,   range: 700, spread: 0.03,  pellets: 1, speed: 1300, len: 26, wid: 4, kick: 2.5, big: true, special: true, exotic: true },
+  oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 70, rof: 1.4, range: 700, spread: 0.006, pellets: 1, speed: 1500, len: 40, wid: 5, kick: 8, big: true, pierce: true, splash: 70, special: true, exotic: true },
+  starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 16, rof: 2.2, range: 520, spread: 0.18,  pellets: 6, speed: 900,  len: 16, wid: 4, kick: 6, big: true, special: true, exotic: true },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom'];
+const EXOTICS = ['stormc', 'oblivion', 'starfall'];
 const NORMAL_GUNS = ['pistol', 'smg', 'shotgun']; // what NPCs actually carry
 
 const EYES    = ['Dot', 'Wide', 'Sleepy'];
@@ -722,8 +750,11 @@ function generateMap(seed) {
       b.rubble.push({ x: b.x0 + G + rng() * (b.x1 - b.x0 - 2 * G), y: b.y0 + G + rng() * (b.y1 - b.y0 - 2 * G), r: 5 + rng() * 10 });
     for (let i = 0; i < 4; i++)
       b.holes.push({ x: b.x0 + G + rng() * (b.x1 - b.x0 - 2 * G), y: b.y0 + G + rng() * (b.y1 - b.y0 - 2 * G), r: 18 + rng() * 26 });
-    b.drop = SPECIALS[buildings.length % SPECIALS.length];   // guardian's reward
-    b.gweapon = NORMAL_GUNS[(rng() * NORMAL_GUNS.length) | 0]; // guardian's own gun
+    b.drop = SPECIALS[buildings.length % SPECIALS.length];   // boss also drops this special
+    b.gweapon = NORMAL_GUNS[(rng() * NORMAL_GUNS.length) | 0]; // occupants' gun
+    b.occupants = CFG.guardsPerBld[0] + (rng() * (CFG.guardsPerBld[1] - CFG.guardsPerBld[0] + 1) | 0);
+    b.exotic = EXOTICS[(rng() * EXOTICS.length) | 0];        // the boss's exotic reward
+    b.bossUp = false;
     buildings.push(b);
   }
 
@@ -741,12 +772,19 @@ function generateMap(seed) {
   const trees = [], rocks = [], chests = [];
   for (let i = 0; i < CFG.treeCount; i++) { const p = place(100, w - 100, 20); trees.push({ ...p, r: 26 + rng() * 14 }); }
   for (let i = 0; i < CFG.rockCount; i++) { const p = place(100, w - 100, 40); rocks.push({ ...p, r: 20 + rng() * 18 }); }
+  // purely decorative ground dressing: light meadow patches + flowers
+  const patches = [], flowers = [];
+  for (let i = 0; i < 40; i++)
+    patches.push({ x: rng() * w, y: rng() * w, rx: 80 + rng() * 180, ry: 60 + rng() * 120, a: rng() * Math.PI });
+  const FLOWER_COLS = ['#ffe9f2', '#fff3b0', '#ffb3c7', '#cfe8ff'];
+  for (let i = 0; i < 90; i++)
+    flowers.push({ x: rng() * w, y: rng() * w, c: FLOWER_COLS[(rng() * FLOWER_COLS.length) | 0] });
   // chests come in four tiers; higher tiers are rarer and drop better loot
   let cid = 0;
   for (const [tier, n] of [['normal', CFG.chestCount], ['epic', CFG.epicChests],
                            ['legendary', CFG.legendaryChests], ['mythic', CFG.mythicChests]])
     for (let i = 0; i < n; i++) { const p = place(160, w - 160, 40); chests.push({ id: cid++, tier, ...p, opened: false, anim: 0 }); }
-  return { trees, rocks, chests, buildings };
+  return { trees, rocks, chests, buildings, patches, flowers };
 }
 
 // building whose (expanded) footprint contains the point, else null
@@ -783,7 +821,7 @@ function baseGame(seed, mode) {
     startTime: performance.now(),
     lastNetSend: 0, nearAction: null,
     buildMode: false, piece: 'wall', mat: 'wood',
-    ammo: { ...CFG.startAmmo }, bossSpawned: false,
+    ammo: { ...CFG.startAmmo }, kills: 0,
     camX: 0, camY: 0, shake: 0, aimLock: null,
     // practice range: bare training figures in the top-left corner —
     // shoot them to warm up; they get back up after a few seconds
@@ -804,16 +842,23 @@ function baseGame(seed, mode) {
   return g;
 }
 
-// one guardian per building — a tough special enemy guarding its drop
+// 3-5 guardians per building — a whole crew defending the compound.
+// Clear them ALL and that building's RUIN BOSS emerges (see guardianDied).
 function spawnGuardians(g) {
   g.map.buildings.forEach((b, i) => {
-    const gu = makePlayer('guard' + i, 'Ruin Guardian', { eye: 1, hair: 0, outfit: 1 }, 'G',
-      (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, true);
-    gu.guard = true; gu.weapon = b.gweapon; // guardians carry real guns
-    gu.hp = gu.maxHp = CFG.guardHp;
-    gu.dmgMul = CFG.guardDmgMul;            // nerfed: soft hits
-    gu.home = { x: gu.x, y: gu.y }; gu.drop = b.drop; gu.bld = b;
-    g.players[gu.id] = gu;
+    const rng = seededRng(g.seed + 71 * i); // same crew on every client
+    for (let j = 0; j < b.occupants; j++) {
+      const gu = makePlayer('guard' + i + '_' + j, 'Ruin Guardian',
+        { eye: 1, hair: (rng() * 3) | 0, outfit: 1 }, 'G',
+        b.x0 + 80 + rng() * (b.x1 - b.x0 - 160),
+        b.y0 + 80 + rng() * (b.y1 - b.y0 - 160), true);
+      gu.guard = true;
+      gu.weapon = rng() < 0.6 ? b.gweapon : NORMAL_GUNS[(rng() * NORMAL_GUNS.length) | 0];
+      gu.hp = gu.maxHp = CFG.guardHp;
+      gu.dmgMul = CFG.guardDmgMul;          // nerfed: soft hits
+      gu.home = { x: gu.x, y: gu.y }; gu.bld = b; gu.bldIdx = i;
+      g.players[gu.id] = gu;
+    }
   });
 }
 
@@ -1127,7 +1172,8 @@ function fireBullets(p, aim, mine) {
       dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1)),
       owner: p.id, team: p.team, mine,
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
-      col: w.col, len: w.len, wid: w.wid,    // tracer style
+      col: w.col || '#fff', len: w.len, wid: w.wid, // tracer style
+      exo: !!w.exotic,                       // exotic tracers cycle the rainbow
       splash: w.splash || 0, pierce: !!w.pierce, hitIds: [],
     });
   }
@@ -1251,53 +1297,59 @@ function updateBullets(dt) {
 
 function hurtLocal(p, dmg, by) {
   p.hp -= dmg; p.hurtFlash = 0.25;
+  p.lastHurtT = performance.now(); // pauses the passive regen
   if (p === game.me) game.shake = Math.min(12, game.shake + 6);
   if (p.hp <= 0 && p.alive) {
     p.alive = false; p.hp = 0;
     addEffect('break', p.x, p.y);
     const killer = game.players[by];
+    if (killer === game.me) game.kills++; // elimination counter in the HUD
     addKillFeed((killer ? killer.name : 'Storm') + ' ⚔ ' + p.name);
     if (p.guard) guardianDied(p);
   }
 }
 
-// A guardian (or the boss) fell: drop loot where it stood. Runs once per
-// NPC on every client (authority via hurtLocal, peers via npc_state), and
+// A guardian (or a Ruin Boss) fell: drop loot where it stood. Runs once
+// per NPC on every client (authority via hurtLocal, peers via npc_state);
 // all drops are deterministic so clients agree without extra messages.
 function guardianDied(p) {
   if (p.dropDone) return;
   p.dropDone = true;
+  const i = p.bldIdx, bld = game.map.buildings[i];
   if (p.boss) {
-    // the boss reward: 1 of the 7 specials (seeded) + supplies
-    const w = SPECIALS[(seededRng(game.seed + 555)() * SPECIALS.length) | 0];
-    spawnItem({ id: 'boss_w', x: p.x, y: p.y, kind: 'weapon', weapon: w });
-    spawnItem({ id: 'boss_a', x: p.x + 46, y: p.y + 12, kind: 'ammo', ammo: 'energy' });
-    spawnItem({ id: 'boss_h', x: p.x - 46, y: p.y + 12, kind: 'heal', amount: 80 });
-    addKillFeed('👑 THE WARDEN has fallen!');
+    // the boss reward: an EXOTIC weapon (animated rarity), the
+    // building's special, and supplies
+    spawnItem({ id: 'bw' + i, x: p.x, y: p.y, kind: 'weapon', weapon: bld.exotic });
+    spawnItem({ id: 'bs' + i, x: p.x + 50, y: p.y - 10, kind: 'weapon', weapon: bld.drop });
+    spawnItem({ id: 'ba' + i, x: p.x + 20, y: p.y + 44, kind: 'ammo', ammo: 'energy' });
+    spawnItem({ id: 'bh' + i, x: p.x - 46, y: p.y + 20, kind: 'heal', amount: 80 });
+    addKillFeed('👑 RUIN BOSS down — EXOTIC dropped!');
   } else {
-    spawnItem({ id: 'drop_' + p.id, x: p.x, y: p.y, kind: 'weapon', weapon: p.drop });
-    spawnItem({ id: 'dropa_' + p.id, x: p.x + 42, y: p.y + 10, kind: 'ammo', ammo: 'energy' });
-    // last guardian down -> THE WARDEN awakens
-    const left = Object.values(game.players).some(o => o.guard && !o.boss && o.alive);
-    if (!left && !game.bossSpawned) spawnBoss(game);
+    // regular occupant: modest, seeded consolation loot
+    const rng = seededRng(game.seed + 13 + p.home.x * 7 + p.home.y);
+    if (rng() < 0.5) spawnItem({ id: 'ga_' + p.id, x: p.x, y: p.y, kind: 'ammo', ammo: rng() < 0.4 ? 'energy' : 'light' });
+    else if (rng() < 0.6) spawnItem({ id: 'gh_' + p.id, x: p.x, y: p.y, kind: 'heal', amount: 30 });
+    // building cleared? its RUIN BOSS bursts out of the rubble
+    const left = Object.values(game.players).some(o => o.guard && !o.boss && o.bldIdx === i && o.alive);
+    if (!left && !bld.bossUp) spawnRuinBoss(i);
   }
   addEffect('break', p.x, p.y);
 }
 
-// THE WARDEN: spawns at the map center once every guardian is dead.
-// Deterministic, so each client spawns it locally the moment it sees the
-// final guardian die; the NPC authority then simulates it like any NPC.
-function spawnBoss(g) {
-  g.bossSpawned = true;
-  let x = CFG.world / 2, y = CFG.world / 2;
-  for (let t = 0; t < 20 && (buildingRectAt(g.map, x, y, 50) ||
-       g.map.rocks.some(r => dist2(x, y, r.x, r.y) < (r.r + 44) ** 2)); t++) { x += 70; y += 35; }
-  const b = makePlayer('boss', 'THE WARDEN', { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
-  b.guard = true; b.boss = true; b.weapon = 'shotgun';
-  b.hp = b.maxHp = CFG.bossHp; b.home = { x, y };
-  g.players.boss = b;
-  addKillFeed('⚠ THE WARDEN has awakened!');
-  toast('⚠ THE WARDEN has awakened!', 2600);
+// RUIN BOSS: one per building, emerges the moment its whole crew is
+// dead. Deterministic, so each client spawns it locally at the same
+// time; the NPC authority then simulates it like any other NPC.
+function spawnRuinBoss(i) {
+  const bld = game.map.buildings[i];
+  bld.bossUp = true;
+  const x = (bld.x0 + bld.x1) / 2, y = (bld.y0 + bld.y1) / 2;
+  const b = makePlayer('boss' + i, 'RUIN BOSS', { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
+  b.guard = true; b.boss = true; b.weapon = bld.gweapon;
+  b.hp = b.maxHp = CFG.bossHp; b.home = { x, y }; b.bldIdx = i;
+  game.players[b.id] = b;
+  addEffect('boom', x, y);
+  addKillFeed('⚠ A RUIN BOSS has emerged!');
+  toast('⚠ RUIN BOSS! Slay it for an EXOTIC weapon', 2600);
 }
 
 function takePickup(id, mine) {
@@ -1440,8 +1492,8 @@ function updateBots(dt) {
 }
 
 /* Guardians: tough special enemies that defend their ruined building —
-   they are hard-clamped inside it and can never leave. THE WARDEN (boss)
-   has no leash and hunts the nearest player across the whole map.
+   they are hard-clamped inside it and can never leave. A RUIN BOSS
+   hunts anyone within ~900px of its ruin and drifts home when idle.
    Simulated only by the NPC authority (solo: you; MP: host). */
 function updateGuardians(dt) {
   const g = game;
@@ -1449,9 +1501,10 @@ function updateGuardians(dt) {
     const gu = g.players[id];
     if (!gu.guard || !gu.alive) continue;
     // nearest living non-NPC target (guardians measure from their home;
-    // the boss measures from wherever it currently stands)
+    // a Ruin Boss measures from wherever it currently stands, but only
+    // hunts within ~900px of its ruined building)
     const hx = gu.boss ? gu.x : gu.home.x, hy = gu.boss ? gu.y : gu.home.y;
-    let target = null, best = gu.boss ? Infinity : CFG.guardAggro ** 2;
+    let target = null, best = gu.boss ? 900 ** 2 : CFG.guardAggro ** 2;
     for (const oid in g.players) {
       const o = g.players[oid];
       if (o.guard || !o.alive) continue;
@@ -1477,6 +1530,11 @@ function updateGuardians(dt) {
         if (g.mode !== 'solo') net.send({ t: 'npc_shoot', id, x: gu.x, y: gu.y, aim: gu.aim });
       }
     }
+    // a boss that strayed too far from its ruin walks back home
+    if (gu.boss && !target && dist2(gu.x, gu.y, gu.home.x, gu.home.y) > 120 * 120) {
+      const a = Math.atan2(gu.home.y - gu.y, gu.home.x - gu.x);
+      mx = Math.cos(a); my = Math.sin(a); gu.aim = a;
+    }
     movePlayer(gu, mx, my, dt, gu.boss ? 0.75 : 0.5);
     if (!gu.boss && gu.bld) { // guardians stay in the house, always
       gu.x = clamp(gu.x, gu.bld.x0 + 34, gu.bld.x1 - 34);
@@ -1500,9 +1558,10 @@ function makeStorm(seed) {
 }
 function updateStorm(dt) {
   const s = game.storm;
-  if (s.phase >= CFG.stormPhases.length) { s.label = 'Storm closed!'; return; }
+  if (s.phase >= CFG.stormPhases.length) { s.label = 'Storm closed!'; s.pct = 1; return; }
   const [hold, shrink, frac, dps] = CFG.stormPhases[s.phase];
   s.t += dt;
+  s.pct = Math.min(1, s.t / (s.holding ? hold : shrink)); // HUD progress bar
   if (s.holding) {
     s.label = `⛈ Storm shrinks in ${Math.max(0, hold - s.t).toFixed(0)}s`;
     if (s.t >= hold) {
@@ -1604,15 +1663,20 @@ function update(dt) {
         g.me.aim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
     }
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
+    // easier health: passive regeneration after a few calm seconds
+    if (g.me.hp < g.me.maxHp && performance.now() - (g.me.lastHurtT || 0) > CFG.regenDelay * 1000)
+      g.me.hp = Math.min(g.me.maxHp, g.me.hp + CFG.regenRate * dt);
   } else g.aimLock = null;
 
   // proximity -> contextual interact button (chests + ground loot),
   // preferring loot when both are in range so chests can't shadow items
   g.nearAction = null;
-  for (const pk of g.pickups)
-    if (!pk.taken && dist2(g.me.x, g.me.y, pk.x, pk.y) < 60 * 60) {
-      g.nearAction = { kind: 'pickup', pk }; break;
-    }
+  let bestD = 60 * 60; // closest item wins, not first-found (loot piles!)
+  for (const pk of g.pickups) {
+    if (pk.taken) continue;
+    const d = dist2(g.me.x, g.me.y, pk.x, pk.y);
+    if (d < bestD) { bestD = d; g.nearAction = { kind: 'pickup', pk }; }
+  }
   for (const c of g.map.chests) {
     if (c.anim > 0) c.anim -= dt;
     if (!g.nearAction && !c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70)
@@ -1633,12 +1697,12 @@ function update(dt) {
       info.lastElementChild.textContent = 'Loot spills out — grab what you want';
       info.style.borderColor = t.glow;
     } else {
-      const pk = g.nearAction.pk, rc = RARITY[pk.rarity];
+      const pk = g.nearAction.pk, col = rarityCol(pk.rarity);
       btn.textContent = '🖐 PICK UP';
-      info.firstElementChild.textContent = pk.icon + ' ' + pk.label + ' — ' + rc.name.toUpperCase();
-      info.firstElementChild.style.color = rc.col;
+      info.firstElementChild.textContent = pk.icon + ' ' + pk.label + ' — ' + RARITY[pk.rarity].name.toUpperCase();
+      info.firstElementChild.style.color = col;
       info.lastElementChild.textContent = pk.stats;
-      info.style.borderColor = rc.col;
+      info.style.borderColor = col;
     }
   } else info.style.display = 'none';
 
@@ -1721,12 +1785,28 @@ function render() {
   const cy = g.camY + (Math.random() - 0.5) * g.shake;
   ctx.setTransform(DPR * ZOOM, 0, 0, DPR * ZOOM, 0, 0); // world pass
 
-  // the island floats in a dark void; grass + grid only inside the world
-  ctx.fillStyle = '#0e1613'; ctx.fillRect(0, 0, VW, VH);
+  // the island sits in an ocean; gentle animated foam rings the coast
+  ctx.fillStyle = '#14425c'; ctx.fillRect(0, 0, VW, VH);
+  const foamT = Math.sin(performance.now() / 900) * 6;
+  ctx.strokeStyle = '#bfe8ff2e'; ctx.lineWidth = 12;
+  ctx.strokeRect(-cx - 14 - foamT, -cy - 14 - foamT, CFG.world + 28 + foamT * 2, CFG.world + 28 + foamT * 2);
+  ctx.strokeStyle = '#bfe8ff1a'; ctx.lineWidth = 10;
+  ctx.strokeRect(-cx - 40 + foamT, -cy - 40 + foamT, CFG.world + 80 - foamT * 2, CFG.world + 80 - foamT * 2);
   ctx.save();
   ctx.beginPath(); ctx.rect(-cx, -cy, CFG.world, CFG.world); ctx.clip();
   ctx.save(); ctx.translate(-cx, -cy);   // grass pattern in world coords
   ctx.fillStyle = grassPattern; ctx.fillRect(cx - 1, cy - 1, VW + 2, VH + 2);
+  // decorative meadows + flowers for a livelier island
+  ctx.fillStyle = '#7bbf6d22';
+  for (const pa of g.map.patches) {
+    if (pa.x < cx - 300 || pa.x > cx + VW + 300 || pa.y < cy - 300 || pa.y > cy + VH + 300) continue;
+    ctx.beginPath(); ctx.ellipse(pa.x, pa.y, pa.rx, pa.ry, pa.a, 0, 7); ctx.fill();
+  }
+  for (const f of g.map.flowers) {
+    if (f.x < cx || f.x > cx + VW || f.y < cy || f.y > cy + VH) continue;
+    ctx.fillStyle = f.c;
+    ctx.beginPath(); ctx.arc(f.x, f.y, 2.6, 0, 7); ctx.fill();
+  }
   ctx.restore();
   // faint grid (also doubles as the build grid guide)
   ctx.strokeStyle = g.buildMode ? '#ffffff40' : '#ffffff12'; ctx.lineWidth = 1;
@@ -1850,7 +1930,7 @@ function render() {
     if (pk.taken) continue;
     const x = pk.x - cx, y = pk.y - cy;
     if (x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
-    const rc = RARITY[pk.rarity].col, pulse = 1 + Math.sin(performance.now() / 200) * 0.12;
+    const rc = rarityCol(pk.rarity), pulse = 1 + Math.sin(performance.now() / 200) * 0.12;
     drawShadow(x, y + 4, 13);
     ctx.strokeStyle = rc; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(x, y, (pk.kind === 'weapon' ? 21 : 16) * pulse, 0, 7); ctx.stroke();
@@ -1872,10 +1952,11 @@ function render() {
     ctx.fillStyle = '#a9aeb5'; ctx.beginPath(); ctx.arc(x - r.r * 0.25, y - r.r * 0.25, r.r * 0.5, 0, 7); ctx.fill();
   }
 
-  // bullets: per-weapon tracer color/length (railgun = long blue beam)
+  // bullets: per-weapon tracer color/length (railgun = long blue beam,
+  // exotic weapons fire rainbow-shifting tracers)
   ctx.lineCap = 'round';
   for (const b of g.bullets) {
-    ctx.strokeStyle = b.col; ctx.lineWidth = b.wid;
+    ctx.strokeStyle = b.exo ? rarityCol('exotic') : b.col; ctx.lineWidth = b.wid;
     ctx.beginPath();
     ctx.moveTo(b.x - b.dx * b.len - cx, b.y - b.dy * b.len - cy);
     ctx.lineTo(b.x - cx, b.y - cy); ctx.stroke();
@@ -1886,7 +1967,7 @@ function render() {
     const p = g.players[id];
     const x = p.x - cx, y = p.y - cy;
     if (!p.alive || x < -60 || y < -60 || x > VW + 60 || y > VH + 60) continue;
-    const bodyR = p.boss ? 26 : CFG.playerR; // THE WARDEN towers over everyone
+    const bodyR = p.boss ? 26 : CFG.playerR; // bosses tower over everyone
     drawShadow(x, y + 4, bodyR);
     if (p.guard) { // menacing pulsing red aura on special enemies
       const pulse = 4 + Math.sin(performance.now() / 180) * 3;
@@ -1913,7 +1994,8 @@ function render() {
     // name + mini health bar (guardians have more max hp)
     ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
     ctx.fillStyle = id === g.me.id ? '#ffd94d' : p.guard ? '#ff8a8a' : '#fff';
-    ctx.fillText(p.name, x, y - 28);
+    ctx.fillText(p.name, x, y - (p.boss ? 40 : 28));
+    if (p.boss) { ctx.font = '20px sans-serif'; ctx.fillText('👑', x, y - 56); ctx.font = '12px sans-serif'; }
     ctx.fillStyle = '#000a'; ctx.fillRect(x - 18, y - 25, 36, 4);
     ctx.fillStyle = p.guard ? '#ff5f5f' : '#5dff7a';
     ctx.fillRect(x - 18, y - 25, 36 * p.hp / (p.maxHp || CFG.maxHp), 4);
@@ -1984,6 +2066,8 @@ function render() {
   ctx.rect(0, 0, VW, VH);
   ctx.arc(s.x - cx, s.y - cy, s.r, 0, Math.PI * 2);
   ctx.fill('evenodd');
+  ctx.strokeStyle = '#b46bff33'; ctx.lineWidth = 12; // soft outer glow
+  ctx.beginPath(); ctx.arc(s.x - cx, s.y - cy, s.r, 0, 7); ctx.stroke();
   ctx.strokeStyle = '#b46bff'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(s.x - cx, s.y - cy, s.r, 0, 7); ctx.stroke();
 
@@ -2044,27 +2128,32 @@ function render() {
 
   drawMinimap();
 
-  // HUD text refresh
-  $('hpFill').style.width = (g.me.hp / CFG.maxHp * 100) + '%';
-  $('hpText').textContent = `${Math.ceil(g.me.hp)} / ${CFG.maxHp}`;
-  $('stormInfo').textContent = s.label;
+  // HUD text refresh — HP bar shifts green -> orange -> red as it drops
+  const hpPct = g.me.hp / CFG.maxHp;
+  $('hpFill').style.width = (hpPct * 100) + '%';
+  $('hpFill').style.background = hpPct > 0.5 ? 'linear-gradient(#5dff7a,#25a03e)'
+    : hpPct > 0.25 ? 'linear-gradient(#ffd66b,#e08a2a)' : 'linear-gradient(#ff7b6b,#d93030)';
+  $('hpText').textContent = `❤️ ${Math.ceil(g.me.hp)} / ${CFG.maxHp}`;
+  $('stormText').textContent = s.label;
+  $('stormBar').style.width = ((s.pct || 0) * 100) + '%';
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
-  $('aliveInfo').textContent = countAlive() + ' alive';
+  $('aliveInfo').textContent = `⚔ ${g.kills} · ${countAlive()} alive`;
   // shield button state: shows hits left while up, dims when unaffordable
   const sbtn = $('shieldBtn');
   sbtn.innerHTML = g.me.shieldHits > 0 ? `🛡<br>${g.me.shieldHits} HIT${g.me.shieldHits > 1 ? 'S' : ''}` : `🛡<br>${CFG.shieldCost}🪵`;
   sbtn.classList.toggle('off', g.me.shieldHits === 0 && g.mats.wood < CFG.shieldCost);
 
-  // weapon panel (standard shooter layout: icon / name+rarity / ammo)
-  const wpn = WEAPONS[g.me.weapon], rc = RARITY[wpn.rarity], ammoLeft = g.ammo[wpn.ammo];
+  // weapon panel (standard shooter layout: icon / name+rarity / ammo);
+  // exotic weapons animate their color right in the panel
+  const wpn = WEAPONS[g.me.weapon], wcol = rarityCol(wpn.rarity), ammoLeft = g.ammo[wpn.ammo];
   $('wpnIcon').textContent = wpn.icon;
   $('wpnName').textContent = wpn.name.toUpperCase();
-  $('wpnName').style.color = rc.col;
-  $('wpnRarity').textContent = rc.name.toUpperCase();
+  $('wpnName').style.color = wcol;
+  $('wpnRarity').textContent = RARITY[wpn.rarity].name.toUpperCase();
   $('wpnAmmo').textContent = ammoLeft;
   $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
   $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
-  $('weaponPanel').style.borderLeftColor = rc.col;
+  $('weaponPanel').style.borderLeftColor = wcol;
 }
 
 // Minimap (top-right): buildings, chests, storm circle, you, teammates,

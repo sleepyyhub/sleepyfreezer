@@ -57,13 +57,16 @@ All buttons are ≥ 56 px (above the 44 pt minimum); everything uses
 - **Ruined buildings** — 14 seeded run-down structures on a 5600px island, with
   destructible cracked walls, door gaps, collapsed chunks, debris, and a broken roof
   that lifts when you walk inside.
-- **Guardians, THE WARDEN & special weapons** — each building is defended by a "Ruin
-  Guardian" (180 hp, red aura) armed with a real gun; guardians never leave their house
-  and shoot slow and sloppy (they're loot piñatas, not sharpshooters). Each drops one of
-  the 7 special weapons plus energy ammo. Kill all 14 and **THE WARDEN** (800 hp boss)
-  awakens at the map center, hunts players across the whole map, and drops another
-  special + supplies. In multiplayer the party host's client simulates all NPCs and
-  syncs them to everyone.
+- **Guardian crews, RUIN BOSSES & Exotics** — every building is defended by a crew of
+  **3–5 Ruin Guardians** (120 hp each, red auras) armed with real guns; they never leave
+  their house and shoot slow and sloppy. Wipe a whole crew and that building's **RUIN
+  BOSS** (500 hp, crowned, hunts within ~900px of its ruin) bursts out — kill it and it
+  drops an **EXOTIC weapon** plus the building's special and supplies. Exotic is a new
+  top rarity whose color literally cycles through the rainbow — on the item, the item
+  card, the weapon panel, and even the bullet tracers (Stormcaller, Oblivion, Starfall).
+  In multiplayer the party host's client simulates all NPCs and syncs them to everyone.
+- **Passive regen** — after 5 seconds without taking damage you slowly heal (4 hp/s),
+  so a lost fight doesn't doom the rest of your match.
 - **Chests & ground loot** — 39 chests in four tiers (26 Normal, 7 Epic, 4 Legendary,
   2 Mythic), color-coded with matching glows and minimap dots. Opening a chest spills
   its loot onto the ground as rarity-colored pickups — stand on an item to see its name,
