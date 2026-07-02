@@ -495,14 +495,14 @@ const WEAPONS = {
   colossus:{ name: 'Colossus',        icon: '🦣', rarity: 'mythic',    ammo: 'shell',  dmg: 9,  rof: 1,  range: 300, spread: 0.3,  pellets: 8, speed: 800,  col: '#ffd27a', len: 12, wid: 4, kick: 8, big: true, special: true },
   // ---- EXOTIC weapons: only Ruin Bosses drop these; their color (and
   //      tracers) constantly shift through the rainbow ----
-  stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 30, rof: 7,   range: 700, spread: 0.03,  pellets: 1, speed: 1300, len: 26, wid: 4, kick: 2.5, big: true, special: true, exotic: true },
-  oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 70, rof: 1.4, range: 700, spread: 0.006, pellets: 1, speed: 1500, len: 40, wid: 5, kick: 8, big: true, pierce: true, splash: 70, special: true, exotic: true },
-  starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 16, rof: 2.2, range: 520, spread: 0.18,  pellets: 6, speed: 900,  len: 16, wid: 4, kick: 6, big: true, special: true, exotic: true },
-  singularity:{ name: 'Singularity',  icon: '🌀', rarity: 'exotic', ammo: 'energy', dmg: 50, rof: 1.6, range: 750, spread: 0.005, pellets: 1, speed: 1600, len: 36, wid: 5, kick: 7, big: true, pierce: true, splash: 60, special: true, exotic: true },
-  dragonfire:{ name: 'Dragonfire',    icon: '🐲', rarity: 'exotic', ammo: 'shell',  dmg: 14, rof: 5,   range: 400, spread: 0.12,  pellets: 3, speed: 900,  len: 14, wid: 4, kick: 3, big: true, special: true, exotic: true },
-  zeus:    { name: 'Zeus',            icon: '⚡', rarity: 'exotic', ammo: 'energy', dmg: 130, rof: 0.8, range: 1500, spread: 0.001, pellets: 1, speed: 2400, len: 60, wid: 4, kick: 10, big: true, special: true, exotic: true },
-  mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 20, rof: 9,   range: 520, spread: 0.05,  pellets: 1, speed: 1200, len: 18, wid: 4, kick: 1.5, big: true, special: true, exotic: true },
-  nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 60, rof: 0.9, range: 650, spread: 0.01,  pellets: 1, speed: 800,  len: 24, wid: 6, kick: 9, big: true, splash: 110, special: true, exotic: true },
+  stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 68,  rof: 7,   range: 760,  spread: 0.025, pellets: 1, speed: 1450, len: 32, wid: 5, kick: 3,  big: true, special: true, exotic: true, shape: 'fork' },
+  oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 150, rof: 1.4, range: 820,  spread: 0.004, pellets: 1, speed: 1550, len: 48, wid: 7, kick: 9,  big: true, pierce: true, splash: 115, special: true, exotic: true, shape: 'orb' },
+  starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 34,  rof: 2.2, range: 580,  spread: 0.15,  pellets: 7, speed: 980,  len: 20, wid: 5, kick: 7,  big: true, special: true, exotic: true, shape: 'star' },
+  singularity:{ name: 'Singularity',  icon: '🌀', rarity: 'exotic', ammo: 'energy', dmg: 125, rof: 1.6, range: 840,  spread: 0.003, pellets: 1, speed: 1700, len: 44, wid: 6, kick: 8,  big: true, pierce: true, splash: 95, special: true, exotic: true, shape: 'orb' },
+  dragonfire:{ name: 'Dragonfire',    icon: '🐲', rarity: 'exotic', ammo: 'shell',  dmg: 42,  rof: 5,   range: 450,  spread: 0.10,  pellets: 4, speed: 980,  len: 20, wid: 6, kick: 4,  big: true, special: true, exotic: true, shape: 'flame' },
+  zeus:    { name: 'Zeus',            icon: '⚡', rarity: 'exotic', ammo: 'energy', dmg: 260, rof: 0.55,range: 1650, spread: 0,     pellets: 1, speed: 2600, len: 80, wid: 8, kick: 12, big: true, special: true, exotic: true, shape: 'bolt', charge: 1100 },
+  mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 46,  rof: 9,   range: 580,  spread: 0.04,  pellets: 2, speed: 1300, len: 22, wid: 5, kick: 2,  big: true, special: true, exotic: true, shape: 'split' },
+  nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 145, rof: 0.9, range: 720,  spread: 0.006, pellets: 1, speed: 920,  len: 30, wid: 8, kick: 10, big: true, splash: 160, special: true, exotic: true, shape: 'star' },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
@@ -548,6 +548,7 @@ const ARMOR = [null,
   { name: 'Leather Armor',  icon: '🦺', reduce: 0.25, dur: 150, rarity: 'uncommon' },
   { name: 'Iron Armor',     icon: '🛡', reduce: 0.4,  dur: 250, rarity: 'epic' },
   { name: 'Guardian Plate', icon: '⚜️', reduce: 0.55, dur: 400, rarity: 'legendary' },
+  { name: 'Exotic Aegis',   icon: '💠', reduce: 0.82, dur: 900, rarity: 'exotic' },
 ];
 const MAX_SHIELD = 100; // shield potions fill a blue bar absorbed before HP
 
@@ -946,7 +947,7 @@ function makePlayer(id, name, look, team, x, y, isBot) {
     shieldHits: 0,          // >0 = a frontal shield is up (see deployShield)
     shieldPts: 0,           // blue bonus-HP from shield potions (absorbed first)
     armorTier: 0, armorDur: 0, // equipped ARMOR tier + remaining durability
-    weapon: 'pistol', lastShot: 0, hurtFlash: 0,
+    weapon: 'pistol', lastShot: 0, hurtFlash: 0, chargeShot: null,
     // remote interpolation targets
     tx: x, ty: y, taim: -Math.PI / 2,
     // bot AI state
@@ -1081,6 +1082,7 @@ function showPickupConfirm(pk) {
   if (pendingWeaponPickup && pendingWeaponPickup !== pk.id) closePickupConfirm();
   pendingWeaponPickup = pk.id;
   input.fire = false;
+  game.me.chargeShot = null;
   const cur = WEAPONS[game.me.weapon], next = WEAPONS[pk.weapon];
   $('confirmCurrentName').textContent = cur.icon + ' ' + cur.name;
   $('confirmCurrentName').style.color = rarityCol(cur.rarity);
@@ -1384,6 +1386,20 @@ function tryShoot(p, mine) {
   const w = WEAPONS[p.weapon], now = performance.now();
   const rofMul = p === game.me ? 1 + game.upgrades.rofMul : 1;
   if (now - p.lastShot < 1000 / (w.rof * rofMul)) return;
+  if (p === game.me && w.charge) {
+    if (!p.chargeShot) {
+      if (game.ammo[w.ammo] < 1) {
+        if (now - lastAmmoWarn > 900) { lastAmmoWarn = now; toast('Out of ' + AMMO[w.ammo].name + ' ammo!'); }
+        return;
+      }
+      p.chargeShot = { weapon: p.weapon, start: now, ready: now + w.charge, aim: p.aim };
+      toast('⚡ Charging Zeus...');
+      return;
+    }
+    if (now < p.chargeShot.ready) return;
+    p.aim = p.chargeShot.aim;
+    p.chargeShot = null;
+  }
   if (p === game.me) { // only YOU consume ammo; NPCs never run dry
     if (game.ammo[w.ammo] < 1) {
       if (now - lastAmmoWarn > 900) { lastAmmoWarn = now; toast('Out of ' + AMMO[w.ammo].name + ' ammo!'); }
@@ -1409,6 +1425,7 @@ function fireBullets(p, aim, mine) {
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
       col: w.col || '#fff', len: w.len, wid: w.wid, // tracer style
       exo: !!w.exotic,                       // exotic tracers cycle the rainbow
+      shape: w.shape || 'line',
       splash: w.splash || 0, pierce: !!w.pierce, hitIds: [],
     });
   }
@@ -1567,12 +1584,13 @@ function guardianDied(p) {
   const i = p.bldIdx, bld = game.map.buildings[i];
   if (p.boss) {
     // the boss reward: an EXOTIC weapon (animated rarity), the
-    // building's special, and supplies
+    // building's special, exotic armor, and supplies
     spawnItem({ id: 'bw' + i, x: p.x, y: p.y, kind: 'weapon', weapon: bld.exotic });
     spawnItem({ id: 'bs' + i, x: p.x + 50, y: p.y - 10, kind: 'weapon', weapon: bld.drop });
+    spawnItem({ id: 'bar' + i, x: p.x - 34, y: p.y - 42, kind: 'armor', tier: 4 });
     spawnItem({ id: 'ba' + i, x: p.x + 20, y: p.y + 44, kind: 'ammo', ammo: 'energy' });
     spawnItem({ id: 'bh' + i, x: p.x - 46, y: p.y + 20, kind: 'heal', amount: 80 });
-    addKillFeed('👑 RUIN BOSS down — EXOTIC dropped!');
+    addKillFeed('👑 RUIN BOSS down — EXOTIC loot dropped!');
   } else {
     // regular occupant: modest, seeded consolation loot
     const rng = seededRng(game.seed + 13 + p.home.x * 7 + p.home.y);
@@ -1608,7 +1626,7 @@ function takePickup(id, mine, confirmed = false) {
   if (mine && pk.kind === 'weapon' && !confirmed) return showPickupConfirm(pk);
   pk.taken = true;
   if (mine) {
-    if (pk.kind === 'weapon') game.me.weapon = pk.weapon;
+    if (pk.kind === 'weapon') { game.me.chargeShot = null; game.me.weapon = pk.weapon; }
     else if (pk.kind === 'heal') game.me.hp = Math.min(CFG.maxHp, game.me.hp + pk.amount);
     else if (pk.kind === 'mat') game.mats[pk.mat] += pk.amount;
     else if (pk.kind === 'armor') {
@@ -1914,11 +1932,14 @@ function update(dt) {
   const g = game;
 
   if (g.me.alive) {
+    if (g.me.chargeShot && g.me.chargeShot.weapon !== g.me.weapon) g.me.chargeShot = null;
+    if (g.me.chargeShot && performance.now() >= g.me.chargeShot.ready) tryShoot(g.me, g.mode !== 'solo');
     // movement: WASD/arrows in PC mode, virtual joystick on touch
     let mvx = input.joyVec.x, mvy = input.joyVec.y;
     if (pc.active) {
       for (const k in MOVE_KEYS) if (pc.keys[k]) { mvx += MOVE_KEYS[k][0]; mvy += MOVE_KEYS[k][1]; }
     }
+    if (g.me.chargeShot) { mvx = 0; mvy = 0; }
     movePlayer(g.me, mvx, mvy, dt, 1 + g.upgrades.speedMul);
     if (pc.active) {
       // the mouse cursor IS the aim — recomputed every frame so walking
@@ -2236,10 +2257,44 @@ function render() {
   // exotic weapons fire rainbow-shifting tracers)
   ctx.lineCap = 'round';
   for (const b of g.bullets) {
-    ctx.strokeStyle = b.exo ? rarityCol('exotic') : b.col; ctx.lineWidth = b.wid;
-    ctx.beginPath();
-    ctx.moveTo(b.x - b.dx * b.len - cx, b.y - b.dy * b.len - cy);
-    ctx.lineTo(b.x - cx, b.y - cy); ctx.stroke();
+    const bx = b.x - cx, by = b.y - cy, col = b.exo ? rarityCol('exotic') : b.col;
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = b.wid;
+    if (b.shape === 'orb') {
+      ctx.beginPath(); ctx.arc(bx, by, b.wid + 5, 0, 7); ctx.fill();
+      ctx.globalAlpha = 0.38; ctx.beginPath(); ctx.arc(bx, by, b.wid + 12, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    } else if (b.shape === 'star') {
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 90);
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const r = i % 2 ? b.wid + 3 : b.wid + 11, a = i * Math.PI / 4;
+        if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath(); ctx.fill(); ctx.restore();
+    } else if (b.shape === 'flame') {
+      ctx.beginPath(); ctx.moveTo(bx, by);
+      ctx.lineTo(bx - b.dx * b.len - b.dy * 8, by - b.dy * b.len + b.dx * 8);
+      ctx.lineTo(bx - b.dx * b.len + b.dy * 8, by - b.dy * b.len - b.dx * 8);
+      ctx.closePath(); ctx.fill();
+    } else if (b.shape === 'fork' || b.shape === 'bolt') {
+      ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
+      ctx.lineTo(bx - b.dx * b.len * 0.65 + b.dy * 9, by - b.dy * b.len * 0.65 - b.dx * 9);
+      ctx.lineTo(bx - b.dx * b.len * 0.35 - b.dy * 7, by - b.dy * b.len * 0.35 + b.dx * 7);
+      ctx.lineTo(bx, by); ctx.stroke();
+      if (b.shape === 'fork') {
+        ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len * 0.45, by - b.dy * b.len * 0.45);
+        ctx.lineTo(bx - b.dx * b.len * 0.25 + b.dy * 16, by - b.dy * b.len * 0.25 - b.dx * 16); ctx.stroke();
+      }
+    } else if (b.shape === 'split') {
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx - b.dx * b.len + b.dy * side * 5, by - b.dy * b.len - b.dx * side * 5);
+        ctx.lineTo(bx + b.dy * side * 5, by - b.dx * side * 5); ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
+      ctx.lineTo(bx, by); ctx.stroke();
+    }
   }
 
   // players (draw dead ones as ghosts fading is skipped — just skip them)
@@ -2256,6 +2311,11 @@ function render() {
     } else if (p.team !== 'S' && p.team !== 'G') { // team ring
       ctx.strokeStyle = p.team === 'A' ? '#2a6de0' : '#d93030'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 5, 0, 7); ctx.stroke();
+    }
+    if (p.chargeShot) {
+      const pct = clamp((performance.now() - p.chargeShot.start) / (p.chargeShot.ready - p.chargeShot.start), 0, 1);
+      ctx.strokeStyle = rarityCol('exotic'); ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(x, y, bodyR + 18, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2); ctx.stroke();
     }
     drawCharacter(ctx, x, y, p.aim, p.look, bodyR);
     // deployed shield: cyan arc facing the aim; dashed once cracked
@@ -2417,7 +2477,7 @@ function render() {
   $('hpFill').style.width = (hpPct * 100) + '%';
   $('hpFill').style.background = hpPct > 0.5 ? 'linear-gradient(#5dff7a,#25a03e)'
     : hpPct > 0.25 ? 'linear-gradient(#ffd66b,#e08a2a)' : 'linear-gradient(#ff7b6b,#d93030)';
-  $('hpText').textContent = `❤️ ${Math.ceil(g.me.hp)} / ${CFG.maxHp}` +
+  $('hpText').textContent = `❤️ ${Math.ceil(g.me.hp)} / ${Math.ceil(g.me.maxHp)}` +
     (g.me.shieldPts > 0 ? `  ·  🛡 ${Math.ceil(g.me.shieldPts)}` : '');
   $('spFill').style.width = (g.me.shieldPts / MAX_SHIELD * 100) + '%';
   const ai = $('armorInfo');
@@ -2439,10 +2499,11 @@ function render() {
   // weapon panel (standard shooter layout: icon / name+rarity / ammo);
   // exotic weapons animate their color right in the panel
   const wpn = WEAPONS[g.me.weapon], wcol = rarityCol(wpn.rarity), ammoLeft = g.ammo[wpn.ammo];
+  const charging = g.me.chargeShot && g.me.chargeShot.weapon === g.me.weapon;
   $('wpnIcon').textContent = wpn.icon;
   $('wpnName').textContent = wpn.name.toUpperCase();
   $('wpnName').style.color = wcol;
-  $('wpnRarity').textContent = RARITY[wpn.rarity].name.toUpperCase();
+  $('wpnRarity').textContent = charging ? 'CHARGING' : RARITY[wpn.rarity].name.toUpperCase();
   $('wpnAmmo').textContent = ammoLeft;
   $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
   $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
