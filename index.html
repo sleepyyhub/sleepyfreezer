@@ -137,6 +137,15 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   font-variant-numeric:tabular-nums}
 #wpnAmmo.dry{color:#ff5f5f}
 #wpnAmmoType{font-size:9px;font-weight:700;letter-spacing:2px;color:#9db2c9;text-align:right}
+#hotbar{position:absolute;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  display:flex;gap:8px;pointer-events:auto;background:rgba(8,14,24,.52);border:1px solid #ffffff22;
+  padding:6px;border-radius:8px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.hotSlot{width:58px;height:54px;border:2px solid #ffffff24;border-radius:7px;background:#17243a;color:#fff;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;position:relative}
+.hotSlot.sel{border-color:#ffd94d;box-shadow:0 0 14px #ffd94d66}
+.hotSlot .num{position:absolute;left:4px;top:2px;font-size:10px;color:#9db2c9}
+.hotSlot .ico{font-size:20px;line-height:1}
+.hotSlot .rar{font-size:8px;letter-spacing:1px;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:184px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
 
@@ -195,6 +204,8 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   #wpnName{font-size:11px;letter-spacing:1px}
   #wpnRarity{font-size:8px}
   #wpnAmmo{font-size:18px;min-width:34px}
+  #hotbar{bottom:calc(4px + env(safe-area-inset-bottom));gap:4px;padding:4px}
+  .hotSlot{width:44px;height:40px}.hotSlot .ico{font-size:15px}.hotSlot .rar{display:none}
   #buildMenu{gap:6px;transform:translateY(-62%)}
   #buildMenu button{min-width:72px;min-height:44px;font-size:11px}
   /* menus/lobby fit short screens too */
@@ -303,7 +314,7 @@ body.pc #pcHint{display:block}
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
   </div>
   <div id="killFeed"></div>
-  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · B build · F shield · 1-3 piece · 4-6 material</div>
+  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · 1-5 weapons · B build · Z/X/C piece · V/G/H material</div>
   <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
   <button class="hbtn" id="shieldBtn">🛡<br>SHIELD</button>
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
@@ -311,6 +322,13 @@ body.pc #pcHint{display:block}
     <div id="wpnIcon">🔫</div>
     <div><div id="wpnName">RUSTFANG</div><div id="wpnRarity">COMMON</div></div>
     <div><div id="wpnAmmo">120</div><div id="wpnAmmoType">LIGHT</div></div>
+  </div>
+  <div id="hotbar">
+    <button class="hotSlot sel" data-slot="0"><span class="num">1</span><span class="ico">🔫</span><span class="rar">COMMON</span></button>
+    <button class="hotSlot" data-slot="1"><span class="num">2</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
+    <button class="hotSlot" data-slot="2"><span class="num">3</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
+    <button class="hotSlot" data-slot="3"><span class="num">4</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
+    <button class="hotSlot" data-slot="4"><span class="num">5</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
   </div>
   <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
   <div id="itemInfo"><div class="nm"></div><div class="st"></div></div>
@@ -409,7 +427,7 @@ const CFG = {
   shieldHits: 2,          // enemy hits the shield absorbs before breaking
   dummyZone: 660,         // top-left practice corner size (px)
   dummyHp: 50,            // practice dummies fall after this much damage
-  netHz: 30,              // state sync rate (multiplayer)
+  netHz: 60,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
   // (longer than before — the island is big and walks take time)
   stormPhases: [
@@ -512,6 +530,20 @@ const WEAPONS = {
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
+Object.assign(WEAPONS, {
+  pebble: { name: 'Pebbleshot', icon: '•', rarity: 'common', ammo: 'light', dmg: 16, rof: 5.8, range: 390, spread: 0.075, pellets: 1, speed: 850, col: '#d9d0b8', len: 12, wid: 2, kick: 1 },
+  grinder: { name: 'Grinder', icon: '▣', rarity: 'common', ammo: 'light', dmg: 10, rof: 7.5, range: 420, spread: 0.1, pellets: 2, speed: 880, col: '#d9d0b8', len: 11, wid: 2, kick: 1.5 },
+  viper: { name: 'Viper', icon: '⌁', rarity: 'uncommon', ammo: 'light', dmg: 19, rof: 5.4, range: 560, spread: 0.045, pellets: 1, speed: 1050, col: '#a8ffb0', len: 17, wid: 3, kick: 2 },
+  buckler: { name: 'Buckler', icon: '◈', rarity: 'uncommon', ammo: 'shell', dmg: 7, rof: 2.6, range: 230, spread: 0.24, pellets: 6, speed: 780, col: '#ffd27a', len: 10, wid: 3, kick: 4 },
+  arcbolt: { name: 'Arcbolt', icon: '⌁', rarity: 'rare', ammo: 'energy', dmg: 31, rof: 3.2, range: 720, spread: 0.02, pellets: 1, speed: 1250, col: '#8fdcff', len: 24, wid: 4, kick: 3.5 },
+  lancer: { name: 'Lancer', icon: '╍', rarity: 'rare', ammo: 'light', dmg: 38, rof: 1.8, range: 920, spread: 0.008, pellets: 1, speed: 1500, col: '#a8d9ff', len: 30, wid: 3, kick: 5 },
+  shardstorm: { name: 'Shardstorm', icon: '✶', rarity: 'epic', ammo: 'shell', dmg: 11, rof: 2.8, range: 360, spread: 0.19, pellets: 8, speed: 900, col: '#dba6ff', len: 13, wid: 4, kick: 5, big: true },
+  ion: { name: 'Ion Splitter', icon: 'Ⅱ', rarity: 'epic', ammo: 'energy', dmg: 29, rof: 4.5, range: 680, spread: 0.03, pellets: 2, speed: 1250, col: '#cfa8ff', len: 23, wid: 4, kick: 3, big: true },
+  hammer: { name: 'Sunhammer', icon: '☀', rarity: 'legendary', ammo: 'energy', dmg: 88, rof: 0.9, range: 980, spread: 0.004, pellets: 1, speed: 1800, col: '#ffe49a', len: 44, wid: 5, kick: 8, big: true, splash: 45 },
+  monarch: { name: 'Monarch', icon: '♛', rarity: 'legendary', ammo: 'light', dmg: 42, rof: 3.6, range: 760, spread: 0.012, pellets: 2, speed: 1550, col: '#ffdf9e', len: 32, wid: 4, kick: 5, big: true },
+  abyss: { name: 'Abyssal Ray', icon: '◌', rarity: 'mythic', ammo: 'energy', dmg: 95, rof: 1.2, range: 1200, spread: 0.002, pellets: 1, speed: 2100, col: '#c9b6ff', len: 58, wid: 5, kick: 8, big: true, pierce: true },
+  meteor: { name: 'Meteor Choir', icon: '☄', rarity: 'mythic', ammo: 'shell', dmg: 22, rof: 1.4, range: 520, spread: 0.14, pellets: 5, speed: 950, col: '#ffb46b', len: 22, wid: 6, kick: 8, big: true, splash: 55 },
+});
 const NORMAL_GUNS = ['pistol', 'smg', 'shotgun', 'judge', 'nailer', 'wasp', 'drifter', 'bruiser', 'static', 'burst', 'warhound', 'frostbite']; // what NPCs actually carry
 // weapon keys grouped by rarity, exotics excluded (those are boss-only)
 const W_BY = {};
@@ -658,18 +690,26 @@ function drawArmorOverlay(ctx, x, y, angle, tier, r = CFG.playerR) {
   if (!tier || !ARMOR[tier]) return;
   const A = ARMOR[tier], col = rarityCol(A.rarity);
   ctx.save(); ctx.translate(x, y);
-  ctx.strokeStyle = col; ctx.lineWidth = tier === 4 ? 4 : 3;
-  ctx.beginPath(); ctx.arc(0, 0, r + 4, 0.18, Math.PI * 1.82); ctx.stroke();
   ctx.rotate(angle);
-  ctx.fillStyle = col;
-  ctx.globalAlpha = tier === 4 ? 0.52 : 0.34;
-  ctx.fillRect(-r * 0.62, -r * 0.28, r * 1.24, r * 0.7);
+  const metal = tier <= 2 ? '#8aa0b8' : tier <= 4 ? '#b8c3d8' : tier === 5 ? '#e1b45d' : col;
+  ctx.fillStyle = metal; ctx.strokeStyle = '#111a'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.72, -r * 0.28); ctx.lineTo(-r * 0.42, r * 0.58); ctx.lineTo(0, r * 0.78);
+  ctx.lineTo(r * 0.42, r * 0.58); ctx.lineTo(r * 0.72, -r * 0.28); ctx.lineTo(r * 0.34, -r * 0.48);
+  ctx.lineTo(0, -r * 0.28); ctx.lineTo(-r * 0.34, -r * 0.48); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = col; ctx.globalAlpha = 0.55;
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.24); ctx.lineTo(-r * 0.22, r * 0.42); ctx.lineTo(0, r * 0.58); ctx.lineTo(r * 0.22, r * 0.42); ctx.closePath(); ctx.fill();
   ctx.globalAlpha = 1;
+  ctx.fillStyle = metal; ctx.strokeStyle = '#111a';
+  for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.ellipse(side * r * 0.78, -r * 0.22, r * 0.24, r * 0.16, side * 0.45, 0, 7); ctx.fill(); ctx.stroke();
+  }
   if (tier >= 3) {
-    ctx.strokeStyle = col; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(-r * 0.65, -r * 0.45); ctx.lineTo(0, -r * 0.15); ctx.lineTo(r * 0.65, -r * 0.45); ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.fillRect(-r * 0.48, -r * 0.72, r * 0.96, r * 0.12);
   }
   if (ARMOR[tier].rarity === 'exotic') {
+    ctx.rotate(-angle);
     ctx.setLineDash([4, 4]);
     ctx.strokeStyle = rarityCol('exotic'); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, 0, r + 9, 0, 7); ctx.stroke();
@@ -1008,7 +1048,7 @@ function makePlayer(id, name, look, team, x, y, isBot) {
     shieldHits: 0,          // >0 = a frontal shield is up (see deployShield)
     shieldPts: 0,           // blue bonus-HP from shield potions (absorbed first)
     armorTier: 0, armorDur: 0, // equipped ARMOR tier + remaining durability
-    weapon: 'pistol', lastShot: 0, hurtFlash: 0, chargeShot: null,
+    weapon: 'pistol', weapons: ['pistol'], activeSlot: 0, lastShot: 0, hurtFlash: 0, chargeShot: null,
     // remote interpolation targets
     tx: x, ty: y, px: x, py: y, vx: 0, vy: 0, taim: -Math.PI / 2, lastStateT: performance.now(),
     // bot AI state
@@ -1032,6 +1072,7 @@ function baseGame(seed, mode) {
     buildMode: false, piece: 'wall', mat: 'wood',
     ammo: { ...CFG.startAmmo }, kills: 0,
     upgrades: { aimAssist: 0, dmgMul: 0, rofMul: 0, spreadMul: 1, speedMul: 0, picks: [] },
+    xp: 0, level: 1, nextLevelXp: 100,
     nextUpgradeAt: mode === 'ffa' ? performance.now() + 60000 : Infinity,
     upgradeOpen: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
@@ -1145,6 +1186,7 @@ function showPickupConfirm(pk) {
   input.fire = false;
   game.me.chargeShot = null;
   const cur = WEAPONS[game.me.weapon], next = WEAPONS[pk.weapon];
+  $('confirmTitle').textContent = game.me.weapons.length >= 5 ? 'Replace Active Weapon?' : 'Pick Up Weapon?';
   $('confirmCurrentName').textContent = cur.icon + ' ' + cur.name;
   $('confirmCurrentName').style.color = rarityCol(cur.rarity);
   $('confirmCurrentStats').textContent = rarityLabel(cur.rarity) + ' / ' + weaponStatLine(game.me.weapon);
@@ -1162,6 +1204,42 @@ function confirmWeaponPickup() {
   const id = pendingWeaponPickup;
   closePickupConfirm();
   if (id) takePickup(id, true, true);
+}
+function selectWeaponSlot(i) {
+  if (!game || !game.me.alive) return;
+  const w = game.me.weapons[i];
+  if (!w) return;
+  game.me.activeSlot = i;
+  game.me.weapon = w;
+  game.me.chargeShot = null;
+}
+function addWeaponToInventory(key, confirmed = false) {
+  const inv = game.me.weapons;
+  const existing = inv.indexOf(key);
+  if (existing >= 0) { selectWeaponSlot(existing); return true; }
+  if (inv.length < 5) {
+    inv.push(key);
+    selectWeaponSlot(inv.length - 1);
+    return true;
+  }
+  if (!confirmed) return false;
+  inv[game.me.activeSlot] = key;
+  selectWeaponSlot(game.me.activeSlot);
+  return true;
+}
+function awardXP(n, reason) {
+  if (!game || !game.me) return;
+  game.xp += n;
+  while (game.xp >= game.nextLevelXp) {
+    game.xp -= game.nextLevelXp;
+    game.level++;
+    game.nextLevelXp = Math.round(game.nextLevelXp * 1.35 + 40);
+    game.me.maxHp += 5;
+    game.me.hp = Math.min(game.me.maxHp, game.me.hp + 20);
+    game.mats.wood += 20; game.mats.brick += 12; game.mats.metal += 6;
+    toast('LEVEL ' + game.level + '! +HP and supplies', 2200);
+  }
+  if (reason) addKillFeed('+' + n + ' XP · ' + reason);
 }
 
 function weightedUpgradeRarity(rng) {
@@ -1311,12 +1389,13 @@ window.addEventListener('keydown', e => {
   if (k === 'e') doInteract();
   else if (k === 'b' || k === 'q') toggleBuildMode();
   else if (k === 'f') deployShield();
-  else if (k === '1') selectPiece('wall');
-  else if (k === '2') selectPiece('ramp');
-  else if (k === '3') selectPiece('floor');
-  else if (k === '4') selectMat('wood');
-  else if (k === '5') selectMat('brick');
-  else if (k === '6') selectMat('metal');
+  else if (['1', '2', '3', '4', '5'].includes(k)) selectWeaponSlot(+k - 1);
+  else if (k === 'z') selectPiece('wall');
+  else if (k === 'x') selectPiece('ramp');
+  else if (k === 'c') selectPiece('floor');
+  else if (k === 'v') selectMat('wood');
+  else if (k === 'g') selectMat('brick');
+  else if (k === 'h') selectMat('metal');
 });
 window.addEventListener('keyup', e => { pc.keys[e.key.toLowerCase()] = false; });
 
@@ -1377,6 +1456,7 @@ press($('confirmEquip'), confirmWeaponPickup);
 press($('confirmCancel'), closePickupConfirm);
 document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => selectPiece(b.dataset.piece)));
 document.querySelectorAll('.matBtn').forEach(b => press(b, () => selectMat(b.dataset.mat)));
+document.querySelectorAll('.hotSlot').forEach(b => press(b, () => selectWeaponSlot(+b.dataset.slot)));
 
 /* ═══════════ 8. BUILDING ═══════════
    Pieces live on a grid keyed "gx,gy".
@@ -1630,7 +1710,7 @@ function hurtLocal(p, dmg, by) {
     p.alive = false; p.hp = 0;
     addEffect('break', p.x, p.y);
     const killer = game.players[by];
-    if (killer === game.me) game.kills++; // elimination counter in the HUD
+    if (killer === game.me) { game.kills++; awardXP(p.boss ? 160 : p.guard ? 70 : 100, p.boss ? 'boss down' : p.guard ? 'guardian down' : 'elimination'); }
     addKillFeed((killer ? killer.name : 'Storm') + ' ⚔ ' + p.name);
     if (p.guard) guardianDied(p);
   }
@@ -1684,21 +1764,26 @@ function spawnRuinBoss(i) {
 function takePickup(id, mine, confirmed = false) {
   const pk = game.pickups.find(p => p.id === id);
   if (!pk || pk.taken) return;
-  if (mine && pk.kind === 'weapon' && !confirmed) return showPickupConfirm(pk);
+  if (mine && pk.kind === 'weapon' && game.me.weapons.length >= 5 && !confirmed) return showPickupConfirm(pk);
   pk.taken = true;
   if (mine) {
-    if (pk.kind === 'weapon') { game.me.chargeShot = null; game.me.weapon = pk.weapon; }
-    else if (pk.kind === 'heal') game.me.hp = Math.min(CFG.maxHp, game.me.hp + pk.amount);
-    else if (pk.kind === 'mat') game.mats[pk.mat] += pk.amount;
+    if (pk.kind === 'weapon') {
+      game.me.chargeShot = null;
+      if (!addWeaponToInventory(pk.weapon, confirmed)) { pk.taken = false; return showPickupConfirm(pk); }
+      awardXP(15, 'weapon found');
+    }
+    else if (pk.kind === 'heal') { game.me.hp = Math.min(game.me.maxHp, game.me.hp + pk.amount); awardXP(8, 'healed'); }
+    else if (pk.kind === 'mat') { game.mats[pk.mat] += pk.amount; awardXP(6, 'supplies'); }
     else if (pk.kind === 'armor') {
       // only an upgrade (or a fresher copy of the same tier) replaces
       const better = pk.tier > game.me.armorTier ||
         (pk.tier === game.me.armorTier && ARMOR[pk.tier].dur > game.me.armorDur);
       if (!better) { pk.taken = false; return toast('Your current armor is better'); }
       game.me.armorTier = pk.tier; game.me.armorDur = ARMOR[pk.tier].dur;
+      awardXP(20 + pk.tier * 8, 'armor equipped');
     }
-    else if (pk.kind === 'pot') game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + pk.amount);
-    else game.ammo[pk.ammo] += CFG.ammoPack[pk.ammo];
+    else if (pk.kind === 'pot') { game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + pk.amount); awardXP(10, 'shielded'); }
+    else { game.ammo[pk.ammo] += CFG.ammoPack[pk.ammo]; awardXP(5, 'ammo'); }
     toast(pk.icon + ' ' + pk.label);
     net.send({ t: 'pickup_taken', id });
   }
@@ -1791,6 +1876,7 @@ function openChestById(id, by, mine) {
       y: clamp(c.y + Math.sin(a) * d, 30, CFG.world - 30) });
   });
   addEffect('place', c.x, c.y);
+  if (mine) awardXP(c.tier === 'mythic' ? 55 : c.tier === 'legendary' ? 40 : c.tier === 'epic' ? 28 : 18, CHEST_TIERS[c.tier].name + ' chest');
   if (mine) net.send({ t: 'chest_open', id });
 }
 
@@ -2599,7 +2685,7 @@ function render() {
   $('stormText').textContent = s.label;
   $('stormBar').style.width = ((s.pct || 0) * 100) + '%';
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
-  $('aliveInfo').textContent = `⚔ ${g.kills} · ${countAlive()} alive`;
+  $('aliveInfo').textContent = `LV ${g.level} · XP ${g.xp}/${g.nextLevelXp} · ⚔ ${g.kills} · ${countAlive()} alive`;
   // shield button state: shows hits left while up, dims when unaffordable
   const sbtn = $('shieldBtn');
   sbtn.innerHTML = g.me.shieldHits > 0 ? `🛡<br>${g.me.shieldHits} HIT${g.me.shieldHits > 1 ? 'S' : ''}` : `🛡<br>${CFG.shieldCost}🪵`;
@@ -2617,6 +2703,22 @@ function render() {
   $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
   $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
   $('weaponPanel').style.borderLeftColor = wcol;
+  document.querySelectorAll('.hotSlot').forEach((slot, i) => {
+    const key = g.me.weapons[i], icon = slot.querySelector('.ico'), rar = slot.querySelector('.rar');
+    slot.classList.toggle('sel', i === g.me.activeSlot);
+    if (key) {
+      const hw = WEAPONS[key], hc = rarityCol(hw.rarity);
+      icon.textContent = hw.icon;
+      rar.textContent = RARITY[hw.rarity].name.toUpperCase();
+      rar.style.color = hc;
+      slot.style.borderColor = i === g.me.activeSlot ? '#ffd94d' : hc;
+    } else {
+      icon.textContent = '+';
+      rar.textContent = 'EMPTY';
+      rar.style.color = '#9db2c9';
+      slot.style.borderColor = '#ffffff24';
+    }
+  });
 }
 
 // Minimap (top-right): buildings, chests, storm circle, you, teammates,
