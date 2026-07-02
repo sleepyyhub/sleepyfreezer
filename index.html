@@ -777,6 +777,12 @@ const DEVIL_CONTRACTS = [
     solo: true, desc: 'Debuff and burst curse powers, but wounds weigh you down.',
     apply(g) { g.contracts.curseWeight = true; g.upgrades.rofMul += 0.06; } },
 ];
+const RELICS = {
+  phoenix: { name: 'Phoenix Feather', rarity: 'astral', icon: '🔥', stats: 'Cheats death once and restores 60 HP.' },
+  voidcrown: { name: 'Void Crown', rarity: 'forbidden', icon: '👑', stats: '+12% damage and bigger devil blasts.' },
+  wolffang: { name: 'Wolf Fang Relic', rarity: 'celestial', icon: '☄', stats: 'Wolf XP gains +1 and summon cooldown is shorter.' },
+  brokenhalo: { name: 'Broken Halo', rarity: 'tuffinity', icon: '◎', stats: '+60 shield and heavenly protection on pickup.' },
+};
 
 const EYES    = ['Dot', 'Wide', 'Sleepy', 'Angry', 'Cyber', 'Star'];
 const HAIRS   = ['Spiky', 'Bowl', 'Cap', 'Mohawk', 'Long', 'Crown'];
@@ -1267,6 +1273,7 @@ function baseGame(seed, mode) {
     upgrades: { aimAssist: 0, dmgMul: 0, rofMul: 0, spreadMul: 1, speedMul: 0, picks: [] },
     xp: 0, level: 1, nextLevelXp: 100,
     contracts: {}, contractOffered: false, grimoireRolled: false, ruinBossKills: 0, heavenlySpawned: false,
+    relics: [], bossIntro: null,
     grimoireTower: { x: CFG.world / 2, y: CFG.world / 2, open: false },
     nextUpgradeAt: isFfaStyleMode(mode) ? performance.now() + 60000 : Infinity,
     upgradeOpen: false,
@@ -1459,6 +1466,7 @@ function renderInventoryGui() {
     ['Armor', A ? `${A.icon} ${A.name} · ${game.me.armorDur} durability` : 'None'],
     ['Grimoire', gr ? gr.name + ' · ' + gr.moves.join(', ') : 'None'],
     ['Devil', devil ? devil.name + ' · ' + devil.moves.join(', ') : 'None'],
+    ['Relics', game.relics.length ? game.relics.map(k => RELICS[k].name).join(', ') : 'None'],
     ['Wolves', wolfText],
     ['Ammo', `Light ${game.ammo.light} · Shell ${game.ammo.shell} · Energy ${game.ammo.energy}`],
     ['Materials', `Wood ${game.mats.wood} · Brick ${game.mats.brick} · Metal ${game.mats.metal}`],
@@ -1546,8 +1554,14 @@ function spawnAdminBoss(kind, x = CFG.world / 2, y = CFG.world / 2) {
   }
   game.players[b.id] = b;
   grantAdminBossProtection();
+  startBossIntro(b, kind === 'herrernst' ? 'HERR ERNST' : b.name);
   addEffect(kind === 'herrernst' ? 'heaven' : 'boom', x, y, true);
   return b;
+}
+function startBossIntro(b, title) {
+  game.bossIntro = { title, sub: b.ernst ? 'THE TUFFINITY FINAL EXAM' : 'ADMIN BOSS ARRIVAL', life: 4, maxLife: 4 };
+  game.shake = Math.max(game.shake, 18);
+  for (let i = 0; i < 10; i++) addEffect('skybeam', b.x + (Math.random() - 0.5) * 520, b.y + (Math.random() - 0.5) * 520, true);
 }
 function awardXP(n, reason) {
   if (!game || !game.me) return;
@@ -1843,7 +1857,7 @@ function summonHeavenWolves() {
     game.players[wolf.id] = wolf;
     addEffect('skybeam', wolf.x, wolf.y, true);
   }
-  game.nextWolfSummon = now + Math.max(15000, 30000 - tier * 2200);
+  game.nextWolfSummon = now + Math.max(12000, 30000 - tier * 2200 - (game.relics.includes('wolffang') ? 4500 : 0));
   addEffect('heaven', game.me.x, game.me.y, true);
   toast(wolfNameForTier(tier) + ' pack summoned');
 }
@@ -1856,7 +1870,7 @@ function wolfNameForTier(t) {
 }
 function awardWolfXp(n = 1) {
   if (!game) return;
-  game.wolfXp = (game.wolfXp || 0) + n;
+  game.wolfXp = (game.wolfXp || 0) + n + (game.relics?.includes('wolffang') ? 1 : 0);
   while ((game.wolfTier || 0) < 5 && game.wolfXp >= wolfNextXp()) {
     game.wolfXp -= wolfNextXp(); game.wolfTier = (game.wolfTier || 0) + 1;
     addEffect('heaven', game.me.x, game.me.y, true);
@@ -2297,6 +2311,10 @@ function hurtLocal(p, dmg, by) {
   p.lastHurtT = performance.now(); // pauses the passive regen
   if (p === game.me) game.shake = Math.min(12, game.shake + 6);
   if (p.hp <= 0 && p.alive) {
+    if (p === game.me && game.phoenixReady) {
+      game.phoenixReady = false; p.hp = 60; p.shieldPts = Math.min(MAX_SHIELD, p.shieldPts + 40);
+      p.protectedUntil = performance.now() + 5000; addEffect('heaven', p.x, p.y, true); toast('Phoenix Feather saved you!', 2600); return;
+    }
     if (!p.guard && game.mode !== 'solo' && !p.downed) {
       p.downed = true; p.hp = 1; p.downT = 28;
       addKillFeed(p.name + ' is downed');
@@ -2320,6 +2338,7 @@ function guardianDied(p) {
   p.dropDone = true;
   if (p.adminBoss) {
     if (p.ernst) spawnItem({ id: 'ernstbeam_drop_' + performance.now(), x: p.x, y: p.y, kind: 'weapon', weapon: 'ernstbeam' });
+    if (p.ernst) spawnItem({ id: 'ernst_relic_' + performance.now(), x: p.x + 55, y: p.y, kind: 'relic', relic: 'brokenhalo' });
     return addEffect('heaven', p.x, p.y, true);
   }
   if (p.allyWolf || p.heavenWolf || p.bldIdx === undefined) return addEffect('break', p.x, p.y, true);
@@ -2327,6 +2346,7 @@ function guardianDied(p) {
     game.grimoireTower.open = true;
     spawnItem({ id: 'grimoire_roll', x: p.x, y: p.y, kind: 'grimoireRoll' });
     spawnItem({ id: 'wiz_armor', x: p.x + 42, y: p.y + 8, kind: 'armor', tier: 6 });
+    spawnItem({ id: 'void_relic_' + performance.now(), x: p.x - 48, y: p.y + 8, kind: 'relic', relic: 'voidcrown' });
     addKillFeed('📖 WIZARD KING defeated — grimoire roll opened!');
     offerDevilContract();
     maybeSpawnHeavenlyRestrictor();
@@ -2336,6 +2356,7 @@ function guardianDied(p) {
     spawnItem({ id: 'universal_weapon', x: p.x, y: p.y, kind: 'weapon', weapon: 'heavenfang' });
     spawnItem({ id: 'universal_howl', x: p.x + 58, y: p.y + 18, kind: 'weapon', weapon: 'seraphimhowl' });
     spawnItem({ id: 'universal_armor', x: p.x + 46, y: p.y, kind: 'armor', tier: 6 });
+    spawnItem({ id: 'wolf_relic_' + performance.now(), x: p.x - 55, y: p.y + 18, kind: 'relic', relic: 'wolffang' });
     addKillFeed('🌌 UNIVERSAL weapon dropped!');
     return addEffect('heaven', p.x, p.y, true);
   }
@@ -2348,6 +2369,7 @@ function guardianDied(p) {
     spawnItem({ id: 'bar' + i, x: p.x - 34, y: p.y - 42, kind: 'armor', tier: 6 });
     spawnItem({ id: 'ba' + i, x: p.x + 20, y: p.y + 44, kind: 'ammo', ammo: 'energy' });
     spawnItem({ id: 'bh' + i, x: p.x - 46, y: p.y + 20, kind: 'heal', amount: 80 });
+    if (game.ruinBossKills === 0) spawnItem({ id: 'phoenix_relic_' + i, x: p.x + 75, y: p.y + 35, kind: 'relic', relic: 'phoenix' });
     addKillFeed('👑 RUIN BOSS down — EXOTIC loot dropped!');
     game.ruinBossKills++;
     evolveGrimoire();
@@ -2401,6 +2423,7 @@ function takePickup(id, mine, confirmed = false) {
     }
     else if (pk.kind === 'grimoireRoll') rollGrimoire();
     else if (pk.kind === 'grimoire') equipGrimoire(pk.grimoire);
+    else if (pk.kind === 'relic') equipRelic(pk.relic);
     else if (pk.kind === 'heal') { game.me.hp = Math.min(game.me.maxHp, game.me.hp + pk.amount * (game.contracts.weakHeal ? 0.5 : 1)); awardXP(8, 'healed'); }
     else if (pk.kind === 'mat') { game.mats[pk.mat] += pk.amount; awardXP(6, 'supplies'); }
     else if (pk.kind === 'armor') {
@@ -2423,6 +2446,15 @@ function addEffect(kind, x, y, big) {
   const life = kind === 'muzzle' ? 0.12 : kind === 'skybeam' ? 0.85 : ['sigil','stone','flame','wind','devil'].includes(kind) ? 1.05 : kind === 'heaven' ? 1.55 : kind === 'boom' ? 0.55 : kind === 'shield' ? 0.5 : 0.34;
   game.effects.push({ kind, x, y, big, life, maxLife: life, rot: Math.random() * Math.PI * 2 });
   spawnParticles(kind, x, y, big);
+}
+function equipRelic(key) {
+  if (!RELICS[key] || game.relics.includes(key)) return toast('Relic already owned');
+  game.relics.push(key);
+  if (key === 'brokenhalo') { addShieldPts(60); game.me.protectedUntil = performance.now() + 8000; }
+  if (key === 'voidcrown') game.upgrades.dmgMul += 0.12;
+  if (key === 'phoenix') game.phoenixReady = true;
+  addEffect('heaven', game.me.x, game.me.y, true);
+  toast('Relic acquired: ' + RELICS[key].name, 2600);
 }
 function spawnParticles(kind, x, y, big) {
   if (!game) return;
@@ -2526,6 +2558,9 @@ function spawnItem(def) {
     const gr = GRIMOIRES[it.grimoire];
     it.icon = '📘'; it.label = gr.name; it.rarity = it.grimoire === 'antimagic' ? 'exotic' : it.grimoire === 'wind' ? 'mythic' : 'legendary';
     it.stats = gr.stats;
+  } else if (it.kind === 'relic') {
+    const r = RELICS[it.relic];
+    it.icon = r.icon; it.label = r.name; it.rarity = r.rarity; it.stats = r.stats;
   } else { // ammo
     it.icon = it.ammo === 'energy' ? '🔋' : it.ammo === 'shell' ? '🔻' : '🔸';
     it.label = `+${CFG.ammoPack[it.ammo]} ${AMMO[it.ammo].name} ammo`;
@@ -2678,6 +2713,7 @@ function updateGuardians(dt) {
     }
     let mx = 0, my = 0;
     if (target) {
+      if (gu.ernst) runErnstPhases(gu, target);
       // guardians are deliberately sloppy shots; the boss is sharper
       gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.26 : CFG.guardAimErr);
       const dts = Math.sqrt(dist2(gu.x, gu.y, target.x, target.y));
@@ -2816,6 +2852,33 @@ function applyPeerState(m) {
   p.hp = m.hp; p.weapon = m.weapon; p.shieldHits = m.sh || 0; p.shieldPts = m.sp || 0;
   p.armorTier = m.ar || 0; p.armorDur = m.ad || 0;
   if (p.alive && !m.alive) { p.alive = false; addEffect('break', p.x, p.y); }
+}
+
+function runErnstPhases(gu, target) {
+  const pct = gu.hp / gu.maxHp;
+  gu.phase ||= 1;
+  if (pct <= 0.7 && gu.phase < 2) {
+    gu.phase = 2; gu.x = CFG.world / 2; gu.y = CFG.world / 2; gu.dmgMul = 1.45;
+    for (let i = 0; i < 10; i++) addEffect('skybeam', target.x + (Math.random() - 0.5) * 420, target.y + (Math.random() - 0.5) * 420, true);
+    damageEnemiesAround(target.x, target.y, 260, 65, gu.id, 70);
+    addKillFeed('Herr Ernst Phase 2: Klassenarbeit!');
+  }
+  if (pct <= 0.4 && gu.phase < 3) {
+    gu.phase = 3;
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const c = makePlayer('ernstClone_' + performance.now() + '_' + i, 'ERNST CLONE', { eye: 1, hair: 4, outfit: 4, hairCol: '#ffe680' }, 'G', gu.x + Math.cos(a) * 120, gu.y + Math.sin(a) * 120, true);
+      c.guard = true; c.boss = true; c.adminBoss = true; c.weapon = 'zeus'; c.hp = c.maxHp = 900; c.dmgMul = 0.55; c.home = { x: c.x, y: c.y };
+      game.players[c.id] = c; addEffect('heaven', c.x, c.y, true);
+    }
+    addKillFeed('Herr Ernst Phase 3: Doppelstunde!');
+  }
+  if (pct <= 0.1 && gu.phase < 4) {
+    gu.phase = 4; gu.dmgMul = 1.9; gu.hp = Math.max(gu.hp, gu.maxHp * 0.16);
+    for (let i = 0; i < 14; i++) addEffect('skybeam', gu.x + (Math.random() - 0.5) * 620, gu.y + (Math.random() - 0.5) * 620, true);
+    damageEnemiesAround(gu.x, gu.y, 360, 120, gu.id, 150);
+    addKillFeed('Herr Ernst FINAL PHASE: Keine Gnade!');
+  }
 }
 
 // guardians are scenery-monsters: they never count toward win conditions
@@ -2971,6 +3034,7 @@ function update(dt) {
     return e.life > 0;
   });
   g.dmgNums = g.dmgNums.filter(d => { d.y -= 40 * dt; return (d.life -= dt) > 0; });
+  if (g.bossIntro && (g.bossIntro.life -= dt) <= 0) g.bossIntro = null;
 
   // send our state to the party at CFG.netHz
   if (g.mode !== 'solo') {
@@ -3524,6 +3588,21 @@ function render() {
     ctx.globalAlpha = clamp(g.me.hurtFlash * 3, 0, 0.8);
     ctx.fillStyle = hurtVignette; ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
+  }
+  if (g.bossIntro) {
+    const p = clamp(g.bossIntro.life / g.bossIntro.maxLife, 0, 1);
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${0.58 * Math.min(1, p * 2)})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.min(72, W / 10)}px sans-serif`;
+    ctx.fillStyle = rarityCol('tuffinity');
+    ctx.shadowColor = rarityCol('universal'); ctx.shadowBlur = 28;
+    ctx.fillText(g.bossIntro.title, W / 2, H * 0.42);
+    ctx.font = `bold ${Math.min(24, W / 28)}px sans-serif`;
+    ctx.fillStyle = '#fff6c8'; ctx.shadowBlur = 12;
+    ctx.fillText(g.bossIntro.sub, W / 2, H * 0.42 + 44);
+    ctx.restore();
   }
 
   // virtual joystick (only while touched)
