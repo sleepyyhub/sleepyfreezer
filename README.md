@@ -46,18 +46,22 @@ All buttons are ≥ 56 px (above the 44 pt minimum); everything uses
   NPCs never run dry.
 - **Auto-aim** — within ~320px and clear line of sight, your aim locks on (red reticle);
   dragging the aim zone overrides it.
-- **Ruined buildings** — 10 seeded run-down structures with destructible cracked walls,
-  door gaps, collapsed chunks, debris, and a broken roof that lifts when you walk inside.
+- **Ruined buildings** — 14 seeded run-down structures on a 5600px island, with
+  destructible cracked walls, door gaps, collapsed chunks, debris, and a broken roof
+  that lifts when you walk inside.
 - **Guardians, THE WARDEN & special weapons** — each building is defended by a "Ruin
-  Guardian" (250 hp, red aura) armed with a real gun; guardians never leave their house.
-  Each drops one of the 7 special weapons plus energy ammo. Kill all 10 and **THE
-  WARDEN** (800 hp boss) awakens at the map center, hunts players across the whole map,
-  and drops another special + supplies. In multiplayer the party host's client simulates
-  all NPCs and syncs them to everyone.
-- **Chests & ground loot** — 21 chests in four tiers (14 Normal, 4 Epic, 2 Legendary,
-  1 Mythic), color-coded with matching glows and minimap dots. Opening a chest spills
+  Guardian" (180 hp, red aura) armed with a real gun; guardians never leave their house
+  and shoot slow and sloppy (they're loot piñatas, not sharpshooters). Each drops one of
+  the 7 special weapons plus energy ammo. Kill all 14 and **THE WARDEN** (800 hp boss)
+  awakens at the map center, hunts players across the whole map, and drops another
+  special + supplies. In multiplayer the party host's client simulates all NPCs and
+  syncs them to everyone.
+- **Chests & ground loot** — 39 chests in four tiers (26 Normal, 7 Epic, 4 Legendary,
+  2 Mythic), color-coded with matching glows and minimap dots. Opening a chest spills
   its loot onto the ground as rarity-colored pickups — stand on an item to see its name,
   rarity and stats on an item card, then take only what you want.
+- **Weapon panel** — standard-shooter HUD bottom-right: weapon icon, name and rarity
+  with a rarity-colored bar, plus a big ammo counter that turns red when dry.
 - **Presentation** — textured grass, drop shadows, cinematic vignette, red hurt flash,
   and a live minimap (buildings, chests, storm circle, you, teammates, guardians).
 - **Building** — grid-based wall/ramp/floor in 3 materials with per-piece HP; pieces are

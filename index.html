@@ -101,10 +101,20 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #hpText{font-size:13px;margin-top:3px;color:#cfe3ff;text-shadow:0 1px 2px #000}
 #stormInfo{text-align:center;font-size:15px;font-weight:700;color:#d9b6ff;text-shadow:0 1px 3px #000}
 #matInfo{text-align:right;font-size:15px;font-weight:700;text-shadow:0 1px 3px #000;line-height:1.5}
-#weaponInfo{position:absolute;right:calc(24px + env(safe-area-inset-right));
-  bottom:calc(38px + env(safe-area-inset-bottom));font-size:16px;font-weight:800;color:#ffe9a8;
-  text-shadow:0 1px 3px #000;pointer-events:none}
-#killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:164px;text-align:right;
+/* weapon panel: standard-shooter style — icon, name, big ammo count */
+#weaponPanel{position:absolute;right:calc(158px + env(safe-area-inset-right));
+  bottom:calc(24px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:12px;
+  background:rgba(8,14,24,.62);border:1px solid #ffffff22;border-left:5px solid #fff;
+  border-radius:12px;padding:8px 16px;pointer-events:none;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#wpnIcon{font-size:28px;line-height:1}
+#wpnName{font-size:14px;font-weight:800;letter-spacing:1.5px}
+#wpnRarity{font-size:10px;font-weight:700;letter-spacing:2px;color:#9db2c9}
+#wpnAmmo{font-size:28px;font-weight:900;color:#fff;min-width:52px;text-align:right;
+  font-variant-numeric:tabular-nums}
+#wpnAmmo.dry{color:#ff5f5f}
+#wpnAmmoType{font-size:9px;font-weight:700;letter-spacing:2px;color:#9db2c9;text-align:right}
+#killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:184px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
 
 /* customization preview */
@@ -203,7 +213,11 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   <div id="killFeed"></div>
   <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
-  <div id="weaponInfo">Pistol</div>
+  <div id="weaponPanel">
+    <div id="wpnIcon">🔫</div>
+    <div><div id="wpnName">RUSTFANG</div><div id="wpnRarity">COMMON</div></div>
+    <div><div id="wpnAmmo">120</div><div id="wpnAmmoType">LIGHT</div></div>
+  </div>
   <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
   <div id="itemInfo"><div class="nm"></div><div class="st"></div></div>
   <div id="buildMenu">
@@ -242,7 +256,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 
 /* ═══════════ 1. CONFIG ═══════════ */
 const CFG = {
-  world: 2800,            // square world size in px (roomier: 10 buildings)
+  world: 5600,            // square world size in px — a proper island
   grid: 60,               // build grid cell size
   playerR: 16,            // player collision radius
   playerSpeed: 220,       // px per second
@@ -251,22 +265,26 @@ const CFG = {
   buildCost: 10,          // material cost per piece
   buildHp: { wood: 150, brick: 300, metal: 450, ruin: 200 },
   startMats: { wood: 60, brick: 30, metal: 15 },
-  chestCount: 14,         // normal chests
-  epicChests: 4, legendaryChests: 2, mythicChests: 1,
-  treeCount: 44,
-  rockCount: 24,
-  botCount: 7,            // opponents in solo mode
-  buildingCount: 10,      // run-down buildings with guardians inside
-  guardHp: 250,           // special-enemy health
-  guardAggro: 340,        // how far from home a guardian notices/chases you
+  chestCount: 26,         // normal chests
+  epicChests: 7, legendaryChests: 4, mythicChests: 2,
+  treeCount: 110,
+  rockCount: 60,
+  botCount: 11,           // opponents in solo mode
+  buildingCount: 14,      // run-down buildings with guardians inside
+  guardHp: 180,           // special-enemy health
+  guardAggro: 300,        // how far from home a guardian notices/chases you
+  guardDmgMul: 0.7,       // guardians hit softer than players
+  guardRofMul: 0.55,      // ...and fire slower than their gun allows
+  guardAimErr: 0.28,      // ...with shaky aim
   bossHp: 800,            // THE WARDEN, spawns when every guardian is dead
   autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
   startAmmo: { light: 120, shell: 24, energy: 0 },
   ammoPack:  { light: 60,  shell: 12, energy: 15 }, // per ammo pickup
   netHz: 15,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
+  // (longer than before — the island is big and walks take time)
   stormPhases: [
-    [18, 22, 0.62, 1], [14, 18, 0.38, 2], [12, 14, 0.20, 4], [10, 12, 0.06, 8],
+    [24, 30, 0.62, 1], [18, 24, 0.38, 2], [14, 18, 0.20, 4], [12, 14, 0.06, 8],
   ],
 };
 
@@ -299,16 +317,16 @@ const CHEST_TIERS = {
 // The 7 `special` weapons only come from guardians, the boss, and
 // legendary/mythic chests.
 const WEAPONS = {
-  pistol:  { name: 'Rustfang',        icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 20, rof: 2.5, range: 520,  spread: 0.03,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
-  smg:     { name: 'Hornet',          icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 12, rof: 8.0, range: 430,  spread: 0.09,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 1.5 },
-  shotgun: { name: 'Gravedigger',     icon: '💥', rarity: 'rare',      ammo: 'shell',  dmg: 9,  rof: 1.1, range: 270,  spread: 0.26,  pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
-  minigun: { name: 'Meatgrinder',     icon: '🌀', rarity: 'epic',      ammo: 'light',  dmg: 8,  rof: 13,  range: 520,  spread: 0.12,  pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2, special: true },
-  hydra:   { name: 'Hydra',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 13, rof: 3.2, range: 560,  spread: 0.05,  pellets: 3, speed: 1000, col: '#7dff9b', len: 18, wid: 3, kick: 3,   special: true },
-  dragon:  { name: "Dragon's Breath", icon: '🔥', rarity: 'epic',      ammo: 'shell',  dmg: 7,  rof: 9,   range: 210,  spread: 0.34,  pellets: 2, speed: 480,  col: '#ff9b3d', len: 10, wid: 5, kick: 1,   special: true },
-  railgun: { name: 'Widowmaker',      icon: '⚡', rarity: 'legendary', ammo: 'energy', dmg: 60, rof: 0.9, range: 900,  spread: 0.005, pellets: 1, speed: 1600, col: '#8fdcff', len: 34, wid: 4, kick: 6, big: true, special: true },
-  deadeye: { name: 'Deadeye',         icon: '🎯', rarity: 'legendary', ammo: 'energy', dmg: 90, rof: 0.6, range: 1300, spread: 0.002, pellets: 1, speed: 2000, col: '#ffffff', len: 44, wid: 3, kick: 7, big: true, special: true },
-  phantom: { name: 'Phantom Lance',   icon: '👻', rarity: 'mythic',    ammo: 'energy', dmg: 45, rof: 1.6, range: 700,  spread: 0.004, pellets: 1, speed: 1400, col: '#c9f2ff', len: 40, wid: 4, kick: 5, big: true, pierce: true, special: true },
-  kaboom:  { name: 'Doomsday',        icon: '☄️', rarity: 'mythic',    ammo: 'energy', dmg: 55, rof: 0.8, range: 620,  spread: 0.01,  pellets: 1, speed: 620,  col: '#ff6b4a', len: 20, wid: 6, kick: 8, big: true, splash: 90, special: true },
+  pistol:  { name: 'Rustfang',        icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 20, rof: 3.5,  range: 520,  spread: 0.03,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
+  smg:     { name: 'Hornet',          icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 12, rof: 10,   range: 430,  spread: 0.09,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 1.5 },
+  shotgun: { name: 'Gravedigger',     icon: '💥', rarity: 'rare',      ammo: 'shell',  dmg: 9,  rof: 1.5,  range: 270,  spread: 0.26,  pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
+  minigun: { name: 'Meatgrinder',     icon: '🌀', rarity: 'epic',      ammo: 'light',  dmg: 8,  rof: 16,   range: 520,  spread: 0.12,  pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2, special: true },
+  hydra:   { name: 'Hydra',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 13, rof: 4.2,  range: 560,  spread: 0.05,  pellets: 3, speed: 1000, col: '#7dff9b', len: 18, wid: 3, kick: 3,   special: true },
+  dragon:  { name: "Dragon's Breath", icon: '🔥', rarity: 'epic',      ammo: 'shell',  dmg: 7,  rof: 11,   range: 210,  spread: 0.34,  pellets: 2, speed: 480,  col: '#ff9b3d', len: 10, wid: 5, kick: 1,   special: true },
+  railgun: { name: 'Widowmaker',      icon: '⚡', rarity: 'legendary', ammo: 'energy', dmg: 60, rof: 1.3,  range: 900,  spread: 0.005, pellets: 1, speed: 1600, col: '#8fdcff', len: 34, wid: 4, kick: 6, big: true, special: true },
+  deadeye: { name: 'Deadeye',         icon: '🎯', rarity: 'legendary', ammo: 'energy', dmg: 90, rof: 0.85, range: 1300, spread: 0.002, pellets: 1, speed: 2000, col: '#ffffff', len: 44, wid: 3, kick: 7, big: true, special: true },
+  phantom: { name: 'Phantom Lance',   icon: '👻', rarity: 'mythic',    ammo: 'energy', dmg: 45, rof: 2.2,  range: 700,  spread: 0.004, pellets: 1, speed: 1400, col: '#c9f2ff', len: 40, wid: 4, kick: 5, big: true, pierce: true, special: true },
+  kaboom:  { name: 'Doomsday',        icon: '☄️', rarity: 'mythic',    ammo: 'energy', dmg: 55, rof: 1.1,  range: 620,  spread: 0.01,  pellets: 1, speed: 620,  col: '#ff6b4a', len: 20, wid: 6, kick: 8, big: true, splash: 90, special: true },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom'];
 const NORMAL_GUNS = ['pistol', 'smg', 'shotgun']; // what NPCs actually carry
@@ -716,6 +734,7 @@ function spawnGuardians(g) {
       (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, true);
     gu.guard = true; gu.weapon = b.gweapon; // guardians carry real guns
     gu.hp = gu.maxHp = CFG.guardHp;
+    gu.dmgMul = CFG.guardDmgMul;            // nerfed: soft hits
     gu.home = { x: gu.x, y: gu.y }; gu.drop = b.drop; gu.bld = b;
     g.players[gu.id] = gu;
   });
@@ -774,6 +793,7 @@ function resetHudState() {
   input.fire = false; input.joyId = input.aimId = null; input.joyVec = { x: 0, y: 0 };
   $('buildMenu').classList.remove('show'); $('buildBtn').classList.remove('on');
   $('killFeed').innerHTML = ''; $('itemInfo').style.display = 'none';
+  $('chestBtn').classList.remove('show');
 }
 
 /* ═══════════ 7. TOUCH INPUT ═══════════
@@ -973,7 +993,7 @@ function fireBullets(p, aim, mine) {
     game.bullets.push({
       x: p.x + Math.cos(a) * (CFG.playerR + 8), y: p.y + Math.sin(a) * (CFG.playerR + 8),
       dx: Math.cos(a), dy: Math.sin(a), speed: w.speed,
-      dist: 0, maxDist: w.range, dmg: w.dmg,
+      dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1)),
       owner: p.id, team: p.team, mine,
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
       col: w.col, len: w.len, wid: w.wid,    // tracer style
@@ -1287,7 +1307,8 @@ function updateGuardians(dt) {
     }
     let mx = 0, my = 0;
     if (target) {
-      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.12 : 0.18);
+      // guardians are deliberately sloppy shots; the boss is sharper
+      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.12 : CFG.guardAimErr);
       const dts = Math.sqrt(dist2(gu.x, gu.y, target.x, target.y));
       if (gu.boss && dts > 230) {          // boss closes the distance
         mx = Math.cos(gu.aim); my = Math.sin(gu.aim);
@@ -1296,7 +1317,8 @@ function updateGuardians(dt) {
         mx = -Math.sin(gu.aim) * side; my = Math.cos(gu.aim) * side;
       }
       const w = WEAPONS[gu.weapon], now = performance.now();
-      if (now - gu.lastShot > 1000 / w.rof && dts < w.range + 60) {
+      const rof = w.rof * (gu.boss ? 1 : CFG.guardRofMul); // nerfed cadence
+      if (now - gu.lastShot > 1000 / rof && dts < w.range + 60) {
         gu.lastShot = now;
         fireBullets(gu, gu.aim, false);
         if (g.mode !== 'solo') net.send({ t: 'npc_shoot', id, x: gu.x, y: gu.y, aim: gu.aim });
@@ -1430,6 +1452,9 @@ function update(dt) {
     if (!g.nearAction && !c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70)
       g.nearAction = { kind: 'chest', c };
   }
+  // the interact button exists ONLY while there is really something to
+  // open or pick up right here (and never in build mode / while dead)
+  if (g.buildMode) g.nearAction = null;
   const btn = $('chestBtn'), info = $('itemInfo');
   btn.classList.toggle('show', !!g.nearAction && g.me.alive);
   if (g.nearAction && g.me.alive) {
@@ -1466,8 +1491,9 @@ function update(dt) {
     p.aim = p.taim;
   }
 
-  // decay timers
+  // decay timers + drop claimed loot from the list
   for (const id in g.players) g.players[id].hurtFlash = Math.max(0, g.players[id].hurtFlash - dt);
+  if (g.pickups.some(p => p.taken)) g.pickups = g.pickups.filter(p => !p.taken);
   g.effects = g.effects.filter(e => (e.life -= dt) > 0);
   g.dmgNums = g.dmgNums.filter(d => { d.y -= 40 * dt; return (d.life -= dt) > 0; });
 
@@ -1794,15 +1820,22 @@ function render() {
   $('stormInfo').textContent = s.label;
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
   $('aliveInfo').textContent = countAlive() + ' alive';
-  const wpn = WEAPONS[g.me.weapon];
-  $('weaponInfo').textContent = `${wpn.icon} ${wpn.name} · ${g.ammo[wpn.ammo]}`;
-  $('weaponInfo').style.color = RARITY[wpn.rarity].col;
+  // weapon panel (standard shooter layout: icon / name+rarity / ammo)
+  const wpn = WEAPONS[g.me.weapon], rc = RARITY[wpn.rarity], ammoLeft = g.ammo[wpn.ammo];
+  $('wpnIcon').textContent = wpn.icon;
+  $('wpnName').textContent = wpn.name.toUpperCase();
+  $('wpnName').style.color = rc.col;
+  $('wpnRarity').textContent = rc.name.toUpperCase();
+  $('wpnAmmo').textContent = ammoLeft;
+  $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
+  $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
+  $('weaponPanel').style.borderLeftColor = rc.col;
 }
 
 // Minimap (top-right): buildings, chests, storm circle, you, teammates,
 // and guardians — so ruins with special loot are easy to find.
 function drawMinimap() {
-  const g = game, M = 132, pad = 14, mx = W - M - pad, my = 62, sc = M / CFG.world;
+  const g = game, M = 150, pad = 14, mx = W - M - pad, my = 62, sc = M / CFG.world;
   ctx.save();
   ctx.fillStyle = 'rgba(8,14,24,0.68)';
   ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 2;
