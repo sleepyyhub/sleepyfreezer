@@ -421,13 +421,13 @@ const CFG = {
 // `animated` tiers have no fixed color — rarityCol() cycles the hue, so
 // Exotic gear visibly shimmers through the rainbow everywhere it appears.
 const RARITY = {
-  common:    { name: 'Common',    col: '#b8c0cc' },
-  uncommon:  { name: 'Uncommon',  col: '#4fce5d' },
-  rare:      { name: 'Rare',      col: '#3f8cff' },
-  epic:      { name: 'Epic',      col: '#c45df0' },
-  legendary: { name: 'Legendary', col: '#ff9f2a' },
-  mythic:    { name: 'Mythic',    col: '#ffd94d' },
-  exotic:    { name: 'Exotic',    col: '#ff5fd0', animated: true },
+  common:    { name: 'Common',    col: '#b8c0cc', rank: 1 },
+  uncommon:  { name: 'Uncommon',  col: '#4fce5d', rank: 2 },
+  rare:      { name: 'Rare',      col: '#3f8cff', rank: 3 },
+  epic:      { name: 'Epic',      col: '#c45df0', rank: 4 },
+  legendary: { name: 'Legendary', col: '#ff9f2a', rank: 5 },
+  mythic:    { name: 'Mythic',    col: '#ffd94d', rank: 6 },
+  exotic:    { name: 'Exotic',    col: '#ff5fd0', animated: true, rank: 7, top: true },
 };
 function rarityCol(r) {
   const def = RARITY[r];
@@ -495,14 +495,14 @@ const WEAPONS = {
   colossus:{ name: 'Colossus',        icon: '🦣', rarity: 'mythic',    ammo: 'shell',  dmg: 9,  rof: 1,  range: 300, spread: 0.3,  pellets: 8, speed: 800,  col: '#ffd27a', len: 12, wid: 4, kick: 8, big: true, special: true },
   // ---- EXOTIC weapons: only Ruin Bosses drop these; their color (and
   //      tracers) constantly shift through the rainbow ----
-  stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 68,  rof: 7,   range: 760,  spread: 0.025, pellets: 1, speed: 1450, len: 32, wid: 5, kick: 3,  big: true, special: true, exotic: true, shape: 'fork' },
-  oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 150, rof: 1.4, range: 820,  spread: 0.004, pellets: 1, speed: 1550, len: 48, wid: 7, kick: 9,  big: true, pierce: true, splash: 115, special: true, exotic: true, shape: 'orb' },
-  starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 34,  rof: 2.2, range: 580,  spread: 0.15,  pellets: 7, speed: 980,  len: 20, wid: 5, kick: 7,  big: true, special: true, exotic: true, shape: 'star' },
-  singularity:{ name: 'Singularity',  icon: '🌀', rarity: 'exotic', ammo: 'energy', dmg: 125, rof: 1.6, range: 840,  spread: 0.003, pellets: 1, speed: 1700, len: 44, wid: 6, kick: 8,  big: true, pierce: true, splash: 95, special: true, exotic: true, shape: 'orb' },
+  stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 68,  rof: 7,   range: 760,  spread: 0.025, pellets: 1, speed: 1450, len: 32, wid: 5, kick: 3,  big: true, special: true, exotic: true, shape: 'storm' },
+  oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 150, rof: 1.4, range: 820,  spread: 0.004, pellets: 1, speed: 1550, len: 48, wid: 7, kick: 9,  big: true, pierce: true, splash: 115, special: true, exotic: true, shape: 'void' },
+  starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 34,  rof: 2.2, range: 580,  spread: 0.15,  pellets: 7, speed: 980,  len: 20, wid: 5, kick: 7,  big: true, special: true, exotic: true, shape: 'comet' },
+  singularity:{ name: 'Singularity',  icon: '🌀', rarity: 'exotic', ammo: 'energy', dmg: 125, rof: 1.6, range: 840,  spread: 0.003, pellets: 1, speed: 1700, len: 44, wid: 6, kick: 8,  big: true, pierce: true, splash: 95, special: true, exotic: true, shape: 'vortex' },
   dragonfire:{ name: 'Dragonfire',    icon: '🐲', rarity: 'exotic', ammo: 'shell',  dmg: 42,  rof: 5,   range: 450,  spread: 0.10,  pellets: 4, speed: 980,  len: 20, wid: 6, kick: 4,  big: true, special: true, exotic: true, shape: 'flame' },
   zeus:    { name: 'Zeus',            icon: '⚡', rarity: 'exotic', ammo: 'energy', dmg: 260, rof: 0.55,range: 1650, spread: 0,     pellets: 1, speed: 2600, len: 80, wid: 8, kick: 12, big: true, special: true, exotic: true, shape: 'bolt', charge: 1100 },
-  mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 46,  rof: 9,   range: 580,  spread: 0.04,  pellets: 2, speed: 1300, len: 22, wid: 5, kick: 2,  big: true, special: true, exotic: true, shape: 'split' },
-  nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 145, rof: 0.9, range: 720,  spread: 0.006, pellets: 1, speed: 920,  len: 30, wid: 8, kick: 10, big: true, splash: 160, special: true, exotic: true, shape: 'star' },
+  mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 46,  rof: 9,   range: 580,  spread: 0.04,  pellets: 2, speed: 1300, len: 22, wid: 5, kick: 2,  big: true, special: true, exotic: true, shape: 'mirror' },
+  nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 145, rof: 0.9, range: 720,  spread: 0.006, pellets: 1, speed: 920,  len: 30, wid: 8, kick: 10, big: true, splash: 160, special: true, exotic: true, shape: 'nova' },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
@@ -571,6 +571,7 @@ function seededRng(seed) {
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const dist2 = (ax, ay, bx, by) => (ax - bx) ** 2 + (ay - by) ** 2;
 const $ = id => document.getElementById(id);
+const rarityLabel = r => RARITY[r].name + (RARITY[r].top ? ' - BEST' : '');
 let toastTimer = 0;
 function toast(msg, ms = 1800) {
   const t = $('toast'); t.textContent = msg; t.style.display = 'block';
@@ -1086,10 +1087,10 @@ function showPickupConfirm(pk) {
   const cur = WEAPONS[game.me.weapon], next = WEAPONS[pk.weapon];
   $('confirmCurrentName').textContent = cur.icon + ' ' + cur.name;
   $('confirmCurrentName').style.color = rarityCol(cur.rarity);
-  $('confirmCurrentStats').textContent = RARITY[cur.rarity].name + ' / ' + weaponStatLine(game.me.weapon);
+  $('confirmCurrentStats').textContent = rarityLabel(cur.rarity) + ' / ' + weaponStatLine(game.me.weapon);
   $('confirmNewName').textContent = next.icon + ' ' + next.name;
   $('confirmNewName').style.color = rarityCol(next.rarity);
-  $('confirmNewStats').textContent = RARITY[next.rarity].name + ' / ' + weaponStatLine(pk.weapon);
+  $('confirmNewStats').textContent = rarityLabel(next.rarity) + ' / ' + weaponStatLine(pk.weapon);
   $('confirmPickup').classList.add('show');
 }
 function closePickupConfirm() {
@@ -1999,7 +2000,7 @@ function update(dt) {
     } else {
       const pk = g.nearAction.pk, col = rarityCol(pk.rarity);
       btn.textContent = '🖐 PICK UP';
-      info.firstElementChild.textContent = pk.icon + ' ' + pk.label + ' — ' + RARITY[pk.rarity].name.toUpperCase();
+      info.firstElementChild.textContent = pk.icon + ' ' + pk.label + ' — ' + rarityLabel(pk.rarity).toUpperCase();
       info.firstElementChild.style.color = col;
       info.lastElementChild.textContent = pk.stats;
       info.style.borderColor = col;
@@ -2235,6 +2236,15 @@ function render() {
     drawShadow(x, y + 4, 13);
     ctx.strokeStyle = rc; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(x, y, (pk.kind === 'weapon' ? 21 : 16) * pulse, 0, 7); ctx.stroke();
+    if (pk.rarity === 'exotic') {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(performance.now() / 250);
+      ctx.strokeStyle = rc; ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath(); ctx.moveTo(0, -30 * pulse); ctx.lineTo(7, -22 * pulse); ctx.lineTo(0, -16 * pulse); ctx.lineTo(-7, -22 * pulse); ctx.closePath(); ctx.stroke();
+      }
+      ctx.restore();
+    }
     ctx.fillStyle = '#1c2434'; ctx.fillRect(x - 12, y - 12, 24, 24);
     ctx.strokeStyle = rc; ctx.lineWidth = 2; ctx.strokeRect(x - 12, y - 12, 24, 24);
     ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(pk.icon, x, y + 5);
@@ -2259,14 +2269,35 @@ function render() {
   for (const b of g.bullets) {
     const bx = b.x - cx, by = b.y - cy, col = b.exo ? rarityCol('exotic') : b.col;
     ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = b.wid;
-    if (b.shape === 'orb') {
+    if (b.shape === 'void') {
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 120);
+      ctx.strokeStyle = '#111'; ctx.lineWidth = b.wid + 5;
+      ctx.beginPath(); ctx.arc(0, 0, b.wid + 8, 0, 7); ctx.stroke();
+      ctx.strokeStyle = col; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, b.wid + 14, 0.4, Math.PI * 1.6); ctx.stroke();
+      ctx.restore();
+    } else if (b.shape === 'vortex') {
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 80);
+      ctx.strokeStyle = col; ctx.lineWidth = 4;
+      ctx.beginPath();
+      for (let i = 0; i < 18; i++) {
+        const a = i * 0.55, r = 2 + i * 0.9;
+        if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.stroke(); ctx.restore();
+    } else if (b.shape === 'orb') {
       ctx.beginPath(); ctx.arc(bx, by, b.wid + 5, 0, 7); ctx.fill();
       ctx.globalAlpha = 0.38; ctx.beginPath(); ctx.arc(bx, by, b.wid + 12, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
-    } else if (b.shape === 'star') {
+    } else if (b.shape === 'comet') {
+      ctx.beginPath(); ctx.arc(bx, by, b.wid + 5, 0, 7); ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = b.wid;
+      ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
+      ctx.quadraticCurveTo(bx - b.dx * b.len * 0.45 + b.dy * 12, by - b.dy * b.len * 0.45 - b.dx * 12, bx, by); ctx.stroke();
+    } else if (b.shape === 'nova') {
       ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 90);
       ctx.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const r = i % 2 ? b.wid + 3 : b.wid + 11, a = i * Math.PI / 4;
+      for (let i = 0; i < 12; i++) {
+        const r = i % 2 ? b.wid + 4 : b.wid + 16, a = i * Math.PI / 6;
         if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
       }
       ctx.closePath(); ctx.fill(); ctx.restore();
@@ -2275,21 +2306,25 @@ function render() {
       ctx.lineTo(bx - b.dx * b.len - b.dy * 8, by - b.dy * b.len + b.dx * 8);
       ctx.lineTo(bx - b.dx * b.len + b.dy * 8, by - b.dy * b.len - b.dx * 8);
       ctx.closePath(); ctx.fill();
-    } else if (b.shape === 'fork' || b.shape === 'bolt') {
+    } else if (b.shape === 'storm' || b.shape === 'bolt') {
       ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
       ctx.lineTo(bx - b.dx * b.len * 0.65 + b.dy * 9, by - b.dy * b.len * 0.65 - b.dx * 9);
       ctx.lineTo(bx - b.dx * b.len * 0.35 - b.dy * 7, by - b.dy * b.len * 0.35 + b.dx * 7);
       ctx.lineTo(bx, by); ctx.stroke();
-      if (b.shape === 'fork') {
+      if (b.shape === 'storm') {
         ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len * 0.45, by - b.dy * b.len * 0.45);
         ctx.lineTo(bx - b.dx * b.len * 0.25 + b.dy * 16, by - b.dy * b.len * 0.25 - b.dx * 16); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len * 0.72, by - b.dy * b.len * 0.72);
+        ctx.lineTo(bx - b.dx * b.len * 0.55 - b.dy * 14, by - b.dy * b.len * 0.55 + b.dx * 14); ctx.stroke();
       }
-    } else if (b.shape === 'split') {
+    } else if (b.shape === 'mirror') {
       for (const side of [-1, 1]) {
         ctx.beginPath();
         ctx.moveTo(bx - b.dx * b.len + b.dy * side * 5, by - b.dy * b.len - b.dx * side * 5);
         ctx.lineTo(bx + b.dy * side * 5, by - b.dx * side * 5); ctx.stroke();
       }
+      ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 2;
+      ctx.strokeRect(bx - 7, by - 7, 14, 14);
     } else {
       ctx.beginPath();
       ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
@@ -2503,7 +2538,7 @@ function render() {
   $('wpnIcon').textContent = wpn.icon;
   $('wpnName').textContent = wpn.name.toUpperCase();
   $('wpnName').style.color = wcol;
-  $('wpnRarity').textContent = charging ? 'CHARGING' : RARITY[wpn.rarity].name.toUpperCase();
+  $('wpnRarity').textContent = charging ? 'CHARGING' : rarityLabel(wpn.rarity).toUpperCase();
   $('wpnAmmo').textContent = ammoLeft;
   $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
   $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
