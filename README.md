@@ -67,6 +67,13 @@ All buttons are ≥ 56 px (above the 44 pt minimum); everything uses
   In multiplayer the party host's client simulates all NPCs and syncs them to everyone.
 - **Passive regen** — after 5 seconds without taking damage you slowly heal (4 hp/s),
   so a lost fight doesn't doom the rest of your match.
+- **Armor & shield potions** — three armor tiers (Leather −25% / Iron −40% / Guardian
+  Plate −55%) soak a cut of every hit until their durability runs out and they shatter;
+  picking up worse armor than you wear is politely refused. Shield potions (+25/+50)
+  fill a blue bar (max 100) that's consumed before your health — both drop from chests
+  and guardian crews, and show up in the HUD (blue bar + armor line) and over players.
+- **43 weapons** — 14 normal-tier guns for chests and NPCs, 9 epics, 6 legendaries,
+  7 mythics (including pierce/splash variants), 10 building specials and 8 Exotics.
 - **Chests & ground loot** — 39 chests in four tiers (26 Normal, 7 Epic, 4 Legendary,
   2 Mythic), color-coded with matching glows and minimap dots. Opening a chest spills
   its loot onto the ground as rarity-colored pickups — stand on an item to see its name,

@@ -108,6 +108,10 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #hpOuter{position:relative}
 #hpOuter::after{content:'';position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(90deg,transparent 0 21px,#0007 21px 23px)}
+/* blue potion-shield bar above the health bar */
+#spOuter{height:9px;background:#0008;border-radius:5px;overflow:hidden;margin-bottom:4px;border:1px solid #7fd4ff44}
+#spFill{height:100%;width:0;background:linear-gradient(#9fe6ff,#2a8de0);transition:width .15s}
+#armorInfo{font-size:12px;font-weight:700;margin-top:3px;display:none}
 /* storm phase progress bar under the storm label */
 #stormBarO{height:5px;background:#0008;border-radius:3px;overflow:hidden;margin-top:5px}
 #stormBar{height:100%;width:0;background:linear-gradient(90deg,#8a4fd0,#d9b6ff);transition:width .3s}
@@ -271,7 +275,7 @@ body.pc #pcHint{display:block}
 <!-- ================= IN-GAME HUD ================= -->
 <div id="hud">
   <div id="topHud">
-    <div id="hpWrap"><div id="hpOuter"><div id="hpFill"></div></div><div id="hpText">❤️ 100 / 100</div></div>
+    <div id="hpWrap"><div id="spOuter"><div id="spFill"></div></div><div id="hpOuter"><div id="hpFill"></div></div><div id="hpText">❤️ 100 / 100</div><div id="armorInfo"></div></div>
     <div id="stormInfo"><span id="stormText">storm</span><div id="stormBarO"><div id="stormBar"></div></div></div>
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
   </div>
@@ -401,6 +405,17 @@ const WEAPONS = {
   pistol:  { name: 'Rustfang',        icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 20, rof: 3.5,  range: 520,  spread: 0.03,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
   smg:     { name: 'Hornet',          icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 12, rof: 10,   range: 430,  spread: 0.09,  pellets: 1, speed: 900,  col: '#ffe9a8', len: 14, wid: 3, kick: 1.5 },
   shotgun: { name: 'Gravedigger',     icon: '💥', rarity: 'rare',      ammo: 'shell',  dmg: 9,  rof: 1.5,  range: 270,  spread: 0.26,  pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
+  // ---- more normal guns (chest + NPC pool) ----
+  judge:   { name: 'Judge',           icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 30, rof: 1.6,  range: 560,  spread: 0.02,  pellets: 1, speed: 1000, col: '#ffe9a8', len: 16, wid: 3, kick: 3 },
+  twinbite:{ name: 'Twinbite',        icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 12, rof: 2.8,  range: 480,  spread: 0.05,  pellets: 2, speed: 950,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
+  wasp:    { name: 'Wasp',            icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 9,  rof: 9,    range: 380,  spread: 0.11,  pellets: 1, speed: 850,  col: '#ffe9a8', len: 12, wid: 2, kick: 1 },
+  drifter: { name: 'Drifter',         icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 16, rof: 5,    range: 600,  spread: 0.04,  pellets: 1, speed: 1100, col: '#d8ffd0', len: 18, wid: 3, kick: 2 },
+  bruiser: { name: 'Bruiser',         icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 24, rof: 2.2,  range: 500,  spread: 0.03,  pellets: 1, speed: 1000, col: '#d8ffd0', len: 16, wid: 3, kick: 3 },
+  ripsaw:  { name: 'Ripsaw',          icon: '💥', rarity: 'uncommon',  ammo: 'shell',  dmg: 8,  rof: 1.8,  range: 200,  spread: 0.3,   pellets: 4, speed: 750,  col: '#ffd27a', len: 10, wid: 3, kick: 4 },
+  static:  { name: 'Static',          icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 11, rof: 8.5,  range: 420,  spread: 0.08,  pellets: 1, speed: 900,  col: '#d8ffd0', len: 13, wid: 3, kick: 1.2 },
+  longtooth:{ name: 'Longtooth',      icon: '🎯', rarity: 'rare',      ammo: 'light',  dmg: 34, rof: 1.6,  range: 850,  spread: 0.01,  pellets: 1, speed: 1400, col: '#a8d9ff', len: 26, wid: 3, kick: 4 },
+  undertaker:{ name: 'Undertaker',    icon: '💥', rarity: 'rare',      ammo: 'shell',  dmg: 8,  rof: 2.2,  range: 250,  spread: 0.22,  pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
+  warhound:{ name: 'Warhound',        icon: '🔫', rarity: 'rare',      ammo: 'light',  dmg: 22, rof: 3.6,  range: 640,  spread: 0.03,  pellets: 1, speed: 1150, col: '#a8d9ff', len: 20, wid: 3, kick: 2.5 },
   minigun: { name: 'Meatgrinder',     icon: '🌀', rarity: 'epic',      ammo: 'light',  dmg: 8,  rof: 16,   range: 520,  spread: 0.12,  pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2, special: true },
   hydra:   { name: 'Hydra',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 13, rof: 4.2,  range: 560,  spread: 0.05,  pellets: 3, speed: 1000, col: '#7dff9b', len: 18, wid: 3, kick: 3,   special: true },
   dragon:  { name: "Dragon's Breath", icon: '🔥', rarity: 'epic',      ammo: 'shell',  dmg: 7,  rof: 11,   range: 210,  spread: 0.34,  pellets: 2, speed: 480,  col: '#ff9b3d', len: 10, wid: 5, kick: 1,   special: true },
@@ -408,15 +423,50 @@ const WEAPONS = {
   deadeye: { name: 'Deadeye',         icon: '🎯', rarity: 'legendary', ammo: 'energy', dmg: 90, rof: 0.85, range: 1300, spread: 0.002, pellets: 1, speed: 2000, col: '#ffffff', len: 44, wid: 3, kick: 7, big: true, special: true },
   phantom: { name: 'Phantom Lance',   icon: '👻', rarity: 'mythic',    ammo: 'energy', dmg: 45, rof: 2.2,  range: 700,  spread: 0.004, pellets: 1, speed: 1400, col: '#c9f2ff', len: 40, wid: 4, kick: 5, big: true, pierce: true, special: true },
   kaboom:  { name: 'Doomsday',        icon: '☄️', rarity: 'mythic',    ammo: 'energy', dmg: 55, rof: 1.1,  range: 620,  spread: 0.01,  pellets: 1, speed: 620,  col: '#ff6b4a', len: 20, wid: 6, kick: 8, big: true, splash: 90, special: true },
+  // ---- more epic chest weapons ----
+  hellhound:{ name: 'Hellhound',      icon: '🐺', rarity: 'epic', ammo: 'light',  dmg: 13, rof: 9,   range: 460, spread: 0.07, pellets: 1, speed: 1000, col: '#e0a0ff', len: 15, wid: 3, kick: 1.5 },
+  skullsplitter:{ name: 'Skullsplitter', icon: '💀', rarity: 'epic', ammo: 'light', dmg: 40, rof: 1.8, range: 900, spread: 0.008, pellets: 1, speed: 1500, col: '#e0a0ff', len: 28, wid: 3, kick: 5 },
+  hailstorm:{ name: 'Hailstorm',      icon: '🌨', rarity: 'epic', ammo: 'light',  dmg: 10, rof: 2.6, range: 520, spread: 0.09, pellets: 4, speed: 1000, col: '#cfe8ff', len: 14, wid: 3, kick: 3 },
+  magma:   { name: 'Magma',           icon: '🌋', rarity: 'epic', ammo: 'shell',  dmg: 8,  rof: 12,  range: 240, spread: 0.3,  pellets: 2, speed: 500,  col: '#ff7b3d', len: 10, wid: 5, kick: 1 },
+  falcon:  { name: 'Falcon',          icon: '🦅', rarity: 'epic', ammo: 'light',  dmg: 34, rof: 2.4, range: 620, spread: 0.015, pellets: 1, speed: 1300, col: '#e0a0ff', len: 20, wid: 3, kick: 3.5 },
+  // ---- more legendary chest weapons ----
+  executioner:{ name: 'Executioner',  icon: '🪓', rarity: 'legendary', ammo: 'shell',  dmg: 10, rof: 1.6, range: 300, spread: 0.24, pellets: 6, speed: 850,  col: '#ffc46b', len: 13, wid: 4, kick: 5, big: true },
+  tempest: { name: 'Tempest',         icon: '🌪', rarity: 'legendary', ammo: 'light',  dmg: 20, rof: 6.5, range: 620, spread: 0.04, pellets: 1, speed: 1200, col: '#ffc46b', len: 20, wid: 3, kick: 2 },
+  kingslayer:{ name: 'Kingslayer',    icon: '🗡', rarity: 'legendary', ammo: 'energy', dmg: 55, rof: 1.4, range: 1000, spread: 0.005, pellets: 1, speed: 1700, col: '#ffdf9e', len: 30, wid: 3, kick: 5, big: true },
+  // ---- more mythic chest weapons ----
+  reaper:  { name: 'Reaper',          icon: '⚰️', rarity: 'mythic', ammo: 'energy', dmg: 16, rof: 6,   range: 550,  spread: 0.05, pellets: 1, speed: 1300, col: '#b8ffe8', len: 22, wid: 4, kick: 2, big: true, pierce: true },
+  cataclysm:{ name: 'Cataclysm',      icon: '🌊', rarity: 'mythic', ammo: 'shell',  dmg: 18, rof: 1.2, range: 340,  spread: 0.18, pellets: 3, speed: 800,  col: '#7fd4ff', len: 14, wid: 5, kick: 6, big: true, splash: 60 },
+  nightfall:{ name: 'Nightfall',      icon: '🌑', rarity: 'mythic', ammo: 'energy', dmg: 110, rof: 0.7, range: 1400, spread: 0.001, pellets: 1, speed: 2200, col: '#c9b6ff', len: 50, wid: 3, kick: 9, big: true },
+  sunburst:{ name: 'Sunburst',        icon: '🌞', rarity: 'mythic', ammo: 'energy', dmg: 12, rof: 11,  range: 480,  spread: 0.06, pellets: 1, speed: 1100, col: '#ffe45f', len: 18, wid: 4, kick: 1.2, big: true },
+  // ---- more building specials ----
+  earthshaker:{ name: 'Earthshaker',  icon: '🪨', rarity: 'legendary', ammo: 'energy', dmg: 45, rof: 1,  range: 520, spread: 0.02, pellets: 1, speed: 700,  col: '#d9a066', len: 18, wid: 6, kick: 7, big: true, splash: 70, special: true },
+  venom:   { name: 'Venom',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 10, rof: 10, range: 440, spread: 0.1,  pellets: 1, speed: 950,  col: '#8aff5d', len: 14, wid: 3, kick: 1, special: true },
+  colossus:{ name: 'Colossus',        icon: '🦣', rarity: 'mythic',    ammo: 'shell',  dmg: 9,  rof: 1,  range: 300, spread: 0.3,  pellets: 8, speed: 800,  col: '#ffd27a', len: 12, wid: 4, kick: 8, big: true, special: true },
   // ---- EXOTIC weapons: only Ruin Bosses drop these; their color (and
   //      tracers) constantly shift through the rainbow ----
   stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 30, rof: 7,   range: 700, spread: 0.03,  pellets: 1, speed: 1300, len: 26, wid: 4, kick: 2.5, big: true, special: true, exotic: true },
   oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 70, rof: 1.4, range: 700, spread: 0.006, pellets: 1, speed: 1500, len: 40, wid: 5, kick: 8, big: true, pierce: true, splash: 70, special: true, exotic: true },
   starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 16, rof: 2.2, range: 520, spread: 0.18,  pellets: 6, speed: 900,  len: 16, wid: 4, kick: 6, big: true, special: true, exotic: true },
+  singularity:{ name: 'Singularity',  icon: '🌀', rarity: 'exotic', ammo: 'energy', dmg: 50, rof: 1.6, range: 750, spread: 0.005, pellets: 1, speed: 1600, len: 36, wid: 5, kick: 7, big: true, pierce: true, splash: 60, special: true, exotic: true },
+  dragonfire:{ name: 'Dragonfire',    icon: '🐲', rarity: 'exotic', ammo: 'shell',  dmg: 14, rof: 5,   range: 400, spread: 0.12,  pellets: 3, speed: 900,  len: 14, wid: 4, kick: 3, big: true, special: true, exotic: true },
+  zeus:    { name: 'Zeus',            icon: '⚡', rarity: 'exotic', ammo: 'energy', dmg: 130, rof: 0.8, range: 1500, spread: 0.001, pellets: 1, speed: 2400, len: 60, wid: 4, kick: 10, big: true, special: true, exotic: true },
+  mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 20, rof: 9,   range: 520, spread: 0.05,  pellets: 1, speed: 1200, len: 18, wid: 4, kick: 1.5, big: true, special: true, exotic: true },
+  nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 60, rof: 0.9, range: 650, spread: 0.01,  pellets: 1, speed: 800,  len: 24, wid: 6, kick: 9, big: true, splash: 110, special: true, exotic: true },
 };
-const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom'];
-const EXOTICS = ['stormc', 'oblivion', 'starfall'];
-const NORMAL_GUNS = ['pistol', 'smg', 'shotgun']; // what NPCs actually carry
+const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
+const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
+const NORMAL_GUNS = ['pistol', 'smg', 'shotgun', 'judge', 'wasp', 'drifter', 'bruiser', 'static', 'warhound']; // what NPCs actually carry
+// weapon keys grouped by rarity, exotics excluded (those are boss-only)
+const W_BY = {};
+for (const k in WEAPONS) if (!WEAPONS[k].exotic) (W_BY[WEAPONS[k].rarity] = W_BY[WEAPONS[k].rarity] || []).push(k);
+
+// Armor tiers: soak a % of every hit while durability lasts, then break.
+const ARMOR = [null,
+  { name: 'Leather Armor',  icon: '🦺', reduce: 0.25, dur: 150, rarity: 'uncommon' },
+  { name: 'Iron Armor',     icon: '🛡', reduce: 0.4,  dur: 250, rarity: 'epic' },
+  { name: 'Guardian Plate', icon: '⚜️', reduce: 0.55, dur: 400, rarity: 'legendary' },
+];
+const MAX_SHIELD = 100; // shield potions fill a blue bar absorbed before HP
 
 const EYES    = ['Dot', 'Wide', 'Sleepy'];
 const HAIRS   = ['Spiky', 'Bowl', 'Cap'];
@@ -799,6 +849,8 @@ function makePlayer(id, name, look, team, x, y, isBot) {
     id, name, look, team, isBot,
     x, y, aim: -Math.PI / 2, hp: CFG.maxHp, maxHp: CFG.maxHp, alive: true,
     shieldHits: 0,          // >0 = a frontal shield is up (see deployShield)
+    shieldPts: 0,           // blue bonus-HP from shield potions (absorbed first)
+    armorTier: 0, armorDur: 0, // equipped ARMOR tier + remaining durability
     weapon: 'pistol', lastShot: 0, hurtFlash: 0,
     // remote interpolation targets
     tx: x, ty: y, taim: -Math.PI / 2,
@@ -1296,6 +1348,20 @@ function updateBullets(dt) {
 }
 
 function hurtLocal(p, dmg, by) {
+  // 1) armor soaks a % of the hit while its durability lasts
+  if (p.armorTier) {
+    const soaked = Math.min(Math.round(dmg * ARMOR[p.armorTier].reduce), p.armorDur);
+    p.armorDur -= soaked; dmg -= soaked;
+    if (p.armorDur <= 0) {
+      p.armorTier = 0; p.armorDur = 0;
+      if (p === game.me) toast('🦺 Armor destroyed!');
+    }
+  }
+  // 2) shield-potion points absorb whatever's left before HP
+  if (p.shieldPts > 0 && dmg > 0) {
+    const s = Math.min(p.shieldPts, dmg);
+    p.shieldPts -= s; dmg -= s;
+  }
   p.hp -= dmg; p.hurtFlash = 0.25;
   p.lastHurtT = performance.now(); // pauses the passive regen
   if (p === game.me) game.shake = Math.min(12, game.shake + 6);
@@ -1327,8 +1393,9 @@ function guardianDied(p) {
   } else {
     // regular occupant: modest, seeded consolation loot
     const rng = seededRng(game.seed + 13 + p.home.x * 7 + p.home.y);
-    if (rng() < 0.5) spawnItem({ id: 'ga_' + p.id, x: p.x, y: p.y, kind: 'ammo', ammo: rng() < 0.4 ? 'energy' : 'light' });
-    else if (rng() < 0.6) spawnItem({ id: 'gh_' + p.id, x: p.x, y: p.y, kind: 'heal', amount: 30 });
+    if (rng() < 0.4) spawnItem({ id: 'ga_' + p.id, x: p.x, y: p.y, kind: 'ammo', ammo: rng() < 0.4 ? 'energy' : 'light' });
+    else if (rng() < 0.5) spawnItem({ id: 'gh_' + p.id, x: p.x, y: p.y, kind: 'heal', amount: 30 });
+    else if (rng() < 0.55) spawnItem({ id: 'gp_' + p.id, x: p.x, y: p.y, kind: 'pot', amount: 25 });
     // building cleared? its RUIN BOSS bursts out of the rubble
     const left = Object.values(game.players).some(o => o.guard && !o.boss && o.bldIdx === i && o.alive);
     if (!left && !bld.bossUp) spawnRuinBoss(i);
@@ -1360,6 +1427,14 @@ function takePickup(id, mine) {
     if (pk.kind === 'weapon') game.me.weapon = pk.weapon;
     else if (pk.kind === 'heal') game.me.hp = Math.min(CFG.maxHp, game.me.hp + pk.amount);
     else if (pk.kind === 'mat') game.mats[pk.mat] += pk.amount;
+    else if (pk.kind === 'armor') {
+      // only an upgrade (or a fresher copy of the same tier) replaces
+      const better = pk.tier > game.me.armorTier ||
+        (pk.tier === game.me.armorTier && ARMOR[pk.tier].dur > game.me.armorDur);
+      if (!better) { pk.taken = false; return toast('Your current armor is better'); }
+      game.me.armorTier = pk.tier; game.me.armorDur = ARMOR[pk.tier].dur;
+    }
+    else if (pk.kind === 'pot') game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + pk.amount);
     else game.ammo[pk.ammo] += CFG.ammoPack[pk.ammo];
     toast(pk.icon + ' ' + pk.label);
     net.send({ t: 'pickup_taken', id });
@@ -1381,26 +1456,30 @@ function addKillFeed(txt) {
    from a seeded RNG per chest, so every client spawns identical items. */
 function chestLoot(tier, rng) {
   const pick = a => a[(rng() * a.length) | 0];
+  const P = r => W_BY[r]; // weapon pool by rarity (exotics never in chests)
   if (tier === 'epic') return [
-    { kind: 'weapon', weapon: rng() < 0.35 ? pick(['minigun', 'hydra', 'dragon']) : pick(['smg', 'shotgun']) },
+    { kind: 'weapon', weapon: rng() < 0.55 ? pick(P('epic')) : pick(P('rare')) },
+    rng() < 0.4 ? { kind: 'armor', tier: 2 } : { kind: 'pot', amount: 25 },
     { kind: 'heal', amount: 50 },
     { kind: 'ammo', ammo: pick(['light', 'shell', 'energy']) },
   ];
   if (tier === 'legendary') return [
-    { kind: 'weapon', weapon: rng() < 0.45 ? pick(['railgun', 'deadeye']) : pick(['minigun', 'hydra', 'dragon']) },
-    { kind: 'heal', amount: 50 },
+    { kind: 'weapon', weapon: rng() < 0.5 ? pick(P('legendary')) : pick(P('epic')) },
+    rng() < 0.5 ? { kind: 'armor', tier: rng() < 0.4 ? 3 : 2 } : { kind: 'pot', amount: 50 },
     { kind: 'ammo', ammo: 'energy' },
     { kind: 'mat', mat: pick(['brick', 'metal']), amount: 60 },
   ];
   if (tier === 'mythic') return [
-    { kind: 'weapon', weapon: pick(SPECIALS) },
-    { kind: 'weapon', weapon: pick(['phantom', 'kaboom', 'railgun', 'deadeye']) },
+    { kind: 'weapon', weapon: pick(P('mythic')) },
+    { kind: 'weapon', weapon: pick(P('mythic').concat(P('legendary'))) },
+    { kind: 'armor', tier: 3 },
+    { kind: 'pot', amount: 50 },
     { kind: 'ammo', ammo: 'energy' },
-    { kind: 'heal', amount: 80 },
   ];
-  return [ // normal
-    { kind: 'weapon', weapon: pick(NORMAL_GUNS) },
-    rng() < 0.5 ? { kind: 'heal', amount: 30 } : { kind: 'mat', mat: pick(['wood', 'brick', 'metal']), amount: 40 },
+  return [ // normal: commons through rares, small defensive rolls
+    { kind: 'weapon', weapon: pick(P('common').concat(P('uncommon'), P('rare'))) },
+    rng() < 0.3 ? { kind: 'armor', tier: 1 } : rng() < 0.5 ? { kind: 'pot', amount: 25 }
+      : rng() < 0.7 ? { kind: 'heal', amount: 30 } : { kind: 'mat', mat: pick(['wood', 'brick', 'metal']), amount: 40 },
     { kind: 'ammo', ammo: pick(['light', 'shell']) },
   ];
 }
@@ -1420,6 +1499,14 @@ function spawnItem(def) {
   } else if (it.kind === 'mat') {
     it.icon = it.mat === 'wood' ? '🪵' : it.mat === 'brick' ? '🧱' : '⛓️';
     it.label = `+${it.amount} ${it.mat}`; it.rarity = 'common'; it.stats = 'Building materials';
+  } else if (it.kind === 'armor') {
+    const A = ARMOR[it.tier];
+    it.icon = A.icon; it.label = A.name; it.rarity = A.rarity;
+    it.stats = `Blocks ${A.reduce * 100 | 0}% of damage · ${A.dur} durability`;
+  } else if (it.kind === 'pot') {
+    it.icon = '🧪'; it.label = `Shield Potion +${it.amount}`;
+    it.rarity = it.amount >= 50 ? 'epic' : 'rare';
+    it.stats = `Bonus shield HP, absorbed before health (max ${MAX_SHIELD})`;
   } else { // ammo
     it.icon = it.ammo === 'energy' ? '🔋' : it.ammo === 'shell' ? '🔻' : '🔸';
     it.label = `+${CFG.ammoPack[it.ammo]} ${AMMO[it.ammo].name} ammo`;
@@ -1624,7 +1711,7 @@ function movePlayer(p, mx, my, dt, speedMul = 1) {
 function applyPeerState(m) {
   const p = game.players[m.id]; if (!p) return;
   p.tx = m.x; p.ty = m.y; p.taim = m.aim;
-  p.hp = m.hp; p.weapon = m.weapon; p.shieldHits = m.sh || 0;
+  p.hp = m.hp; p.weapon = m.weapon; p.shieldHits = m.sh || 0; p.shieldPts = m.sp || 0;
   if (p.alive && !m.alive) { p.alive = false; addEffect('break', p.x, p.y); }
 }
 
@@ -1735,7 +1822,7 @@ function update(dt) {
     const now = performance.now();
     if (now - g.lastNetSend > 1000 / CFG.netHz) {
       g.lastNetSend = now;
-      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon, sh: g.me.shieldHits });
+      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon, sh: g.me.shieldHits, sp: g.me.shieldPts });
       if (g.npcAuthority) { // host also ships a guardian snapshot
         const list = [];
         for (const id in g.players) { const p = g.players[id];
@@ -1999,6 +2086,10 @@ function render() {
     ctx.fillStyle = '#000a'; ctx.fillRect(x - 18, y - 25, 36, 4);
     ctx.fillStyle = p.guard ? '#ff5f5f' : '#5dff7a';
     ctx.fillRect(x - 18, y - 25, 36 * p.hp / (p.maxHp || CFG.maxHp), 4);
+    if (p.shieldPts > 0) { // thin blue potion-shield strip above the hp bar
+      ctx.fillStyle = '#7fd4ff';
+      ctx.fillRect(x - 18, y - 29, 36 * Math.min(1, p.shieldPts / MAX_SHIELD), 3);
+    }
   }
 
   // tree canopies on top so players can hide under them
@@ -2133,7 +2224,16 @@ function render() {
   $('hpFill').style.width = (hpPct * 100) + '%';
   $('hpFill').style.background = hpPct > 0.5 ? 'linear-gradient(#5dff7a,#25a03e)'
     : hpPct > 0.25 ? 'linear-gradient(#ffd66b,#e08a2a)' : 'linear-gradient(#ff7b6b,#d93030)';
-  $('hpText').textContent = `❤️ ${Math.ceil(g.me.hp)} / ${CFG.maxHp}`;
+  $('hpText').textContent = `❤️ ${Math.ceil(g.me.hp)} / ${CFG.maxHp}` +
+    (g.me.shieldPts > 0 ? `  ·  🛡 ${Math.ceil(g.me.shieldPts)}` : '');
+  $('spFill').style.width = (g.me.shieldPts / MAX_SHIELD * 100) + '%';
+  const ai = $('armorInfo');
+  if (g.me.armorTier) {
+    const A = ARMOR[g.me.armorTier];
+    ai.style.display = 'block';
+    ai.textContent = `${A.icon} ${A.name} · −${A.reduce * 100 | 0}% · ${g.me.armorDur}`;
+    ai.style.color = rarityCol(A.rarity);
+  } else ai.style.display = 'none';
   $('stormText').textContent = s.label;
   $('stormBar').style.width = ((s.pct || 0) * 100) + '%';
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
