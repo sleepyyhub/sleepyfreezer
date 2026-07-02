@@ -146,6 +146,9 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .hotSlot .num{position:absolute;left:4px;top:2px;font-size:10px;color:#9db2c9}
 .hotSlot .ico{font-size:20px;line-height:1}
 .hotSlot .rar{font-size:8px;letter-spacing:1px;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#powerPanel{position:absolute;left:calc(14px + env(safe-area-inset-left));top:96px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.powerLine{min-width:190px;background:rgba(8,14,24,.64);border:1px solid #ffffff22;border-left:4px solid #888;border-radius:8px;padding:7px 10px;font-size:12px;box-shadow:0 4px 14px #0006}
+.powerLine .t{font-weight:1000;letter-spacing:1px}.powerLine .s{color:#cfe3ff;font-size:11px;margin-top:2px}
 #killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:184px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
 
@@ -176,6 +179,16 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .confirmItem .st{font-size:12px;color:#dce8ff;margin-top:6px;line-height:1.3}
 #confirmActions{display:flex;gap:10px;justify-content:center;margin-top:14px}
 #confirmActions .btn{min-width:150px}
+#grimoireRoll{position:fixed;inset:0;background:#060814d8;z-index:195;display:none;align-items:center;justify-content:center;padding:22px}
+#grimoireRoll.show{display:flex}
+#grimoireBox{width:min(560px,94vw);background:#101323;border:2px solid #b46bff;border-radius:8px;padding:20px;text-align:center;box-shadow:0 0 50px #8a6dff88}
+#grimoireName{font-size:30px;font-weight:1000;margin:12px 0}
+#grimoireStats{color:#dce8ff;margin-bottom:16px}
+#contractOffer{position:fixed;inset:0;background:#130407d8;z-index:196;display:none;align-items:center;justify-content:center;padding:22px}
+#contractOffer.show{display:flex}
+#contractBox{width:min(580px,94vw);background:#211018;border:2px solid #ff3d5a;border-radius:8px;padding:20px;text-align:center;box-shadow:0 0 50px #ff3d5a66}
+#contractName{font-size:28px;font-weight:1000;color:#ff6b82;margin:10px 0}
+#contractDesc,#contractCost{color:#ffdce2;margin-bottom:10px}
 @media (max-width:700px){#upgradeCards{grid-template-columns:1fr}.upgradeCard{min-height:116px}}
 #rotateHint{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;align-items:center;
   justify-content:center;gap:12px;background:#101418f2;font-size:30px;font-weight:800;text-align:center;padding:24px}
@@ -206,6 +219,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   #wpnAmmo{font-size:18px;min-width:34px}
   #hotbar{bottom:calc(4px + env(safe-area-inset-bottom));gap:4px;padding:4px}
   .hotSlot{width:44px;height:40px}.hotSlot .ico{font-size:15px}.hotSlot .rar{display:none}
+  #powerPanel{top:54px}.powerLine{min-width:132px;font-size:10px;padding:5px 7px}.powerLine .s{display:none}
   #buildMenu{gap:6px;transform:translateY(-62%)}
   #buildMenu button{min-width:72px;min-height:44px;font-size:11px}
   /* menus/lobby fit short screens too */
@@ -330,6 +344,10 @@ body.pc #pcHint{display:block}
     <button class="hotSlot" data-slot="3"><span class="num">4</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
     <button class="hotSlot" data-slot="4"><span class="num">5</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
   </div>
+  <div id="powerPanel">
+    <div class="powerLine" id="grimoirePower"><div class="t">📖 NO GRIMOIRE</div><div class="s">Defeat the Wizard King, then roll once.</div></div>
+    <div class="powerLine" id="devilPower"><div class="t">契 NO CONTRACT</div><div class="s">Devil contracts appear after forbidden feats.</div></div>
+  </div>
   <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
   <div id="itemInfo"><div class="nm"></div><div class="st"></div></div>
   <div id="buildMenu">
@@ -369,6 +387,25 @@ body.pc #pcHint{display:block}
       <button class="btn green" id="confirmEquip">EQUIP</button>
       <button class="btn gray" id="confirmCancel">CANCEL</button>
     </div>
+  </div>
+</div>
+<div id="grimoireRoll">
+  <div id="grimoireBox">
+    <h2>Grimoire Roll</h2>
+    <div class="sub">One roll per match. Choose carefully.</div>
+    <div id="grimoireName">Unknown Grimoire</div>
+    <div id="grimoireStats"></div>
+    <button class="btn green" id="grimoireKeep">KEEP</button>
+  </div>
+</div>
+<div id="contractOffer">
+  <div id="contractBox">
+    <h2>Devil Contract</h2>
+    <div id="contractName"></div>
+    <div id="contractDesc"></div>
+    <div id="contractCost"></div>
+    <button class="btn red" id="contractAccept">ACCEPT</button>
+    <button class="btn gray" id="contractDecline">DECLINE</button>
   </div>
 </div>
 
@@ -446,9 +483,11 @@ const RARITY = {
   legendary: { name: 'Legendary', col: '#ff9f2a', rank: 5 },
   mythic:    { name: 'Mythic',    col: '#ffd94d', rank: 6 },
   exotic:    { name: 'Exotic',    col: '#ff5fd0', animated: true, rank: 7, top: true },
+  universal: { name: 'Universal', col: '#ffffff', animated: true, rank: 8, top: true, universal: true },
 };
 function rarityCol(r) {
   const def = RARITY[r];
+  if (def.universal) return `hsl(${(performance.now() / 18 + 210) % 360},100%,72%)`;
   return def.animated ? `hsl(${(performance.now() / 10) % 360},95%,62%)` : def.col;
 }
 // Ammunition types. YOU consume ammo per shot; NPCs never run dry.
@@ -527,6 +566,7 @@ const WEAPONS = {
   zeus:    { name: 'Zeus',            icon: '⚡', rarity: 'exotic', ammo: 'energy', dmg: 260, rof: 0.55,range: 1650, spread: 0,     pellets: 1, speed: 2600, len: 80, wid: 8, kick: 12, big: true, special: true, exotic: true, shape: 'bolt', charge: 1100 },
   mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 46,  rof: 9,   range: 580,  spread: 0.04,  pellets: 2, speed: 1300, len: 22, wid: 5, kick: 2,  big: true, special: true, exotic: true, shape: 'mirror' },
   nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 145, rof: 0.9, range: 720,  spread: 0.006, pellets: 1, speed: 920,  len: 30, wid: 8, kick: 10, big: true, splash: 160, special: true, exotic: true, shape: 'nova' },
+  heavenfang:{ name: 'Heavenfang',     icon: '🌌', rarity: 'universal', ammo: 'energy', dmg: 340, rof: 1.8, range: 1700, spread: 0, pellets: 1, speed: 2600, len: 90, wid: 10, kick: 14, big: true, pierce: true, splash: 190, universal: true, shape: 'nova' },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
@@ -1092,8 +1132,8 @@ function baseGame(seed, mode) {
     ammo: { ...CFG.startAmmo }, kills: 0,
     upgrades: { aimAssist: 0, dmgMul: 0, rofMul: 0, spreadMul: 1, speedMul: 0, picks: [] },
     xp: 0, level: 1, nextLevelXp: 100,
-    contracts: {}, contractOffered: false, grimoireRolled: false,
-    grimoireTower: { x: CFG.world * 0.52, y: CFG.world * 0.48, open: false },
+    contracts: {}, contractOffered: false, grimoireRolled: false, ruinBossKills: 0, heavenlySpawned: false,
+    grimoireTower: { x: CFG.world / 2, y: CFG.world / 2, open: false },
     nextUpgradeAt: mode === 'ffa' ? performance.now() + 60000 : Infinity,
     upgradeOpen: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
@@ -1271,6 +1311,18 @@ function rollGrimoire() {
   const total = Object.values(GRIMOIRES).reduce((s, g) => s + g.rarity, 0);
   let roll = rng() * total, key = 'flame';
   for (const k in GRIMOIRES) { roll -= GRIMOIRES[k].rarity; if (roll <= 0) { key = k; break; } }
+  game.pendingGrimoire = key;
+  const gr = GRIMOIRES[key];
+  $('grimoireName').textContent = gr.name;
+  $('grimoireName').style.color = gr.col;
+  $('grimoireStats').textContent = gr.stats;
+  $('grimoireRoll').classList.add('show');
+}
+function keepRolledGrimoire() {
+  if (!game || !game.pendingGrimoire) return;
+  const key = game.pendingGrimoire;
+  game.pendingGrimoire = null;
+  $('grimoireRoll').classList.remove('show');
   equipGrimoire(key);
 }
 function equipGrimoire(key) {
@@ -1286,12 +1338,21 @@ function offerDevilContract() {
   game.contractOffered = true;
   const pool = DEVIL_CONTRACTS.filter(c => c.solo || game.mode !== 'solo');
   const c = pool[(seededRng(game.seed + 7777)() * pool.length) | 0];
-  setTimeout(() => {
-    if (game && game.me.alive && window.confirm(`${c.name}\n${c.desc}\n\nSacrifice: ${c.cost}\nAccept?`)) {
-      c.apply(game);
-      toast('Contract accepted: ' + c.name, 2400);
-    }
-  }, 250);
+  game.pendingContract = c;
+  $('contractName').textContent = c.name;
+  $('contractDesc').textContent = c.desc;
+  $('contractCost').textContent = 'Sacrifice: ' + c.cost;
+  $('contractOffer').classList.add('show');
+}
+function acceptDevilContract() {
+  if (!game || !game.pendingContract) return;
+  const c = game.pendingContract; game.pendingContract = null;
+  $('contractOffer').classList.remove('show');
+  c.apply(game); toast('Contract accepted: ' + c.name, 2400);
+}
+function declineDevilContract() {
+  if (game) game.pendingContract = null;
+  $('contractOffer').classList.remove('show');
 }
 
 function weightedUpgradeRarity(rng) {
@@ -1514,6 +1575,9 @@ press($('shieldBtn'), deployShield);
 press($('chestBtn'), doInteract);
 press($('confirmEquip'), confirmWeaponPickup);
 press($('confirmCancel'), closePickupConfirm);
+press($('grimoireKeep'), keepRolledGrimoire);
+press($('contractAccept'), acceptDevilContract);
+press($('contractDecline'), declineDevilContract);
 document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => selectPiece(b.dataset.piece)));
 document.querySelectorAll('.matBtn').forEach(b => press(b, () => selectMat(b.dataset.mat)));
 document.querySelectorAll('.hotSlot').forEach(b => press(b, () => selectWeaponSlot(+b.dataset.slot)));
@@ -1627,6 +1691,7 @@ function fireBullets(p, aim, mine) {
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
       col: w.col || '#fff', len: w.len, wid: w.wid, // tracer style
       exo: !!w.exotic,                       // exotic tracers cycle the rainbow
+      universal: !!w.universal,
       shape: w.shape || 'line',
       splash: w.splash || 0, pierce: !!w.pierce, hitIds: [],
       homingTarget: null,
@@ -1819,7 +1884,14 @@ function guardianDied(p) {
     spawnItem({ id: 'wiz_armor', x: p.x + 42, y: p.y + 8, kind: 'armor', tier: 6 });
     addKillFeed('📖 WIZARD KING defeated — grimoire roll opened!');
     offerDevilContract();
+    maybeSpawnHeavenlyRestrictor();
     return addEffect('boom', p.x, p.y, true);
+  }
+  if (p.heavenly) {
+    spawnItem({ id: 'universal_weapon', x: p.x, y: p.y, kind: 'weapon', weapon: 'heavenfang' });
+    spawnItem({ id: 'universal_armor', x: p.x + 46, y: p.y, kind: 'armor', tier: 6 });
+    addKillFeed('🌌 UNIVERSAL weapon dropped!');
+    return addEffect('heaven', p.x, p.y, true);
   }
   const i = p.bldIdx, bld = game.map.buildings[i];
   if (p.boss) {
@@ -1831,6 +1903,8 @@ function guardianDied(p) {
     spawnItem({ id: 'ba' + i, x: p.x + 20, y: p.y + 44, kind: 'ammo', ammo: 'energy' });
     spawnItem({ id: 'bh' + i, x: p.x - 46, y: p.y + 20, kind: 'heal', amount: 80 });
     addKillFeed('👑 RUIN BOSS down — EXOTIC loot dropped!');
+    game.ruinBossKills++;
+    maybeSpawnHeavenlyRestrictor();
   } else {
     // regular occupant: modest, seeded consolation loot
     const rng = seededRng(game.seed + 13 + p.home.x * 7 + p.home.y);
@@ -1898,7 +1972,10 @@ function takePickup(id, mine, confirmed = false) {
 }
 
 function addDmgNum(x, y, n) { game.dmgNums.push({ x, y: y - 20, n, life: 0.8 }); }
-function addEffect(kind, x, y, big) { game.effects.push({ kind, x, y, big, life: kind === 'muzzle' ? 0.07 : kind === 'boom' ? 0.35 : 0.3 }); }
+function addEffect(kind, x, y, big) {
+  const life = kind === 'muzzle' ? 0.07 : kind === 'skybeam' ? 0.75 : kind === 'sigil' ? 0.9 : kind === 'heaven' ? 1.4 : kind === 'boom' ? 0.35 : 0.3;
+  game.effects.push({ kind, x, y, big, life });
+}
 function addKillFeed(txt) {
   const d = document.createElement('div'); d.textContent = txt;
   $('killFeed').prepend(d);
@@ -1995,6 +2072,29 @@ function openChestById(id, by, mine) {
   if (mine) net.send({ t: 'chest_open', id });
 }
 
+function maybeSpawnHeavenlyRestrictor() {
+  if (game.heavenlySpawned || !game.grimoireTower.open || game.ruinBossKills < 2) return;
+  game.heavenlySpawned = true;
+  const t = game.grimoireTower;
+  addEffect('heaven', t.x, t.y, true);
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2;
+    addEffect('skybeam', t.x + Math.cos(a) * 130, t.y + Math.sin(a) * 130, true);
+  }
+  const h = makePlayer('heavenlyRestrictor', 'HEAVENLY RESTRICTOR', { eye: 5, hair: 5, outfit: 4 }, 'G', t.x, t.y, true);
+  h.guard = true; h.boss = true; h.heavenly = true; h.weapon = 'heavenfang';
+  h.hp = h.maxHp = 2600; h.home = { x: t.x, y: t.y }; h.dmgMul = 1.4;
+  game.players[h.id] = h;
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * Math.PI * 2;
+    const wolf = makePlayer('heavenWolf' + i, 'Star Wolf', { eye: 5, hair: 3, outfit: 4 }, 'G', t.x + Math.cos(a) * 90, t.y + Math.sin(a) * 90, true);
+    wolf.guard = true; wolf.heavenWolf = true; wolf.weapon = 'arcbolt'; wolf.hp = wolf.maxHp = 180; wolf.home = { x: t.x, y: t.y };
+    game.players[wolf.id] = wolf;
+  }
+  addKillFeed('🌌 HEAVENLY RESTRICTOR has descended!');
+  spawnItem({ id: 'univ_hint', x: t.x + 70, y: t.y + 20, kind: 'ammo', ammo: 'energy' });
+}
+
 /* ═══════════ 10. BOTS (solo mode) ═══════════
    Tiny state machine: wander to random points; if the player (or
    another bot) is close and alive, chase and shoot with poor aim. */
@@ -2077,7 +2177,12 @@ function updateGuardians(dt) {
       const rof = w.rof * (gu.boss ? 1 : CFG.guardRofMul); // nerfed cadence
       if (gu.wizard && now - (gu.lastAoE || 0) > 2800) {
         gu.lastAoE = now;
-        addEffect('boom', target.x, target.y, true);
+        addEffect('sigil', target.x, target.y, true);
+        addEffect('skybeam', target.x, target.y, true);
+        for (let k = 0; k < 3; k++) {
+          const a = Math.random() * Math.PI * 2, d = 80 + Math.random() * 120;
+          addEffect('skybeam', target.x + Math.cos(a) * d, target.y + Math.sin(a) * d, true);
+        }
         for (const oid in g.players) {
           const o = g.players[oid];
           if (!o.alive || o.guard) continue;
@@ -2096,6 +2201,11 @@ function updateGuardians(dt) {
       mx = Math.cos(a); my = Math.sin(a); gu.aim = a;
     }
     movePlayer(gu, mx, my, dt, gu.boss ? 0.75 : 0.5);
+    if (gu.wizard && dist2(gu.x, gu.y, gu.home.x, gu.home.y) > 170 * 170) {
+      const a = Math.atan2(gu.home.y - gu.y, gu.home.x - gu.x);
+      gu.x = gu.home.x + Math.cos(a + Math.PI) * 160;
+      gu.y = gu.home.y + Math.sin(a + Math.PI) * 160;
+    }
     if (!gu.boss && gu.bld) { // guardians stay in the house, always
       gu.x = clamp(gu.x, gu.bld.x0 + 34, gu.bld.x1 - 34);
       gu.y = clamp(gu.y, gu.bld.y0 + 34, gu.bld.y1 - 34);
@@ -2582,7 +2692,7 @@ function render() {
   // exotic weapons fire rainbow-shifting tracers)
   ctx.lineCap = 'round';
   for (const b of g.bullets) {
-    const bx = b.x - cx, by = b.y - cy, col = b.exo ? rarityCol('exotic') : b.col;
+    const bx = b.x - cx, by = b.y - cy, col = b.universal ? rarityCol('universal') : b.exo ? rarityCol('exotic') : b.col;
     ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = b.wid;
     if (b.shape === 'void') {
       ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 120);
@@ -2734,6 +2844,28 @@ function render() {
       ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.fill();
       ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.4})`; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.stroke();
+    } else if (e.kind === 'skybeam') {
+      const a = clamp(e.life / 0.75, 0, 1);
+      ctx.strokeStyle = `rgba(170,220,255,${a})`; ctx.lineWidth = e.big ? 18 : 10;
+      ctx.beginPath(); ctx.moveTo(x, -80); ctx.lineTo(x, y + 28); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(x, -80); ctx.lineTo(x, y + 28); ctx.stroke();
+    } else if (e.kind === 'sigil') {
+      const rr = (0.9 - e.life) * 130 + 30;
+      ctx.strokeStyle = `rgba(180,90,255,${e.life})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.stroke();
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * Math.PI * 2 + performance.now() / 500;
+        ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+      }
+      ctx.stroke();
+    } else if (e.kind === 'heaven') {
+      const rr = (1.4 - e.life) * 240 + 30;
+      ctx.strokeStyle = rarityCol('universal'); ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.stroke();
+      ctx.font = 'bold 42px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = rarityCol('universal');
+      ctx.fillText('UNIVERSAL', x, y - rr * 0.35);
     } else { // place / break dust ring
       ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.5})`; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, (0.3 - e.life) * 120 + 8, 0, 7); ctx.stroke();
@@ -2869,6 +3001,21 @@ function render() {
   $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
   $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
   $('weaponPanel').style.borderLeftColor = wcol;
+  const gp = $('grimoirePower'), dp = $('devilPower');
+  if (g.me.grimoire) {
+    const gr = GRIMOIRES[g.me.grimoire];
+    gp.querySelector('.t').textContent = '📖 ' + gr.name.toUpperCase();
+    gp.querySelector('.s').textContent = gr.stats + (g.me.grimoire === 'antimagic' ? ` · Parry ${Math.max(0, ((g.me.antiReady || 0) - performance.now()) / 1000).toFixed(0)}s` : '');
+    gp.style.borderLeftColor = gr.col;
+  } else {
+    gp.querySelector('.t').textContent = '📖 NO GRIMOIRE';
+    gp.querySelector('.s').textContent = 'Defeat Wizard King, pick up Grimoire Roll.';
+    gp.style.borderLeftColor = '#888';
+  }
+  const activeContract = Object.keys(g.contracts).find(k => g.contracts[k]);
+  dp.querySelector('.t').textContent = activeContract ? '契 DEVIL CONTRACT' : '契 NO CONTRACT';
+  dp.querySelector('.s').textContent = activeContract ? Object.keys(g.contracts).filter(k => g.contracts[k]).join(', ') : 'Not available in solo.';
+  dp.style.borderLeftColor = activeContract ? '#ff3d5a' : '#888';
   document.querySelectorAll('.hotSlot').forEach((slot, i) => {
     const key = g.me.weapons[i], icon = slot.querySelector('.ico'), rar = slot.querySelector('.rar');
     slot.classList.toggle('sel', i === g.me.activeSlot);
