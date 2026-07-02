@@ -445,7 +445,7 @@ body.pc #touchHint{display:none}
     <div id="adminTop"><h2>Admin Item Spawner</h2><button id="adminClose">CLOSE</button></div>
     <div class="adminGrid">
       <label class="adminField">Category<select id="adminType">
-        <option value="weapon">Weapon</option><option value="armor">Armor</option><option value="grimoire">Grimoire</option><option value="ammo">Ammo</option><option value="material">Material</option><option value="heal">Heal / Shield</option>
+        <option value="weapon">Weapon</option><option value="armor">Armor</option><option value="grimoire">Grimoire</option><option value="boss">Boss</option><option value="ammo">Ammo</option><option value="material">Material</option><option value="heal">Heal / Shield</option>
       </select></label>
       <label class="adminField">Item<select id="adminItem"></select></label>
       <label class="adminField">Amount<input id="adminAmount" type="number" min="1" max="999" value="1"></label>
@@ -577,6 +577,9 @@ const RARITY = {
   mythic:    { name: 'Mythic',    col: '#ffd94d', rank: 6 },
   exotic:    { name: 'Exotic',    col: '#ff5fd0', animated: true, rank: 7, top: true },
   universal: { name: 'Universal', col: '#ffffff', animated: true, rank: 8, top: true, universal: true },
+  astral:    { name: 'Astral',    col: '#b8fff7', animated: true, rank: 9, top: true, heavenly: true },
+  forbidden: { name: 'Forbidden', col: '#111111', animated: true, rank: 10, top: true, forbidden: true },
+  tuffinity: { name: 'Tuffinity', col: '#fffb8f', animated: true, rank: 11, top: true, tuff: true },
 };
 function rarityCol(r) {
   const def = RARITY[r];
@@ -594,6 +597,9 @@ function rarityCol(r) {
     const c = heavenly[i].map((v, k) => Math.round(v + (heavenly[j][k] - v) * ease));
     return `rgb(${c[0]},${c[1]},${c[2]})`;
   }
+  if (def.heavenly) return `hsl(${190 + Math.sin(performance.now() / 420) * 35},100%,${72 + Math.sin(performance.now() / 260) * 10}%)`;
+  if (def.forbidden) return `hsl(${280 + Math.sin(performance.now() / 260) * 80},95%,${36 + Math.sin(performance.now() / 180) * 18}%)`;
+  if (def.tuff) return `hsl(${45 + Math.sin(performance.now() / 120) * 45},100%,${65 + Math.sin(performance.now() / 95) * 18}%)`;
   return def.animated ? `hsl(${(performance.now() / 10) % 360},95%,62%)` : def.col;
 }
 // Ammunition types. YOU consume ammo per shot; NPCs never run dry.
@@ -675,6 +681,7 @@ const WEAPONS = {
   heavenfang:{ name: 'Heavenfang',     icon: '🌌', rarity: 'universal', ammo: 'energy', dmg: 340, rof: 1.8, range: 1700, spread: 0, pellets: 1, speed: 2600, len: 90, wid: 10, kick: 14, big: true, pierce: true, splash: 190, universal: true, shape: 'nova' },
   seraphimhowl:{ name: 'Seraphim Howl', icon: '🪽', rarity: 'universal', ammo: 'energy', dmg: 220, rof: 3.4, range: 1100, spread: 0.018, pellets: 3, speed: 2200, len: 58, wid: 7, kick: 8, big: true, splash: 95, universal: true, shape: 'comet' },
   astralpack:{ name: 'Astral Pack',     icon: '✦', rarity: 'universal', ammo: 'energy', dmg: 120, rof: 7.5, range: 900, spread: 0.055, pellets: 4, speed: 1900, len: 34, wid: 5, kick: 5, big: true, universal: true, shape: 'storm' },
+  ernstbeam:{ name: 'Ernst Beam Ultra', icon: '👑', rarity: 'tuffinity', ammo: 'energy', dmg: 999, rof: 3.2, range: 2400, spread: 0, pellets: 3, speed: 3200, len: 140, wid: 14, kick: 22, big: true, pierce: true, splash: 260, universal: true, shape: 'nova' },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
@@ -1461,6 +1468,7 @@ function adminOptionsFor(type) {
   if (type === 'weapon') return Object.keys(WEAPONS).map(k => [k, WEAPONS[k].name + ' (' + rarityLabel(WEAPONS[k].rarity) + ')']);
   if (type === 'armor') return ARMOR.map((a, i) => a && [String(i), a.name]).filter(Boolean);
   if (type === 'grimoire') return Object.keys(GRIMOIRES).map(k => [k, GRIMOIRES[k].name]);
+  if (type === 'boss') return [['herrernst', 'Herr Ernst'], ['wizard', 'Wizard King'], ['heavenly', 'Heavenly Restrictor'], ['ruin', 'Ruin Boss']];
   if (type === 'ammo') return Object.keys(AMMO).map(k => [k, AMMO[k].name]);
   if (type === 'material') return ['wood', 'brick', 'metal'].map(k => [k, k]);
   return [['heal', 'Medkit +80 HP'], ['pot', 'Shield Potion +50']];
@@ -1488,6 +1496,7 @@ function adminSpawn() {
     if (type === 'weapon') addWeaponToInventory(item, true);
     else if (type === 'armor') { game.me.armorTier = +item; game.me.armorDur = ARMOR[+item].dur; }
     else if (type === 'grimoire') equipGrimoire(item);
+    else if (type === 'boss') spawnAdminBoss(item);
     else if (type === 'ammo') game.ammo[item] += CFG.ammoPack[item] * amount;
     else if (type === 'material') game.mats[item] += amount;
     else if (item === 'heal') game.me.hp = Math.min(game.me.maxHp, game.me.hp + 80 * amount);
@@ -1498,6 +1507,7 @@ function adminSpawn() {
       if (type === 'weapon') spawnItem({ id: 'admin_w_' + performance.now() + '_' + i, ...p, kind: 'weapon', weapon: item });
       else if (type === 'armor') spawnItem({ id: 'admin_a_' + performance.now() + '_' + i, ...p, kind: 'armor', tier: +item });
       else if (type === 'grimoire') spawnItem({ id: 'admin_g_' + performance.now() + '_' + i, ...p, kind: 'grimoire', grimoire: item });
+      else if (type === 'boss') spawnAdminBoss(item, p.x, p.y);
       else if (type === 'ammo') spawnItem({ id: 'admin_am_' + performance.now() + '_' + i, ...p, kind: 'ammo', ammo: item });
       else if (type === 'material') spawnItem({ id: 'admin_m_' + performance.now() + '_' + i, ...p, kind: 'mat', mat: item, amount });
       else spawnItem({ id: 'admin_h_' + performance.now() + '_' + i, ...p, kind: item, amount: item === 'heal' ? 80 : 50 });
@@ -1505,6 +1515,29 @@ function adminSpawn() {
   }
   toast('Admin spawned: ' + item);
   renderInventoryGui();
+}
+function spawnAdminBoss(kind, x = game.me.x + 220, y = game.me.y) {
+  let b;
+  if (kind === 'herrernst') {
+    b = makePlayer('herrErnst_' + performance.now(), 'HERR ERNST', { eye: 1, hair: 4, outfit: 4 }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.adminBoss = true; b.heavenly = true; b.weapon = 'ernstbeam';
+    b.hp = b.maxHp = 12000; b.dmgMul = 1.25; b.home = { x, y };
+    b.ernst = true;
+    addKillFeed('👑 HERR ERNST ist gespawned. Viel Glück.');
+    toast('HERR ERNST spawned', 2600);
+  } else if (kind === 'wizard') {
+    b = makePlayer('adminWizard_' + performance.now(), 'WIZARD KING', { eye: 4, hair: 5, outfit: 6 }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.wizard = true; b.weapon = 'zeus'; b.hp = b.maxHp = 1150; b.dmgMul = 0.75; b.home = { x, y }; b.lastAoE = 0;
+  } else if (kind === 'heavenly') {
+    b = makePlayer('adminHeavenly_' + performance.now(), 'HEAVENLY RESTRICTOR', { eye: 5, hair: 5, outfit: 4 }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.heavenly = true; b.weapon = 'heavenfang'; b.hp = b.maxHp = 1600; b.dmgMul = 0.85; b.home = { x, y };
+  } else {
+    b = makePlayer('adminRuinBoss_' + performance.now(), 'ADMIN RUIN BOSS', { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.adminBoss = true; b.weapon = 'dragonfire'; b.hp = b.maxHp = CFG.bossHp; b.home = { x, y };
+  }
+  game.players[b.id] = b;
+  addEffect(kind === 'herrernst' ? 'heaven' : 'boom', x, y, true);
+  return b;
 }
 function awardXP(n, reason) {
   if (!game || !game.me) return;
@@ -2270,7 +2303,11 @@ function hurtLocal(p, dmg, by) {
 function guardianDied(p) {
   if (p.dropDone) return;
   p.dropDone = true;
-  if (p.allyWolf) return addEffect('break', p.x, p.y, true);
+  if (p.adminBoss) {
+    if (p.ernst) spawnItem({ id: 'ernstbeam_drop_' + performance.now(), x: p.x, y: p.y, kind: 'weapon', weapon: 'ernstbeam' });
+    return addEffect('heaven', p.x, p.y, true);
+  }
+  if (p.allyWolf || p.heavenWolf || p.bldIdx === undefined) return addEffect('break', p.x, p.y, true);
   if (p.wizard) {
     game.grimoireTower.open = true;
     spawnItem({ id: 'grimoire_roll', x: p.x, y: p.y, kind: 'grimoireRoll' });
