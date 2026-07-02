@@ -475,8 +475,8 @@ const CFG = {
 };
 
 // Item rarity tiers: every weapon/chest/pickup is color-coded by these.
-// `animated` tiers have no fixed color — rarityCol() cycles the hue, so
-// Exotic gear visibly shimmers through the rainbow everywhere it appears.
+// `animated` tiers have no fixed color. Exotic cycles wildly; Universal
+// stays in a heavenly white/gold/cyan/lavender palette.
 const RARITY = {
   common:    { name: 'Common',    col: '#b8c0cc', rank: 1 },
   uncommon:  { name: 'Uncommon',  col: '#4fce5d', rank: 2 },
@@ -489,7 +489,20 @@ const RARITY = {
 };
 function rarityCol(r) {
   const def = RARITY[r];
-  if (def.universal) return `hsl(${(performance.now() / 18 + 210) % 360},100%,72%)`;
+  if (def.universal) {
+    const t = performance.now() / 650;
+    const heavenly = [
+      [255, 255, 245],
+      [255, 230, 132],
+      [169, 236, 255],
+      [225, 202, 255],
+      [132, 190, 255],
+    ];
+    const i = Math.floor(t) % heavenly.length, j = (i + 1) % heavenly.length, f = t - Math.floor(t);
+    const ease = (1 - Math.cos(f * Math.PI)) / 2;
+    const c = heavenly[i].map((v, k) => Math.round(v + (heavenly[j][k] - v) * ease));
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
+  }
   return def.animated ? `hsl(${(performance.now() / 10) % 360},95%,62%)` : def.col;
 }
 // Ammunition types. YOU consume ammo per shot; NPCs never run dry.
@@ -559,7 +572,7 @@ const WEAPONS = {
   venom:   { name: 'Venom',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 10, rof: 10, range: 440, spread: 0.1,  pellets: 1, speed: 950,  col: '#8aff5d', len: 14, wid: 3, kick: 1, special: true },
   colossus:{ name: 'Colossus',        icon: '🦣', rarity: 'mythic',    ammo: 'shell',  dmg: 9,  rof: 1,  range: 300, spread: 0.3,  pellets: 8, speed: 800,  col: '#ffd27a', len: 12, wid: 4, kick: 8, big: true, special: true },
   // ---- EXOTIC weapons: only Ruin Bosses drop these; their color (and
-  //      tracers) constantly shift through the rainbow ----
+  //      tracers) constantly shift color; Universal stays heavenly ----
   stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 68,  rof: 7,   range: 760,  spread: 0.025, pellets: 1, speed: 1450, len: 32, wid: 5, kick: 3,  big: true, special: true, exotic: true, shape: 'storm' },
   oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 150, rof: 1.4, range: 820,  spread: 0.004, pellets: 1, speed: 1550, len: 48, wid: 7, kick: 9,  big: true, pierce: true, splash: 115, special: true, exotic: true, shape: 'void' },
   starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 34,  rof: 2.2, range: 580,  spread: 0.15,  pellets: 7, speed: 980,  len: 20, wid: 5, kick: 7,  big: true, special: true, exotic: true, shape: 'comet' },
@@ -2702,7 +2715,7 @@ function render() {
   }
 
   // bullets: per-weapon tracer color/length (railgun = long blue beam,
-  // exotic weapons fire rainbow-shifting tracers)
+  // exotic weapons fire rainbow-shifting tracers; Universal fires heavenly light)
   ctx.lineCap = 'round';
   for (const b of g.bullets) {
     const bx = b.x - cx, by = b.y - cy, col = b.universal ? rarityCol('universal') : b.exo ? rarityCol('exotic') : b.col;
