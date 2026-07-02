@@ -159,6 +159,12 @@ wss.on('connection', ws => {
         });
         break;
       }
+      case 'reset_match': {
+        if (!party) return;
+        party.started = false;
+        broadcast(party, { t: 'match_reset', party: lobbyPayload(party) });
+        break;
+      }
 
       /* ----- in-match relay ----- */
       case 'state':      // my position/hp/aim -> everyone else

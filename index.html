@@ -684,7 +684,10 @@ document.querySelectorAll('.modeBtn').forEach(b => b.addEventListener('click', (
 $('btnToMenu').addEventListener('click', () => { game = null; net.disconnect(); showScreen('scrMenu'); });
 $('btnAgain').addEventListener('click', () => {
   game = null;
-  if (net.party) showScreen('scrLobby'); else startSoloMatch();
+  if (net.party) {
+    net.send({ t: 'reset_match' });
+    showScreen('scrLobby');
+  } else startSoloMatch();
 });
 
 // --- lobby rendering (shared party lobby + host custom-match controls) ---
@@ -773,6 +776,10 @@ const net = {
         if (this.party) { this.party = m.party; renderLobby(); } break;
       case 'match_start':   // everyone builds the same map from m.seed
         startNetworkMatch(m); break;
+      case 'match_reset':
+        this.party = m.party;
+        game = null;
+        renderLobby(); showScreen('scrLobby'); break;
       case 'peer_state':  if (game) applyPeerState(m); break;
       case 'peer_shoot':  if (game) applyPeerShoot(m); break;
       case 'peer_build':  if (game) placeBuild(m.gx, m.gy, m.piece, m.mat, false); break;
