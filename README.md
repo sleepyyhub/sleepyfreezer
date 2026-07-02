@@ -62,6 +62,11 @@ All buttons are ≥ 56 px (above the 44 pt minimum); everything uses
   rarity and stats on an item card, then take only what you want.
 - **Weapon panel** — standard-shooter HUD bottom-right: weapon icon, name and rarity
   with a rarity-colored bar, plus a big ammo counter that turns red when dry.
+- **Deployable shield** — a dedicated 🛡 button raises a barrier in front of you for
+  20 wood (loot wood from chests). It soaks 2 enemy bullets (cracks after the first),
+  then shatters; shots from behind go right through it.
+- **Practice range** — a fenced corner (top-left) with four bare training figures:
+  shoot them to warm up, they fall over and get back up after 3 seconds.
 - **Presentation** — textured grass, drop shadows, cinematic vignette, red hurt flash,
   and a live minimap (buildings, chests, storm circle, you, teammates, guardians).
 - **Building** — grid-based wall/ramp/floor in 3 materials with per-piece HP; pieces are

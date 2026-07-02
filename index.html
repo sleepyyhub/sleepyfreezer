@@ -75,10 +75,17 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #buildBtn{right:calc(150px + env(safe-area-inset-right));bottom:calc(150px + env(safe-area-inset-bottom));
   width:76px;height:76px;font-size:15px;background:radial-gradient(#8ac6ff,#2a6de0);box-shadow:0 0 0 5px #ffffff22}
 #buildBtn.on{background:radial-gradient(#ffe28a,#e0a52a)}
-#chestBtn{left:50%;transform:translateX(-50%);bottom:calc(30px + env(safe-area-inset-bottom));
+#shieldBtn{right:calc(36px + env(safe-area-inset-right));bottom:calc(240px + env(safe-area-inset-bottom));
+  width:76px;height:76px;font-size:13px;background:radial-gradient(#9ff0ff,#1e93b8);box-shadow:0 0 0 5px #ffffff22;
+  flex-direction:column;line-height:1.2}
+#shieldBtn.off{opacity:.45}
+/* NOTE: #hud #chestBtn (double id) is required — the generic
+   `#hud .hbtn{display:flex}` rule is more specific than a lone
+   `#chestBtn{display:none}`, which kept this button visible 24/7 */
+#hud #chestBtn{left:50%;transform:translateX(-50%);bottom:calc(30px + env(safe-area-inset-bottom));
   width:auto;height:64px;padding:0 30px;border-radius:16px;font-size:20px;
   background:linear-gradient(#ffd94d,#e0a52a);color:#3a2b00;display:none}
-#chestBtn.show{display:flex}
+#hud #chestBtn.show{display:flex}
 
 /* build menu: vertical strip on right edge, clear of the aim zone thumb arc */
 #buildMenu{position:absolute;right:calc(16px + env(safe-area-inset-right));top:50%;transform:translateY(-70%);
@@ -212,6 +219,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   </div>
   <div id="killFeed"></div>
   <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
+  <button class="hbtn" id="shieldBtn">🛡<br>SHIELD</button>
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
   <div id="weaponPanel">
     <div id="wpnIcon">🔫</div>
@@ -280,6 +288,10 @@ const CFG = {
   autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
   startAmmo: { light: 120, shell: 24, energy: 0 },
   ammoPack:  { light: 60,  shell: 12, energy: 15 }, // per ammo pickup
+  shieldCost: 20,         // wood per deployed shield (loot wood from chests)
+  shieldHits: 2,          // enemy hits the shield absorbs before breaking
+  dummyZone: 660,         // top-left practice corner size (px)
+  dummyHp: 50,            // practice dummies fall after this much damage
   netHz: 15,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
   // (longer than before — the island is big and walks take time)
@@ -630,6 +642,7 @@ function generateMap(seed) {
     const gx0 = 4 + (rng() * (w / G - wc - 8) | 0);
     const gy0 = 4 + (rng() * (w / G - hc - 8) | 0);
     const b = { gx0, gy0, wc, hc, x0: gx0 * G, y0: gy0 * G, x1: (gx0 + wc) * G, y1: (gy0 + hc) * G };
+    if (b.x0 < CFG.dummyZone + 80 && b.y0 < CFG.dummyZone + 80) continue; // keep the practice corner clear
     if (buildings.some(o => b.x0 < o.x1 + 120 && b.x1 > o.x0 - 120 && b.y0 < o.y1 + 120 && b.y1 > o.y0 - 120)) continue;
     // perimeter wall cells, skipping doors and "collapsed" gaps
     const doors = new Set();
@@ -665,9 +678,10 @@ function generateMap(seed) {
   const place = (min, max, margin) => {
     for (let t = 0; t < 12; t++) {
       const x = min + rng() * (max - min), y = min + rng() * (max - min);
+      if (x < CFG.dummyZone + 60 && y < CFG.dummyZone + 60) continue; // practice corner stays clear
       if (!inBuilding(x, y, margin)) return { x, y };
     }
-    return { x: min, y: min }; // pathological seeds fall back to a corner
+    return { x: max, y: max }; // pathological seeds fall back to a corner
   };
 
   const trees = [], rocks = [], chests = [];
@@ -692,6 +706,7 @@ function makePlayer(id, name, look, team, x, y, isBot) {
   return {
     id, name, look, team, isBot,
     x, y, aim: -Math.PI / 2, hp: CFG.maxHp, maxHp: CFG.maxHp, alive: true,
+    shieldHits: 0,          // >0 = a frontal shield is up (see deployShield)
     weapon: 'pistol', lastShot: 0, hurtFlash: 0,
     // remote interpolation targets
     tx: x, ty: y, taim: -Math.PI / 2,
@@ -716,6 +731,14 @@ function baseGame(seed, mode) {
     buildMode: false, piece: 'wall', mat: 'wood',
     ammo: { ...CFG.startAmmo }, bossSpawned: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
+    // practice range: bare training figures in the top-left corner —
+    // shoot them to warm up; they get back up after a few seconds
+    dummies: [
+      { x: 260, y: 250, hp: CFG.dummyHp, respawn: 0 },
+      { x: 430, y: 220, hp: CFG.dummyHp, respawn: 0 },
+      { x: 240, y: 440, hp: CFG.dummyHp, respawn: 0 },
+      { x: 460, y: 420, hp: CFG.dummyHp, respawn: 0 },
+    ],
     npcAuthority: true,     // who simulates guardians (solo: me; MP: host)
   };
   // ruin walls go straight into the normal build grid, so they collide,
@@ -892,6 +915,17 @@ press($('buildBtn'), () => {
   game.buildMode = !game.buildMode;
   $('buildBtn').classList.toggle('on', game.buildMode);
   $('buildMenu').classList.toggle('show', game.buildMode);
+});
+// Shield: costs wood (loot it from chests), raises a barrier in front of
+// you that soaks CFG.shieldHits enemy bullets, then shatters.
+press($('shieldBtn'), () => {
+  if (!game || !game.me.alive) return;
+  if (game.me.shieldHits > 0) return toast('Shield already up!');
+  if (game.mats.wood < CFG.shieldCost) return toast(`Need ${CFG.shieldCost} wood for a shield`);
+  game.mats.wood -= CFG.shieldCost;
+  game.me.shieldHits = CFG.shieldHits;
+  addEffect('shield', game.me.x + Math.cos(game.me.aim) * 26, game.me.y + Math.sin(game.me.aim) * 26);
+  toast('🛡 Shield up! Blocks ' + CFG.shieldHits + ' hits');
 });
 press($('chestBtn'), () => {
   if (!game || !game.nearAction) return;
@@ -1076,6 +1110,17 @@ function updateBullets(dt) {
           if (b.splash) explode(b);
           addEffect('hit', b.x, b.y); g.bullets.splice(bi, 1); continue outer;
         }
+      // practice dummies (purely local target practice, not in players)
+      for (const dm of g.dummies) {
+        if (dm.hp <= 0) continue;
+        if (dist2(b.x, b.y, dm.x, dm.y) < (CFG.playerR + 2) ** 2) {
+          dm.hp -= b.dmg;
+          addDmgNum(dm.x, dm.y, b.dmg);
+          addEffect('hit', b.x, b.y);
+          if (dm.hp <= 0) { dm.respawn = 3; addEffect('break', dm.x, dm.y); }
+          if (!b.pierce) { g.bullets.splice(bi, 1); continue outer; }
+        }
+      }
       // players (see applyBulletDamage for the authority rules)
       for (const id in g.players) {
         const p = g.players[id];
@@ -1084,6 +1129,17 @@ function updateBullets(dt) {
         if (b.pierce && b.hitIds.indexOf(id) >= 0) continue; // already lanced
         const pr = (p.boss ? 27 : CFG.playerR) + 2;
         if (dist2(b.x, b.y, p.x, p.y) < pr * pr) {
+          // frontal shield: absorbs the bullet if it comes head-on
+          // (every client simulates this; shieldHits is synced in state)
+          if (p.shieldHits > 0 && b.dx * Math.cos(p.aim) + b.dy * Math.sin(p.aim) < -0.35) {
+            p.shieldHits--;
+            addEffect('shield', b.x, b.y);
+            if (p.shieldHits === 0) {
+              addEffect('break', b.x, b.y);
+              if (p === g.me) toast('🛡 Shield destroyed!');
+            }
+            g.bullets.splice(bi, 1); continue outer;
+          }
           addEffect('hit', b.x, b.y);
           addDmgNum(p.x, p.y, b.dmg);
           applyBulletDamage(p, id, b.dmg, b);
@@ -1412,7 +1468,7 @@ function movePlayer(p, mx, my, dt, speedMul = 1) {
 function applyPeerState(m) {
   const p = game.players[m.id]; if (!p) return;
   p.tx = m.x; p.ty = m.y; p.taim = m.aim;
-  p.hp = m.hp; p.weapon = m.weapon;
+  p.hp = m.hp; p.weapon = m.weapon; p.shieldHits = m.sh || 0;
   if (p.alive && !m.alive) { p.alive = false; addEffect('break', p.x, p.y); }
 }
 
@@ -1480,6 +1536,9 @@ function update(dt) {
   updateStorm(dt);
   if (g.mode === 'solo') updateBots(dt);
   if (g.npcAuthority) updateGuardians(dt);
+  // downed practice dummies get back up after a short pause
+  for (const dm of g.dummies)
+    if (dm.hp <= 0 && (dm.respawn -= dt) <= 0) dm.hp = CFG.dummyHp;
 
   // smooth remote players (and remote-simulated guardians) toward
   // their latest network position
@@ -1502,7 +1561,7 @@ function update(dt) {
     const now = performance.now();
     if (now - g.lastNetSend > 1000 / CFG.netHz) {
       g.lastNetSend = now;
-      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon });
+      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon, sh: g.me.shieldHits });
       if (g.npcAuthority) { // host also ships a guardian snapshot
         const list = [];
         for (const id in g.players) { const p = g.players[id];
@@ -1565,6 +1624,35 @@ function render() {
   // world border
   ctx.strokeStyle = '#173017'; ctx.lineWidth = 8;
   ctx.strokeRect(-cx, -cy, CFG.world, CFG.world);
+
+  // practice range corner: pale floor, dashed fence, bare training figures
+  {
+    const z = CFG.dummyZone, zx = -cx, zy = -cy;
+    if (zx + z > 0 && zy + z > 0) {
+      ctx.fillStyle = '#ffffff14'; ctx.fillRect(zx, zy, z, z);
+      ctx.setLineDash([14, 10]); ctx.strokeStyle = '#ffffff55'; ctx.lineWidth = 3;
+      ctx.strokeRect(zx + 8, zy + 8, z - 16, z - 16); ctx.setLineDash([]);
+      ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff88';
+      ctx.fillText('🎯 PRACTICE RANGE', zx + z / 2, zy + 44);
+    }
+    for (const dm of g.dummies) {
+      const x = dm.x - cx, y = dm.y - cy;
+      if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
+      if (dm.hp <= 0) { // knocked over: flat gray shape until it respawns
+        ctx.fillStyle = '#c9b8a3';
+        ctx.beginPath(); ctx.ellipse(x, y + 6, 20, 9, 0.5, 0, 7); ctx.fill();
+        continue;
+      }
+      // bare figure: plain skin-tone body, no outfit, no hair, no weapon
+      drawShadow(x, y + 4, CFG.playerR);
+      ctx.fillStyle = '#ffd9a8'; ctx.beginPath(); ctx.arc(x, y, CFG.playerR, 0, 7); ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = '#0004'; ctx.stroke();
+      ctx.fillStyle = '#222';
+      ctx.beginPath(); ctx.arc(x - 4, y - 2, 2, 0, 7); ctx.arc(x + 4, y - 2, 2, 0, 7); ctx.fill();
+      ctx.fillStyle = '#000a'; ctx.fillRect(x - 18, y - 27, 36, 4);
+      ctx.fillStyle = '#5dff7a'; ctx.fillRect(x - 18, y - 27, 36 * dm.hp / CFG.dummyHp, 4);
+    }
+  }
 
   // building floors + rubble (walls come from the build grid; the
   // broken roof is drawn later, above players, unless you're inside)
@@ -1695,6 +1783,15 @@ function render() {
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 5, 0, 7); ctx.stroke();
     }
     drawCharacter(ctx, x, y, p.aim, p.look, bodyR);
+    // deployed shield: cyan arc facing the aim; dashed once cracked
+    if (p.shieldHits > 0) {
+      const cracked = p.shieldHits < CFG.shieldHits;
+      ctx.strokeStyle = cracked ? '#7fe8ff99' : '#7fe8ff';
+      ctx.lineWidth = 6; ctx.lineCap = 'round';
+      if (cracked) ctx.setLineDash([7, 5]);
+      ctx.beginPath(); ctx.arc(x, y, bodyR + 11, p.aim - 1.0, p.aim + 1.0); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     if (p.hurtFlash > 0) { // red flash when hit
       ctx.fillStyle = `rgba(255,40,40,${p.hurtFlash * 2})`;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 2, 0, 7); ctx.fill();
@@ -1727,6 +1824,9 @@ function render() {
       ctx.beginPath();
       ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6);
       ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+    } else if (e.kind === 'shield') { // bullet soaked by a shield
+      ctx.strokeStyle = `rgba(127,232,255,${e.life * 3})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, (0.3 - e.life) * 90 + 6, 0, 7); ctx.stroke();
     } else if (e.kind === 'boom') { // Doomsday explosion
       const rr = (0.35 - e.life) * 320 + 24;
       ctx.fillStyle = `rgba(255,130,50,${e.life * 1.6})`;
@@ -1820,6 +1920,11 @@ function render() {
   $('stormInfo').textContent = s.label;
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
   $('aliveInfo').textContent = countAlive() + ' alive';
+  // shield button state: shows hits left while up, dims when unaffordable
+  const sbtn = $('shieldBtn');
+  sbtn.innerHTML = g.me.shieldHits > 0 ? `🛡<br>${g.me.shieldHits} HIT${g.me.shieldHits > 1 ? 'S' : ''}` : `🛡<br>${CFG.shieldCost}🪵`;
+  sbtn.classList.toggle('off', g.me.shieldHits === 0 && g.mats.wood < CFG.shieldCost);
+
   // weapon panel (standard shooter layout: icon / name+rarity / ammo)
   const wpn = WEAPONS[g.me.weapon], rc = RARITY[wpn.rarity], ammoLeft = g.ammo[wpn.ammo];
   $('wpnIcon').textContent = wpn.icon;
