@@ -251,6 +251,7 @@ const CFG = {
   buildingCount: 5,       // run-down buildings with guardians inside
   guardHp: 250,           // special-enemy health
   guardAggro: 340,        // how far from home a guardian notices/chases you
+  autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
   netHz: 15,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
   stormPhases: [
@@ -648,7 +649,7 @@ function baseGame(seed, mode) {
     startTime: performance.now(),
     lastNetSend: 0, nearAction: null,
     buildMode: false, piece: 'wall', mat: 'wood',
-    camX: 0, camY: 0, shake: 0,
+    camX: 0, camY: 0, shake: 0, aimLock: null,
     npcAuthority: true,     // who simulates guardians (solo: me; MP: host)
   };
   // ruin walls go straight into the normal build grid, so they collide,
@@ -874,6 +875,32 @@ function damageBuild(gx, gy, dmg, mine) {
 function buildAt(x, y) { return game.builds.get(buildKey(Math.floor(x / CFG.grid), Math.floor(y / CFG.grid))); }
 
 /* ═══════════ 9. COMBAT ═══════════ */
+/* ---------- auto-aim ----------
+   Touch aiming is imprecise, so when an enemy is nearby AND visible
+   (no walls/rocks between you), your aim locks onto the closest one.
+   Dragging in the aim zone overrides the lock; build mode disables it. */
+function hasLOS(x0, y0, x1, y1) {
+  const d = Math.hypot(x1 - x0, y1 - y0), steps = Math.ceil(d / 14);
+  for (let i = 1; i < steps; i++) {
+    const x = x0 + (x1 - x0) * i / steps, y = y0 + (y1 - y0) * i / steps;
+    const b = buildAt(x, y);
+    if (b && b.piece !== 'floor') return false;
+    for (const r of game.map.rocks) if (dist2(x, y, r.x, r.y) < r.r * r.r) return false;
+  }
+  return true;
+}
+function autoAimPick() {
+  const g = game;
+  let best = CFG.autoAimRange ** 2, hit = null;
+  for (const id in g.players) {
+    const p = g.players[id];
+    if (p === g.me || !p.alive) continue;
+    if (p.team !== 'S' && p.team === g.me.team) continue; // skip teammates
+    const d = dist2(g.me.x, g.me.y, p.x, p.y);
+    if (d < best && hasLOS(g.me.x, g.me.y, p.x, p.y)) { best = d; hit = p; }
+  }
+  return hit;
+}
 function tryShoot(p, mine) {
   const w = WEAPONS[p.weapon], now = performance.now();
   if (now - p.lastShot < 1000 / w.rof) return;
@@ -1213,8 +1240,13 @@ function update(dt) {
 
   if (g.me.alive) {
     movePlayer(g.me, input.joyVec.x, input.joyVec.y, dt);
+    // auto-aim: track the locked enemy unless the player is actively
+    // dragging in the aim zone (manual aim always wins)
+    g.aimLock = g.buildMode ? null : autoAimPick();
+    if (g.aimLock && input.aimId === null)
+      g.me.aim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
-  }
+  } else g.aimLock = null;
 
   // proximity -> contextual interact button (chests + weapon drops)
   g.nearAction = null;
@@ -1524,15 +1556,27 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  // aim indicator: dashed line + reticle in current aim direction
+  // aim indicator: dashed line + reticle; turns red while auto-aim has
+  // a lock, and the locked enemy gets a pulsing target ring
   if (g.me.alive && !g.buildMode) {
+    const locked = g.aimLock;
     const px = g.me.x - cx, py = g.me.y - cy;
     const ex = px + Math.cos(g.me.aim) * 170, ey = py + Math.sin(g.me.aim) * 170;
-    ctx.setLineDash([8, 8]); ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]); ctx.strokeStyle = locked ? '#ff5f5fcc' : '#ffffff88'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(px + Math.cos(g.me.aim) * 26, py + Math.sin(g.me.aim) * 26); ctx.lineTo(ex, ey); ctx.stroke();
     ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(ex, ey, 10, 0, 7); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(ex - 5, ey); ctx.lineTo(ex + 5, ey); ctx.moveTo(ex, ey - 5); ctx.lineTo(ex, ey + 5); ctx.stroke();
+    if (locked) {
+      const lx = locked.x - cx, ly = locked.y - cy;
+      const r = CFG.playerR + 9 + Math.sin(performance.now() / 120) * 2;
+      ctx.strokeStyle = '#ff5f5f'; ctx.lineWidth = 2.5;
+      ctx.setLineDash([9, 7]); // rotating dashed lock ring
+      ctx.beginPath(); ctx.arc(lx, ly, r, performance.now() / 400, performance.now() / 400 + 7); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff8a8a'; ctx.fillText('LOCK', lx, ly + r + 14);
+    }
   }
 
   // virtual joystick (only while touched)
