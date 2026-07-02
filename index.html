@@ -80,7 +80,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   flex-direction:column;line-height:1.2}
 #shieldBtn.off{opacity:.45}
 #hud #wolfBtn{right:calc(128px + env(safe-area-inset-right));bottom:calc(248px + env(safe-area-inset-bottom));
-  width:76px;height:76px;font-size:12px;background:radial-gradient(#fffdf0,#8abfff 58%,#d9c6ff);box-shadow:0 0 0 5px #ffffff22;
+  width:84px;height:84px;font-size:12px;background:radial-gradient(#fffdf0,#8abfff 58%,#d9c6ff);box-shadow:0 0 0 5px #ffffff22,0 0 24px #fff6;
   color:#1a2740;flex-direction:column;line-height:1.15;display:none}
 #hud #wolfBtn.show{display:flex}
 #hud #wolfBtn.off{opacity:.45;filter:saturate(.6)}
@@ -195,6 +195,13 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #contractName{font-size:28px;font-weight:1000;color:#ff6b82;margin:10px 0}
 #contractDesc,#contractCost{color:#ffdce2;margin-bottom:10px}
 @media (max-width:700px){#upgradeCards{grid-template-columns:1fr}.upgradeCard{min-height:116px}}
+@media (min-width:701px) and (max-width:1180px) and (min-height:650px){
+  #fireBtn{width:124px;height:124px;font-size:22px}
+  #buildBtn,#shieldBtn,#hud #wolfBtn{width:88px;height:88px;font-size:13px}
+  .hotSlot{width:66px;height:62px}.hotSlot .ico{font-size:24px}.hotSlot .rar{font-size:9px}
+  #buildMenu button{min-width:112px;min-height:62px;font-size:16px}
+  #touchHint{font-size:13px;bottom:calc(92px + env(safe-area-inset-bottom))}
+}
 #rotateHint{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;align-items:center;
   justify-content:center;gap:12px;background:#101418f2;font-size:30px;font-weight:800;text-align:center;padding:24px}
 /* ============================================================
@@ -244,9 +251,13 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 /* PC mode: hide the native cursor over the game (a crosshair is drawn
    instead) and show a small key-binding hint bottom-left */
 body.pc canvas#game{cursor:none}
+#touchHint{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(86px + env(safe-area-inset-bottom));
+  max-width:min(430px,54vw);background:rgba(8,14,24,.56);border:1px solid #ffffff22;border-radius:10px;
+  padding:7px 10px;font-size:12px;font-weight:800;color:#dce8ff;text-shadow:0 1px 2px #000;pointer-events:none}
 #pcHint{position:absolute;left:14px;bottom:calc(10px + env(safe-area-inset-bottom));
   font-size:12px;color:#cfe3ff99;text-shadow:0 1px 2px #000;pointer-events:none;display:none}
 body.pc #pcHint{display:block}
+body.pc #touchHint{display:none}
 /* item card: shows name, rarity and stats of the loot you're standing on */
 #itemInfo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(104px + env(safe-area-inset-bottom));
   background:rgba(8,14,24,.85);border:2px solid #888;border-radius:12px;padding:8px 18px;text-align:center;
@@ -336,7 +347,8 @@ body.pc #pcHint{display:block}
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
   </div>
   <div id="killFeed"></div>
-  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · 1-5 weapons · B build · Z/X/C piece · V/G/H material</div>
+  <div id="touchHint">Left side move · right side aim · buttons handle fire, build, shield, interact, weapons, wolves</div>
+  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · 1-5 weapons · B build · F shield · R wolves · Z/X/C piece · V/G/H material</div>
   <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
   <button class="hbtn" id="shieldBtn">🛡<br>SHIELD</button>
   <button class="hbtn" id="wolfBtn">☄<br>WOLVES</button>
