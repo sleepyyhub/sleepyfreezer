@@ -285,7 +285,7 @@ body.pc #pcHint{display:block}
 <!-- ================= PARTY: CREATE / JOIN ================= -->
 <div class="screen" id="scrParty">
   <h2>Party &amp; Custom Matches</h2>
-  <div class="sub">Create a party to get a share code, or type a friend's code to join their lobby. The party host picks the mode (Solos / FFA / 2v2 / 4v4) and assigns teams.</div>
+  <div class="sub">Create a party to get a share code, or type a friend's code to join their lobby. The party host picks the mode (Solos / FFA / Team 1 / Team 2 / 2v2 / 4v4) and assigns teams.</div>
   <button class="btn green" id="btnCreateParty">➕ CREATE PARTY</button>
   <div class="row">
     <input class="code" id="joinCode" placeholder="CODE" maxlength="4" autocomplete="off">
@@ -302,6 +302,8 @@ body.pc #pcHint{display:block}
   <div class="row" id="modeRow">
     <button class="btn small gray modeBtn" data-mode="solos">SOLOS</button>
     <button class="btn small gray modeBtn" data-mode="ffa">FFA</button>
+    <button class="btn small gray modeBtn" data-mode="team1">TEAM 1</button>
+    <button class="btn small gray modeBtn" data-mode="team2">TEAM 2</button>
     <button class="btn small gray modeBtn" data-mode="2v2">2v2</button>
     <button class="btn small gray modeBtn" data-mode="4v4">4v4</button>
   </div>
@@ -364,7 +366,7 @@ body.pc #pcHint{display:block}
 <div id="upgradeDraft">
   <div id="upgradeBox">
     <h2>Choose an Upgrade</h2>
-    <div class="sub">Free for All grants a random card draft every minute.</div>
+    <div class="sub">FFA-style modes grant a random card draft every minute.</div>
     <div id="upgradeCards"></div>
   </div>
 </div>
@@ -792,6 +794,9 @@ function showScreen(id) {
   if (id) $(id).classList.add('active');
   $('hud').classList.toggle('active', id === null); // HUD only during a match
 }
+function isFfaStyleMode(mode) {
+  return mode === 'ffa' || mode === 'team1' || mode === 'team2';
+}
 function saveProfile() {
   myName = $('nameInput').value.trim().slice(0, 12) || myName;
   try { localStorage.setItem('sleepyRoyale', JSON.stringify({ look: myLook, name: myName })); } catch (e) {}
@@ -848,6 +853,8 @@ function renderLobby() {
   const isHost = p.hostId === net.selfId;
   $('lobbyHint').textContent = isHost
     ? (p.mode === 'ffa' ? 'Free for All: unlimited joins, no bots, no teams, upgrade cards every minute.'
+       : p.mode === 'team1' ? 'Team 1: everyone is allied, no normal bots, FFA loot and upgrades, co-op against ruins and bosses.'
+       : p.mode === 'team2' ? 'Team 2: unlimited joins, no normal bots, FFA loot and upgrades, two teams. Tap a player to switch team.'
        : p.mode === 'solos' ? 'Solos: everyone for themselves. Tap START when ready.'
        : `Mode ${p.mode}: tap a player to switch their team.`)
     : 'Waiting for the host to start the match…';
@@ -881,7 +888,7 @@ function renderLobby() {
         if (net.allies.has(pl.id)) net.allies.delete(pl.id); else net.allies.add(pl.id);
         renderLobby();
       });
-    } else if (isHost && p.mode !== 'solos' && p.mode !== 'ffa') {
+    } else if (isHost && !['solos', 'ffa', 'team1'].includes(p.mode)) {
       row.addEventListener('click', () => net.send({ t: 'assign_team', playerId: pl.id, team: pl.team === 'A' ? 'B' : 'A' }));
     }
     list.appendChild(row);
@@ -1134,7 +1141,7 @@ function baseGame(seed, mode) {
     xp: 0, level: 1, nextLevelXp: 100,
     contracts: {}, contractOffered: false, grimoireRolled: false, ruinBossKills: 0, heavenlySpawned: false,
     grimoireTower: { x: CFG.world / 2, y: CFG.world / 2, open: false },
-    nextUpgradeAt: mode === 'ffa' ? performance.now() + 60000 : Infinity,
+    nextUpgradeAt: isFfaStyleMode(mode) ? performance.now() + 60000 : Infinity,
     upgradeOpen: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
     // practice range: bare training figures in the top-left corner —
@@ -1157,12 +1164,12 @@ function baseGame(seed, mode) {
 }
 
 // 3-5 guardians per building — a whole crew defending the compound.
-// FFA keeps ruins lighter: only two guardians per ruin.
+// FFA-style party modes keep ruins lighter: only two guardians per ruin.
 // Clear them ALL and that building's RUIN BOSS emerges (see guardianDied).
 function spawnGuardians(g) {
   g.map.buildings.forEach((b, i) => {
     const rng = seededRng(g.seed + 71 * i); // same crew on every client
-    const occupants = g.mode === 'ffa' ? 2 : b.occupants;
+    const occupants = isFfaStyleMode(g.mode) ? 2 : b.occupants;
     for (let j = 0; j < occupants; j++) {
       const gu = makePlayer('guard' + i + '_' + j, 'Ruin Guardian',
         { eye: 1, hair: (rng() * 3) | 0, outfit: 1 }, 'G',
@@ -1377,7 +1384,7 @@ function drawUpgradeOptions() {
   return chosen;
 }
 function showUpgradeDraft() {
-  if (!game || game.upgradeOpen || game.mode !== 'ffa' || !game.me.alive) return;
+  if (!game || game.upgradeOpen || !isFfaStyleMode(game.mode) || !game.me.alive) return;
   game.upgradeOpen = true;
   input.fire = false;
   const wrap = $('upgradeCards'); wrap.innerHTML = '';
@@ -1934,7 +1941,7 @@ function spawnRuinBoss(i) {
   const type = types[i % types.length];
   const b = makePlayer('boss' + i, type.name, { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
   b.guard = true; b.boss = true; b.bossType = type.name; b.weapon = type.weapon;
-  b.hp = b.maxHp = Math.round(CFG.bossHp * type.hp * (game.mode === 'ffa' ? 0.65 : 1)); b.home = { x, y }; b.bldIdx = i;
+  b.hp = b.maxHp = Math.round(CFG.bossHp * type.hp * (isFfaStyleMode(game.mode) ? 0.65 : 1)); b.home = { x, y }; b.bldIdx = i;
   game.players[b.id] = b;
   addEffect('boom', x, y);
   addKillFeed('⚠ A RUIN BOSS has emerged!');
@@ -2337,11 +2344,12 @@ function update(dt) {
     } else {
       // auto-aim (touch only): track the locked enemy unless the player
       // is actively dragging in the aim zone (manual aim always wins)
-      const assistReady = g.mode !== 'ffa' || g.upgrades.aimAssist > 0;
+      const ffaStyle = isFfaStyleMode(g.mode);
+      const assistReady = !ffaStyle || g.upgrades.aimAssist > 0;
       g.aimLock = g.buildMode || !assistReady ? null : autoAimPick();
       if (g.aimLock && input.aimId === null) {
         const targetAim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
-        if (g.mode === 'ffa') {
+        if (ffaStyle) {
           const turn = Math.atan2(Math.sin(targetAim - g.me.aim), Math.cos(targetAim - g.me.aim));
           g.me.aim += turn * g.upgrades.aimAssist;
         } else g.me.aim = targetAim;
@@ -2353,7 +2361,7 @@ function update(dt) {
       g.me.hp = Math.min(g.me.maxHp, g.me.hp + CFG.regenRate * dt);
   } else g.aimLock = null;
 
-  if (g.mode === 'ffa' && performance.now() >= g.nextUpgradeAt) showUpgradeDraft();
+  if (isFfaStyleMode(g.mode) && performance.now() >= g.nextUpgradeAt) showUpgradeDraft();
 
   // proximity -> contextual interact button (chests + ground loot),
   // preferring loot when both are in range so chests can't shadow items
@@ -2468,6 +2476,9 @@ function update(dt) {
     const total = Object.values(g.players).filter(p => !p.guard).length;
     if (!g.me.alive) {
       g.over = true; endMatch(false, alive + 1);
+    } else if (g.mode === 'team1') {
+      const pveAlive = Object.values(g.players).some(p => p.guard && p.alive);
+      if (!pveAlive) { g.over = true; endMatch(true, 1); }
     } else if (total > 1) {
       if (g.mode === 'solo' || g.mode === 'solos') {
         if (alive <= 1) { g.over = true; endMatch(true, 1); }
