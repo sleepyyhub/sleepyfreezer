@@ -73,6 +73,7 @@ function lobbyPayload(party) {
     code: party.code,
     hostId: party.hostId,
     mode: party.mode,
+    started: party.started, // lets the lobby screen offer a SPECTATE button
     players: [...party.players].map(([id, p]) => ({ id, name: p.name, look: p.look, team: p.team })),
   };
 }
@@ -160,20 +161,28 @@ wss.on('connection', ws => {
         if (!party || party.hostId !== ws.id || party.started) return;
         party.started = true;
         // Shared seed drives identical map/chest/storm generation on
-        // every client — no map data needs to cross the wire.
-        broadcast(party, {
-          t: 'match_start',
+        // every client — no map data needs to cross the wire. Cached
+        // so a player who leaves-to-lobby (or joins late) can request
+        // it again via 'spectate_match' instead of being stuck outside
+        // the running match with no way back in.
+        party.matchInfo = {
           seed: (Math.random() * 1e9) | 0,
           mode: party.mode,
           hostId: party.hostId, // the host's client simulates guardians (NPCs)
           players: lobbyPayload(party).players,
-        });
+        };
+        broadcast(party, { t: 'match_start', ...party.matchInfo });
         break;
       }
       case 'reset_match': { // only the party leader may restart for everyone
         if (!party || party.hostId !== ws.id) return;
-        party.started = false;
+        party.started = false; party.matchInfo = null;
         broadcast(party, { t: 'match_reset', party: lobbyPayload(party) });
+        break;
+      }
+      case 'spectate_match': { // watch the party's currently-running match
+        if (!party || !party.started || !party.matchInfo) return send(ws, { t: 'error', msg: 'No match in progress' });
+        send(ws, { t: 'match_start', ...party.matchInfo, spectate: true });
         break;
       }
 

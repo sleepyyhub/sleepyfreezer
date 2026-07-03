@@ -77,6 +77,8 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #spectateText{font-weight:900;letter-spacing:1px;color:#ffdd66;font-size:15px;white-space:nowrap}
 #specPrev,#specNext{border:none;border-radius:8px;background:#1b2739;color:#fff;font-weight:1000;
   min-width:38px;min-height:38px;font-size:16px}
+#specLeave{border:none;border-radius:8px;background:#7a2a2a;color:#fff;font-weight:1000;
+  min-height:38px;font-size:13px;padding:0 12px}
 #hud.spectating #spectateBar{display:flex}
 #hud.spectating #fireBtn,#hud.spectating #buildBtn,#hud.spectating #shieldBtn,#hud.spectating #wolfBtn,
 #hud.spectating #weaponPanel,#hud.spectating #hotbar,#hud.spectating #abilityPad,#hud.spectating #chestBtn,
@@ -432,6 +434,10 @@ body.pc #touchHint{display:none}
   <div id="lobbyList"></div>
   <div class="row">
     <button class="btn green" id="btnStartMatch">🚀 START MATCH</button>
+    <!-- shown only while the party's match is already running, so a
+         player who left it early (or just reopened the lobby) can
+         jump back in as a spectator -->
+    <button class="btn" id="btnSpectate" style="display:none">👁 SPECTATE MATCH</button>
     <button class="btn red" id="btnLeaveLobby">LEAVE</button>
   </div>
 </div>
@@ -444,6 +450,9 @@ body.pc #touchHint{display:none}
        see a waiting message instead of a button that would do nothing -->
   <button class="btn green" id="btnAgain">PLAY AGAIN</button>
   <div class="sub" id="waitHostHint" style="display:none">Waiting for the party leader to restart…</div>
+  <!-- shown only when in a party — returns to the lobby without
+       disconnecting, instead of the full exit MAIN MENU performs -->
+  <button class="btn" id="btnBackToParty" style="display:none">👥 BACK TO PARTY</button>
   <button class="btn gray" id="btnToMenu">MAIN MENU</button>
 </div>
 
@@ -459,6 +468,7 @@ body.pc #touchHint{display:none}
     <div id="spectateText">👁 SPECTATING</div>
     <button id="specPrev">◀</button>
     <button id="specNext">▶</button>
+    <button id="specLeave" style="display:none">LEAVE</button>
   </div>
   <div id="downedBar">
     <div id="downedText">⚠ DOWNED — awaiting rescue</div>
@@ -1136,6 +1146,18 @@ $('btnJoinParty').addEventListener('click', () => {
 });
 $('btnLeaveLobby').addEventListener('click', () => { net.disconnect(); showScreen('scrMenu'); });
 $('btnStartMatch').addEventListener('click', () => net.send({ t: 'start_match' }));
+$('btnSpectate').addEventListener('click', () => net.send({ t: 'spectate_match' }));
+// leave the current match but stay connected to the party — unlike
+// MAIN MENU, this doesn't disconnect, so you land back in the lobby
+// and can use SPECTATE MATCH to jump back into the still-running game
+function leaveToParty() {
+  if (!net.party) return; // no party to go back to (solo play)
+  game = null;
+  renderLobby();
+  showScreen('scrLobby');
+}
+$('specLeave').addEventListener('click', leaveToParty);
+$('btnBackToParty').addEventListener('click', leaveToParty);
 document.querySelectorAll('.modeBtn').forEach(b => b.addEventListener('click', () => {
   net.send({ t: 'set_mode', mode: b.dataset.mode });
 }));
@@ -1163,7 +1185,8 @@ function renderLobby() {
        : p.mode === 'solos' ? 'Solos: everyone for themselves. Tap START when ready.'
        : `Mode ${p.mode}: tap a player to switch their team.`)
     : 'Waiting for the host to start the match…';
-  $('btnStartMatch').style.display = isHost ? '' : 'none';
+  $('btnStartMatch').style.display = isHost && !p.started ? '' : 'none';
+  $('btnSpectate').style.display = p.started ? '' : 'none';
   document.querySelectorAll('.modeBtn').forEach(b => {
     b.classList.toggle('sel', b.dataset.mode === p.mode);
     b.style.pointerEvents = isHost ? 'auto' : 'none';
@@ -1238,7 +1261,15 @@ const net = {
       case 'lobby':         // roster / mode / team change
         if (this.party) { this.party = m.party; renderLobby(); } break;
       case 'match_start':   // everyone builds the same map from m.seed
-        startNetworkMatch(m); break;
+        if (this.party) this.party.started = true;
+        startNetworkMatch(m);
+        // spectate_match replies re-use match_start with an extra flag;
+        // the local player never actually spawned into this match, so
+        // force them dead immediately — the existing spectate mode
+        // (camera follows another player, combat HUD hidden) takes it
+        // from there with no further special-casing needed
+        if (m.spectate && game) { game.me.alive = false; game.me.isSpectator = true; }
+        break;
       case 'match_reset':
         this.party = m.party;
         game = null;
@@ -3300,7 +3331,11 @@ function update(dt) {
   // win / lose detection (a 1-player lobby never auto-wins)
   if (!g.over) {
     const alive = countAlive();
-    const total = Object.values(g.players).filter(p => !p.guard).length;
+    // a pure spectator's own dead "ghost" entry must not count as a real
+    // competitor — otherwise choosing to spectate (rather than actually
+    // being defeated) could look like a normal elimination and end the
+    // match early for the remaining real players' opponent count
+    const total = Object.values(g.players).filter(p => !p.guard && !p.isSpectator).length;
     let matchEnded = false, won = false;
     if (g.mode === 'team1') {
       // co-op vs PVE: a shared win once the bosses are cleared, even for
@@ -3336,6 +3371,7 @@ function endMatch(won, placement) {
     const isHost = !net.party || net.party.hostId === net.selfId;
     $('btnAgain').style.display = isHost ? '' : 'none';
     $('waitHostHint').style.display = isHost ? 'none' : 'block';
+    $('btnBackToParty').style.display = net.party ? '' : 'none';
     showScreen('scrOver');
   }, 900);
 }
@@ -3898,6 +3934,8 @@ function render() {
   if (spectating) {
     const target = g.players[g.spectateId];
     $('spectateText').textContent = target ? `👁 SPECTATING ${target.name.toUpperCase()}` : '👁 SPECTATING';
+    // only meaningful in a party — solo play has no lobby to return to
+    $('specLeave').style.display = net.party ? '' : 'none';
   }
   // downed (revivable): make the otherwise-invisible bleed-out timer
   // visible so it doesn't look like the game just froze
