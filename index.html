@@ -468,6 +468,14 @@ const ARMOR = [null,
 ];
 const MAX_SHIELD = 100; // shield potions fill a blue bar absorbed before HP
 
+// Every guardian gets an individual (seeded) name, and every building's
+// boss has its own title — no more army of identical "Ruin Guardian"s.
+const GUARD_NAMES = ['Ash Bandit', 'Rust Prowler', 'Grave Sentry', 'Dust Stalker',
+  'Bone Picker', 'Cinder Thug', 'Moss Creeper', 'Hollow Watcher', 'Shard Brute',
+  'Rubble Rat', 'Night Lurker', 'Crypt Jackal', 'Ruin Howler', 'Ember Ghoul'];
+const BOSS_NAMES = ['MOLOCH', 'GRIMJAW', 'VOIDMAW', 'IRONHIDE', 'SHADOWFANG',
+  'DREADNOUGHT', 'BONECRUSHER', 'NIGHTTERROR', 'OBLIVAX', 'COLOSSAL REX'];
+
 const EYES    = ['Dot', 'Wide', 'Sleepy'];
 const HAIRS   = ['Spiky', 'Bowl', 'Cap'];
 const OUTFITS = ['Blue', 'Red', 'Green', 'Purple'];
@@ -900,7 +908,7 @@ function spawnGuardians(g) {
   g.map.buildings.forEach((b, i) => {
     const rng = seededRng(g.seed + 71 * i); // same crew on every client
     for (let j = 0; j < b.occupants; j++) {
-      const gu = makePlayer('guard' + i + '_' + j, 'Ruin Guardian',
+      const gu = makePlayer('guard' + i + '_' + j, GUARD_NAMES[(rng() * GUARD_NAMES.length) | 0],
         { eye: 1, hair: (rng() * 3) | 0, outfit: 1 }, 'G',
         b.x0 + 80 + rng() * (b.x1 - b.x0 - 160),
         b.y0 + 80 + rng() * (b.y1 - b.y0 - 160), true);
@@ -1321,6 +1329,11 @@ function updateBullets(dt) {
         const p = g.players[id];
         if (!p.alive || id === b.owner) continue;
         if (p.team !== 'S' && p.team === b.team) continue; // no friendly fire
+        // guardians/bosses and regular bots never damage each other, even
+        // by accident — a stray bullet meant for the real player must not
+        // clip a bot standing near a guardian (or vice versa)
+        const shooter = g.players[b.owner];
+        if (shooter && ((shooter.guard && p.isBot && !p.guard) || (shooter.isBot && !shooter.guard && p.guard))) continue;
         if (b.pierce && b.hitIds.indexOf(id) >= 0) continue; // already lanced
         const pr = (p.boss ? 27 : CFG.playerR) + 2;
         if (dist2(b.x, b.y, p.x, p.y) < pr * pr) {
@@ -1410,13 +1423,14 @@ function spawnRuinBoss(i) {
   const bld = game.map.buildings[i];
   bld.bossUp = true;
   const x = (bld.x0 + bld.x1) / 2, y = (bld.y0 + bld.y1) / 2;
-  const b = makePlayer('boss' + i, 'RUIN BOSS', { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
+  const name = BOSS_NAMES[i % BOSS_NAMES.length];
+  const b = makePlayer('boss' + i, name, { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
   b.guard = true; b.boss = true; b.weapon = bld.gweapon;
   b.hp = b.maxHp = CFG.bossHp; b.home = { x, y }; b.bldIdx = i;
   game.players[b.id] = b;
   addEffect('boom', x, y);
-  addKillFeed('⚠ A RUIN BOSS has emerged!');
-  toast('⚠ RUIN BOSS! Slay it for an EXOTIC weapon', 2600);
+  addKillFeed('⚠ ' + name + ' has emerged!');
+  toast('⚠ ' + name + '! Slay it for an EXOTIC weapon', 2600);
 }
 
 function takePickup(id, mine) {
@@ -1540,11 +1554,12 @@ function updateBots(dt) {
     const b = g.players[id];
     if (!b.isBot || !b.alive) continue;
     b.ai.think -= dt;
-    // find nearest living enemy
+    // find nearest living enemy — bots NEVER pick fights with guardians
+    // or bosses (NPCs don't fight NPCs of the other kind)
     let target = null, best = 1e18;
     for (const oid in g.players) {
       const o = g.players[oid];
-      if (oid === id || !o.alive) continue;
+      if (oid === id || !o.alive || o.guard) continue;
       const d = dist2(b.x, b.y, o.x, o.y);
       if (d < best) { best = d; target = o; }
     }
@@ -1594,7 +1609,9 @@ function updateGuardians(dt) {
     let target = null, best = gu.boss ? 900 ** 2 : CFG.guardAggro ** 2;
     for (const oid in g.players) {
       const o = g.players[oid];
-      if (o.guard || !o.alive) continue;
+      // guardians/bosses only hunt real players — never bots, never
+      // each other (keeps NPCs from wiping each other out)
+      if (o.isBot || !o.alive) continue;
       const d = dist2(hx, hy, o.x, o.y);
       if (d < best) { best = d; target = o; }
     }
