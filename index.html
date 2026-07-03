@@ -179,6 +179,9 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .powerLine .t{font-weight:1000;letter-spacing:1px}.powerLine .s{color:#cfe3ff;font-size:11px;margin-top:2px}
 #invBtn{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(22px + env(safe-area-inset-bottom));
   pointer-events:auto;border:none;border-radius:12px;background:#1b2739;color:#fff;font-weight:1000;font-size:13px;padding:10px 14px;box-shadow:0 0 0 3px #ffffff22}
+#adminBtnHud{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(70px + env(safe-area-inset-bottom));
+  pointer-events:auto;border:none;border-radius:12px;background:linear-gradient(#3a2f0e,#1b2739);color:#ffdd66;
+  font-weight:1000;font-size:13px;padding:10px 14px;box-shadow:0 0 0 3px #ffdd6655}
 #inventoryGui{position:fixed;inset:0;background:rgba(4,8,16,.78);z-index:170;display:none;align-items:center;justify-content:center;padding:18px;pointer-events:auto}
 #inventoryGui.show{display:flex}
 #invPanel{width:min(920px,96vw);max-height:90vh;overflow:auto;background:#0e1728;border:2px solid #ffffff24;border-radius:8px;box-shadow:0 18px 60px #000d;padding:16px}
@@ -455,6 +458,11 @@ body.pc #touchHint{display:none}
     <div class="powerLine" id="devilPower"><div class="t">契 NO CONTRACT</div><div class="s">Devil contracts appear after forbidden feats.</div></div>
   </div>
   <button id="invBtn">🎒 BAG</button>
+  <!-- only rendered when THIS device unlocked admin via the main-menu
+       key prompt; adminUnlocked is a local-only flag, never sent to
+       the server or other players, so nobody else in the match sees
+       this button or knows it exists -->
+  <button id="adminBtnHud" style="display:none">⚙ ADMIN</button>
   <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
   <div id="itemInfo"><div class="nm"></div><div class="st"></div></div>
   <div id="buildMenu">
@@ -599,10 +607,12 @@ const CFG = {
   bossHp: 420,            // RUIN BOSS: spawns when a building is cleared
   regenDelay: 5,          // seconds without damage before you regenerate
   regenRate: 4,           // hp per second while regenerating
-  autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
-  baseAimAssist: 0.14,    // touch players always get at least this much
+  autoAimRange: 420,      // aim snaps to enemies closer than this (with LOS)
+  baseAimAssist: 0.55,    // touch players always get at least this much
                           // homing in FFA-style modes, even before the
-                          // aimAssist upgrade is picked (see update())
+                          // aimAssist upgrade is picked (see update()) —
+                          // tuned high so it reads as a real "lock-on"
+                          // rather than a slow drift
   startAmmo: { light: 120, shell: 24, energy: 0 },
   ammoPack:  { light: 60,  shell: 12, energy: 15 }, // per ammo pickup
   shieldCost: 20,         // wood per deployed shield (loot wood from chests)
@@ -1008,6 +1018,9 @@ try { if (localStorage.getItem('sleepyRoyaleAdmin') === '1') adminUnlocked = tru
 function refreshAdminMenuButtons() {
   $('btnAdminKey').style.display = adminUnlocked ? 'none' : '';
   $('btnAdminPanelMenu').style.display = adminUnlocked ? '' : 'none';
+  // in-match HUD button: same local-only flag, so it only ever shows
+  // up on the device that actually entered the key
+  $('adminBtnHud').style.display = adminUnlocked ? '' : 'none';
 }
 function showAdminKeyPrompt() {
   $('adminKeyInput').value = '';
@@ -1031,6 +1044,7 @@ press($('adminKeyCancel'), hideAdminKeyPrompt);
 press($('adminKeySubmit'), tryAdminKey);
 $('adminKeyInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryAdminKey(); });
 press($('btnAdminPanelMenu'), openAdminPanel);
+press($('adminBtnHud'), openAdminPanel);
 refreshAdminMenuButtons();
 
 function renderCustPreview() {
@@ -1483,6 +1497,7 @@ function resetHudState() {
   $('chestBtn').classList.remove('show');
   $('upgradeDraft').classList.remove('show'); $('upgradeCards').innerHTML = '';
   closePickupConfirm();
+  refreshAdminMenuButtons(); // show the in-match ADMIN button if this device is unlocked
 }
 
 function weaponStatLine(key) {
