@@ -206,6 +206,17 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .adminField select,.adminField input{background:#0b1220;color:#fff;border:1px solid #ffffff26;border-radius:8px;padding:10px;font-size:14px}
 #adminSpawn{margin-top:12px;width:100%;border:none;border-radius:8px;background:linear-gradient(#ffd94d,#d99b1e);color:#2b2100;font-weight:1000;font-size:17px;padding:13px}
 @media (max-width:700px){.adminGrid{grid-template-columns:1fr}}
+/* admin key-entry modal: reachable from the main menu, no active
+   match required. Unlock is local to this device only. */
+#adminKeyGui{position:fixed;inset:0;background:rgba(3,5,10,.82);z-index:220;
+  display:none;align-items:center;justify-content:center;padding:18px}
+#adminKeyGui.show{display:flex}
+#adminKeyPanel{width:min(360px,92vw);background:#111827;border:2px solid #ffdd6688;
+  border-radius:12px;box-shadow:0 18px 70px #000e,0 0 36px #ffdd6628;padding:22px;
+  display:flex;flex-direction:column;gap:14px;align-items:center;text-align:center}
+#adminKeyPanel h2{margin:0;color:#ffdd66;font-size:22px}
+#adminKeyInput{width:100%;padding:12px;border-radius:8px;border:1px solid #ffffff26;
+  background:#0b1220;color:#fff;font-size:17px;text-align:center;letter-spacing:3px}
 @media (max-width:700px){.invGrid{grid-template-columns:1fr}.invWeapon{grid-template-columns:36px 1fr}.invWeapon button{min-height:38px}}
 #killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:184px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
@@ -335,6 +346,11 @@ body.pc #touchHint{display:none}
   <button class="btn green" id="btnSolo">▶ PLAY SOLO (vs bots)</button>
   <button class="btn" id="btnParty">👥 PARTY / CUSTOM MATCH</button>
   <button class="btn gray" id="btnCustomize">🎨 CUSTOMIZE CHARACTER</button>
+  <!-- admin entry: locked button prompts for the key; once unlocked
+       (this device only — never sent to the server or other players)
+       it swaps to a real panel-opening button, permanently -->
+  <button class="btn gray" id="btnAdminKey" style="opacity:.6;font-size:13px;min-height:40px;margin-top:2px">🔒 Admin Key</button>
+  <button class="btn gray" id="btnAdminPanelMenu" style="display:none;font-size:13px;min-height:40px;margin-top:2px;border:1px solid #ffdd6688">⚙ ADMIN PANEL</button>
 </div>
 
 <!-- ================= CHARACTER CUSTOMIZATION ================= -->
@@ -476,6 +492,17 @@ body.pc #touchHint{display:none}
     <button id="adminSpawn">SPAWN / GIVE</button>
   </div>
 </div>
+<div id="adminKeyGui">
+  <div id="adminKeyPanel">
+    <h2>🔒 Admin Access</h2>
+    <div class="sub">Enter the admin key to unlock the item spawner panel on this device.</div>
+    <input id="adminKeyInput" type="password" placeholder="Admin key" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="row">
+      <button class="btn green" id="adminKeySubmit">UNLOCK</button>
+      <button class="btn gray" id="adminKeyCancel">CANCEL</button>
+    </div>
+  </div>
+</div>
 <div id="upgradeDraft">
   <div id="upgradeBox">
     <h2>Choose an Upgrade</h2>
@@ -573,6 +600,9 @@ const CFG = {
   regenDelay: 5,          // seconds without damage before you regenerate
   regenRate: 4,           // hp per second while regenerating
   autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
+  baseAimAssist: 0.14,    // touch players always get at least this much
+                          // homing in FFA-style modes, even before the
+                          // aimAssist upgrade is picked (see update())
   startAmmo: { light: 120, shell: 24, energy: 0 },
   ammoPack:  { light: 60,  shell: 12, energy: 15 }, // per ammo pickup
   shieldCost: 20,         // wood per deployed shield (loot wood from chests)
@@ -967,6 +997,42 @@ function saveProfile() {
 // --- customization screen ---
 const custCtx = $('custPrev').getContext('2d');
 let adminUnlocked = false;
+// admin unlock is local to this device only (never sent to the server
+// or other players); restore it across reloads once earned
+try { if (localStorage.getItem('sleepyRoyaleAdmin') === '1') adminUnlocked = true; } catch (e) {}
+
+// main-menu admin entry point: a locked "Admin Key" button prompts for
+// the passphrase; once correct, it's swapped (permanently, on this
+// device) for a real "ADMIN PANEL" button that opens the item spawner
+// — reachable from the start menu, no match required to open it.
+function refreshAdminMenuButtons() {
+  $('btnAdminKey').style.display = adminUnlocked ? 'none' : '';
+  $('btnAdminPanelMenu').style.display = adminUnlocked ? '' : 'none';
+}
+function showAdminKeyPrompt() {
+  $('adminKeyInput').value = '';
+  $('adminKeyGui').classList.add('show');
+  setTimeout(() => $('adminKeyInput').focus(), 50);
+}
+function hideAdminKeyPrompt() { $('adminKeyGui').classList.remove('show'); }
+function unlockAdmin() {
+  adminUnlocked = true;
+  try { localStorage.setItem('sleepyRoyaleAdmin', '1'); } catch (e) {}
+  refreshAdminMenuButtons();
+}
+function tryAdminKey() {
+  if ($('adminKeyInput').value !== 'cloverisdatuffest') return toast('Wrong admin key');
+  unlockAdmin();
+  hideAdminKeyPrompt();
+  toast('🔓 Admin unlocked on this device!');
+}
+press($('btnAdminKey'), showAdminKeyPrompt);
+press($('adminKeyCancel'), hideAdminKeyPrompt);
+press($('adminKeySubmit'), tryAdminKey);
+$('adminKeyInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryAdminKey(); });
+press($('btnAdminPanelMenu'), openAdminPanel);
+refreshAdminMenuButtons();
+
 function renderCustPreview() {
   custCtx.clearRect(0, 0, 180, 180);
   custCtx.fillStyle = '#223148'; custCtx.fillRect(0, 0, 180, 180);
@@ -1526,17 +1592,19 @@ function refreshAdminItems() {
   sel.innerHTML = adminOptionsFor(type).map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
 }
 function openAdminPanel() {
-  if (!game) return toast('Start a match first');
+  // reachable from the main menu — no active match required to open
+  // and browse it; only actually spawning/giving items needs one
   if (!adminUnlocked) {
     const key = prompt('Admin key');
     if (key !== 'cloverisdatuffest') return toast('Wrong admin key');
-    adminUnlocked = true; toast('Admin unlocked');
+    unlockAdmin(); toast('🔓 Admin unlocked on this device!');
   }
   refreshAdminItems();
   $('adminGui').classList.add('show');
 }
 function adminSpawn() {
-  if (!game || !adminUnlocked) return;
+  if (!adminUnlocked) return;
+  if (!game) return toast('Start a match first to spawn items');
   const type = $('adminType').value, item = $('adminItem').value, amount = clamp(+$('adminAmount').value || 1, 1, 999);
   const direct = $('adminDelivery').value === 'direct';
   const dropAt = i => ({ x: clamp(game.me.x + 44 + i * 18, 30, CFG.world - 30), y: clamp(game.me.y + 22 + i * 10, 30, CFG.world - 30) });
@@ -2968,15 +3036,19 @@ function update(dt) {
         g.me.aim = Math.atan2(pc.my / ZOOM + g.camY - g.me.y, pc.mx / ZOOM + g.camX - g.me.x);
     } else {
       // auto-aim (touch only): track the locked enemy unless the player
-      // is actively dragging in the aim zone (manual aim always wins)
+      // is actively dragging in the aim zone (manual aim always wins).
+      // Touch/phone/iPad players always get at least a light homing
+      // assist in FFA-style modes so aiming stays playable before the
+      // aimAssist upgrade is picked — the upgrade then strengthens it
+      // further, up to a full instant snap outside FFA modes.
       const ffaStyle = isFfaStyleMode(g.mode);
-      const assistReady = !ffaStyle || g.upgrades.aimAssist > 0;
-      g.aimLock = g.buildMode || !assistReady ? null : autoAimPick();
+      const assistStrength = ffaStyle ? Math.max(g.upgrades.aimAssist, CFG.baseAimAssist) : 1;
+      g.aimLock = g.buildMode ? null : autoAimPick();
       if (g.aimLock && input.aimId === null) {
         const targetAim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
         if (ffaStyle) {
           const turn = Math.atan2(Math.sin(targetAim - g.me.aim), Math.cos(targetAim - g.me.aim));
-          g.me.aim += turn * g.upgrades.aimAssist;
+          g.me.aim += turn * assistStrength;
         } else g.me.aim = targetAim;
       }
     }
