@@ -78,9 +78,20 @@ function lobbyPayload(party) {
 }
 function pushLobby(party) { broadcast(party, { t: 'lobby', party: lobbyPayload(party) }); }
 
-// Default team for a new member: solos = own id; team modes = balance A/B.
+const FREE_JOIN_MODES = new Set(['ffa', 'team1', 'team2']);
+const SOLO_SIDE_MODES = new Set(['solos', 'ffa']);
+const VALID_MODES = new Set(['solos', 'ffa', 'team1', 'team2', '2v2', '4v4']);
+
+function teamForMode(mode, index) {
+  if (SOLO_SIDE_MODES.has(mode)) return 'S';
+  if (mode === 'team1') return 'A';
+  return index % 2 === 0 ? 'A' : 'B';
+}
+
+// Default team for a new member: solos/FFA = own side; team1 = one squad; team modes = balance A/B.
 function autoTeam(party) {
-  if (party.mode === 'solos') return 'S';
+  if (SOLO_SIDE_MODES.has(party.mode)) return 'S';
+  if (party.mode === 'team1') return 'A';
   let a = 0, b = 0;
   for (const [, p] of party.players) (p.team === 'A' ? a++ : b++);
   return a <= b ? 'A' : 'B';
@@ -113,7 +124,7 @@ wss.on('connection', ws => {
         const p = parties.get(String(m.code || '').toUpperCase());
         if (!p) return send(ws, { t: 'error', msg: 'No party with that code' });
         if (p.started) return send(ws, { t: 'error', msg: 'Match already in progress' });
-        if (p.players.size >= 8) return send(ws, { t: 'error', msg: 'Party is full (8 max)' });
+        if (!FREE_JOIN_MODES.has(p.mode) && p.players.size >= 8) return send(ws, { t: 'error', msg: 'Party is full (8 max)' });
         p.players.set(ws.id, { ws, name: cleanName(m.name), look: cleanLook(m.look), team: autoTeam(p) });
         ws.partyCode = p.code;
         send(ws, { t: 'joined', selfId: ws.id, party: lobbyPayload(p) });
@@ -130,17 +141,17 @@ wss.on('connection', ws => {
       /* ----- custom match hosting (host only) ----- */
       case 'set_mode': {
         if (!party || party.hostId !== ws.id) return;
-        if (!['solos', '2v2', '4v4'].includes(m.mode)) return;
+        if (!VALID_MODES.has(m.mode)) return;
         party.mode = m.mode;
         // re-seed teams to match the new mode
         let i = 0;
         for (const [, p] of party.players)
-          p.team = party.mode === 'solos' ? 'S' : (i++ % 2 === 0 ? 'A' : 'B');
+          p.team = teamForMode(party.mode, i++);
         pushLobby(party);
         break;
       }
       case 'assign_team': {
-        if (!party || party.hostId !== ws.id || party.mode === 'solos') return;
+        if (!party || party.hostId !== ws.id || ['solos', 'ffa', 'team1'].includes(party.mode)) return;
         const target = party.players.get(m.playerId);
         if (target && ['A', 'B'].includes(m.team)) { target.team = m.team; pushLobby(party); }
         break;
@@ -159,10 +170,16 @@ wss.on('connection', ws => {
         });
         break;
       }
+      case 'reset_match': {
+        if (!party) return;
+        party.started = false;
+        broadcast(party, { t: 'match_reset', party: lobbyPayload(party) });
+        break;
+      }
 
       /* ----- in-match relay ----- */
       case 'state':      // my position/hp/aim -> everyone else
-        if (party) broadcast(party, { t: 'peer_state', id: ws.id, x: m.x, y: m.y, aim: m.aim, hp: m.hp, alive: m.alive, weapon: m.weapon }, ws.id);
+        if (party) broadcast(party, { t: 'peer_state', id: ws.id, x: m.x, y: m.y, aim: m.aim, hp: m.hp, alive: m.alive, weapon: m.weapon, sh: m.sh, sp: m.sp, ar: m.ar, ad: m.ad }, ws.id);
         break;
       case 'shoot':      // replayed visually + simulated on peers
         if (party) broadcast(party, { t: 'peer_shoot', by: ws.id, x: m.x, y: m.y, aim: m.aim, weapon: m.weapon }, ws.id);
@@ -221,7 +238,7 @@ function leaveParty(ws) {
 function cleanName(n) { return String(n || 'Player').replace(/[^\w \-!?.]/g, '').slice(0, 12) || 'Player'; }
 function cleanLook(l) {
   l = l || {};
-  return { eye: clampInt(l.eye, 0, 2), hair: clampInt(l.hair, 0, 2), outfit: clampInt(l.outfit, 0, 3) };
+  return { eye: clampInt(l.eye, 0, 5), hair: clampInt(l.hair, 0, 5), outfit: clampInt(l.outfit, 0, 7) };
 }
 function clampInt(v, a, b) { v = v | 0; return v < a ? a : v > b ? b : v; }
 

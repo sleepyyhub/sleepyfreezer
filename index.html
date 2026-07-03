@@ -56,7 +56,7 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .lobbyRow canvas{width:44px;height:44px}
 .lobbyRow .nm{flex:1;font-size:19px;font-weight:600}
 .teamTag{font-size:15px;font-weight:800;padding:6px 14px;border-radius:10px;background:#333}
-.teamA{background:#2a6de0}.teamB{background:#d93030}.teamS{background:#6b7b92}
+.teamA{background:#2a6de0}.teamB{background:#d93030}.teamS{background:#6b7b92}.teamF{background:#7a4de8}
 .hostStar{color:#ffd94d;font-size:20px}
 
 /* ============================================================
@@ -79,6 +79,17 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   width:76px;height:76px;font-size:13px;background:radial-gradient(#9ff0ff,#1e93b8);box-shadow:0 0 0 5px #ffffff22;
   flex-direction:column;line-height:1.2}
 #shieldBtn.off{opacity:.45}
+#hud #wolfBtn{right:calc(128px + env(safe-area-inset-right));bottom:calc(248px + env(safe-area-inset-bottom));
+  width:84px;height:84px;font-size:12px;background:radial-gradient(#fffdf0,#8abfff 58%,#d9c6ff);box-shadow:0 0 0 5px #ffffff22,0 0 24px #fff6;
+  color:#1a2740;flex-direction:column;line-height:1.15;display:none}
+#hud #wolfBtn.show{display:flex}
+#hud #wolfBtn.off{opacity:.45;filter:saturate(.6)}
+#abilityPad{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(158px + env(safe-area-inset-bottom));
+  display:grid;grid-template-columns:repeat(4,54px);gap:7px;pointer-events:auto}
+#abilityPad .hbtn{position:static;width:54px;height:54px;font-size:10px;border-radius:14px;box-shadow:0 0 0 3px #ffffff22;line-height:1.05;flex-direction:column}
+#abilityPad .grimBtn{background:radial-gradient(#d8fff0,#38bdf8);color:#102032}
+#abilityPad .devilBtn{background:radial-gradient(#ff8a9d,#9d102a);color:#fff}
+#abilityPad .off{opacity:.45;filter:saturate(.55)}
 /* NOTE: #hud #chestBtn (double id) is required — the generic
    `#hud .hbtn{display:flex}` rule is more specific than a lone
    `#chestBtn{display:none}`, which kept this button visible 24/7 */
@@ -137,6 +148,48 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   font-variant-numeric:tabular-nums}
 #wpnAmmo.dry{color:#ff5f5f}
 #wpnAmmoType{font-size:9px;font-weight:700;letter-spacing:2px;color:#9db2c9;text-align:right}
+#hotbar{position:absolute;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  display:flex;gap:8px;pointer-events:auto;background:rgba(8,14,24,.52);border:1px solid #ffffff22;
+  padding:6px;border-radius:8px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.hotSlot{width:58px;height:54px;border:2px solid #ffffff24;border-radius:7px;background:#17243a;color:#fff;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;position:relative}
+.hotSlot.sel{border-color:#ffd94d;box-shadow:0 0 14px #ffd94d66}
+.hotSlot .num{position:absolute;left:4px;top:2px;font-size:10px;color:#9db2c9}
+.hotSlot .ico{font-size:20px;line-height:1}
+.hotSlot .rar{font-size:8px;letter-spacing:1px;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#powerPanel{position:absolute;left:calc(14px + env(safe-area-inset-left));top:96px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.powerLine{min-width:190px;background:rgba(8,14,24,.64);border:1px solid #ffffff22;border-left:4px solid #888;border-radius:8px;padding:7px 10px;font-size:12px;box-shadow:0 4px 14px #0006}
+.powerLine .t{font-weight:1000;letter-spacing:1px}.powerLine .s{color:#cfe3ff;font-size:11px;margin-top:2px}
+#invBtn{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(22px + env(safe-area-inset-bottom));
+  pointer-events:auto;border:none;border-radius:12px;background:#1b2739;color:#fff;font-weight:1000;font-size:13px;padding:10px 14px;box-shadow:0 0 0 3px #ffffff22}
+#inventoryGui{position:fixed;inset:0;background:rgba(4,8,16,.78);z-index:170;display:none;align-items:center;justify-content:center;padding:18px;pointer-events:auto}
+#inventoryGui.show{display:flex}
+#invPanel{width:min(920px,96vw);max-height:90vh;overflow:auto;background:#0e1728;border:2px solid #ffffff24;border-radius:8px;box-shadow:0 18px 60px #000d;padding:16px}
+#invTop{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+#invTop h2{margin:0;font-size:28px}
+#invClose{border:none;border-radius:8px;background:#33445f;color:#fff;font-weight:1000;padding:10px 14px}
+.invGrid{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+.invSection{background:#142137;border:1px solid #ffffff1f;border-radius:8px;padding:12px}
+.invSection h3{margin:0 0 10px;font-size:16px;color:#cfe3ff}
+.invWeapon{display:grid;grid-template-columns:44px 1fr auto auto;gap:10px;align-items:center;background:#0d1627;border:1px solid #ffffff18;border-left:5px solid #888;border-radius:8px;padding:9px;margin-bottom:8px}
+.invWeapon .ico{font-size:26px}.invWeapon .nm{font-weight:1000}.invWeapon .st{font-size:11px;color:#b9c8dd;margin-top:3px}
+.invWeapon button,.invDrop{border:none;border-radius:7px;background:#2a6de0;color:#fff;font-weight:900;padding:8px}
+.invDrop{background:#7f2630}
+.invStats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.invStat{background:#0d1627;border:1px solid #ffffff18;border-radius:8px;padding:10px;font-size:13px}
+.invStat b{display:block;color:#fff;margin-bottom:4px}
+#adminGui{position:fixed;inset:0;background:rgba(3,5,10,.82);z-index:210;display:none;align-items:center;justify-content:center;padding:18px;pointer-events:auto}
+#adminGui.show{display:flex}
+#adminPanel{width:min(680px,94vw);background:#111827;border:2px solid #ffdd6688;border-radius:8px;box-shadow:0 18px 70px #000e,0 0 36px #ffdd6628;padding:16px}
+#adminTop{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+#adminTop h2{margin:0;font-size:26px;color:#ffdd66}
+#adminClose{border:none;border-radius:8px;background:#33445f;color:#fff;font-weight:1000;padding:10px 14px}
+.adminGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.adminField{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#cfe3ff;font-weight:900}
+.adminField select,.adminField input{background:#0b1220;color:#fff;border:1px solid #ffffff26;border-radius:8px;padding:10px;font-size:14px}
+#adminSpawn{margin-top:12px;width:100%;border:none;border-radius:8px;background:linear-gradient(#ffd94d,#d99b1e);color:#2b2100;font-weight:1000;font-size:17px;padding:13px}
+@media (max-width:700px){.adminGrid{grid-template-columns:1fr}}
+@media (max-width:700px){.invGrid{grid-template-columns:1fr}.invWeapon{grid-template-columns:36px 1fr}.invWeapon button{min-height:38px}}
 #killFeed{position:absolute;top:calc(66px + env(safe-area-inset-top));right:184px;text-align:right;
   font-size:14px;color:#ffb3b3;text-shadow:0 1px 2px #000;pointer-events:none}
 
@@ -146,6 +199,45 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 .custRow .lab{width:90px;text-align:right;font-size:18px;font-weight:700;color:#9db2c9}
 #toast{position:fixed;left:50%;top:14%;transform:translateX(-50%);background:#000c;color:#ffd94d;
   padding:12px 26px;border-radius:12px;font-size:18px;font-weight:700;z-index:200;display:none}
+#upgradeDraft{position:fixed;inset:0;background:#07101fcc;z-index:180;display:none;align-items:center;justify-content:center;padding:22px}
+#upgradeDraft.show{display:flex}
+#upgradeBox{width:min(920px,96vw);background:#101a2b;border:2px solid #ffffff24;border-radius:8px;box-shadow:0 18px 50px #000b;padding:18px}
+#upgradeBox h2{margin:0 0 8px;font-size:30px}
+#upgradeBox .sub{margin-bottom:14px}
+#upgradeCards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.upgradeCard{min-height:176px;border:2px solid #ffffff22;border-radius:8px;background:#17243a;color:#fff;text-align:left;padding:14px;box-shadow:inset 0 0 0 1px #0006}
+.upgradeCard .rar{font-size:13px;font-weight:900;text-transform:uppercase;margin-bottom:10px}
+.upgradeCard .nm{font-size:24px;font-weight:1000;margin-bottom:8px}
+.upgradeCard .st{font-size:15px;line-height:1.35;color:#dce8ff}
+#confirmPickup{position:fixed;inset:0;background:#07101fb8;z-index:190;display:none;align-items:center;justify-content:center;padding:22px}
+#confirmPickup.show{display:flex}
+#confirmBox{width:min(520px,92vw);background:#101a2b;border:2px solid #ffffff26;border-radius:8px;box-shadow:0 18px 50px #000b;padding:18px;text-align:center}
+#confirmTitle{font-size:26px;font-weight:1000;margin-bottom:12px}
+#confirmItems{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.confirmItem{border:1px solid #ffffff22;background:#17243a;border-radius:8px;padding:12px;min-height:104px}
+.confirmItem .lab{font-size:12px;font-weight:900;color:#9db2c9;text-transform:uppercase;margin-bottom:6px}
+.confirmItem .nm{font-size:18px;font-weight:1000}
+.confirmItem .st{font-size:12px;color:#dce8ff;margin-top:6px;line-height:1.3}
+#confirmActions{display:flex;gap:10px;justify-content:center;margin-top:14px}
+#confirmActions .btn{min-width:150px}
+#grimoireRoll{position:fixed;inset:0;background:#060814d8;z-index:195;display:none;align-items:center;justify-content:center;padding:22px}
+#grimoireRoll.show{display:flex}
+#grimoireBox{width:min(560px,94vw);background:#101323;border:2px solid #b46bff;border-radius:8px;padding:20px;text-align:center;box-shadow:0 0 50px #8a6dff88}
+#grimoireName{font-size:30px;font-weight:1000;margin:12px 0}
+#grimoireStats{color:#dce8ff;margin-bottom:16px}
+#contractOffer{position:fixed;inset:0;background:#130407d8;z-index:196;display:none;align-items:center;justify-content:center;padding:22px}
+#contractOffer.show{display:flex}
+#contractBox{width:min(580px,94vw);background:#211018;border:2px solid #ff3d5a;border-radius:8px;padding:20px;text-align:center;box-shadow:0 0 50px #ff3d5a66}
+#contractName{font-size:28px;font-weight:1000;color:#ff6b82;margin:10px 0}
+#contractDesc,#contractCost{color:#ffdce2;margin-bottom:10px}
+@media (max-width:700px){#upgradeCards{grid-template-columns:1fr}.upgradeCard{min-height:116px}}
+@media (min-width:701px) and (max-width:1180px) and (min-height:650px){
+  #fireBtn{width:124px;height:124px;font-size:22px}
+  #buildBtn,#shieldBtn,#hud #wolfBtn{width:88px;height:88px;font-size:13px}
+  .hotSlot{width:66px;height:62px}.hotSlot .ico{font-size:24px}.hotSlot .rar{font-size:9px}
+  #buildMenu button{min-width:112px;min-height:62px;font-size:16px}
+  #touchHint{font-size:13px;bottom:calc(92px + env(safe-area-inset-bottom))}
+}
 #rotateHint{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;align-items:center;
   justify-content:center;gap:12px;background:#101418f2;font-size:30px;font-weight:800;text-align:center;padding:24px}
 /* ============================================================
@@ -158,6 +250,9 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   #fireBtn{width:84px;height:84px;font-size:15px;right:calc(14px + env(safe-area-inset-right));bottom:calc(76px + env(safe-area-inset-bottom))}
   #buildBtn{width:58px;height:58px;font-size:11px;right:calc(112px + env(safe-area-inset-right));bottom:calc(110px + env(safe-area-inset-bottom))}
   #shieldBtn{width:58px;height:58px;font-size:10px;right:calc(22px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}
+  #hud #wolfBtn{width:58px;height:58px;font-size:9px;right:calc(92px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}
+  #abilityPad{bottom:calc(96px + env(safe-area-inset-bottom));grid-template-columns:repeat(4,42px);gap:5px}
+  #abilityPad .hbtn{width:42px;height:42px;font-size:8px;border-radius:10px}
   #hud #chestBtn{height:48px;font-size:15px;padding:0 20px;bottom:calc(10px + env(safe-area-inset-bottom))}
   #hpWrap{width:150px;padding:4px 8px}
   #hpOuter{height:13px}
@@ -173,6 +268,9 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   #wpnName{font-size:11px;letter-spacing:1px}
   #wpnRarity{font-size:8px}
   #wpnAmmo{font-size:18px;min-width:34px}
+  #hotbar{bottom:calc(4px + env(safe-area-inset-bottom));gap:4px;padding:4px}
+  .hotSlot{width:44px;height:40px}.hotSlot .ico{font-size:15px}.hotSlot .rar{display:none}
+  #powerPanel{top:54px}.powerLine{min-width:132px;font-size:10px;padding:5px 7px}.powerLine .s{display:none}
   #buildMenu{gap:6px;transform:translateY(-62%)}
   #buildMenu button{min-width:72px;min-height:44px;font-size:11px}
   /* menus/lobby fit short screens too */
@@ -191,9 +289,13 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 /* PC mode: hide the native cursor over the game (a crosshair is drawn
    instead) and show a small key-binding hint bottom-left */
 body.pc canvas#game{cursor:none}
+#touchHint{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(86px + env(safe-area-inset-bottom));
+  max-width:min(430px,54vw);background:rgba(8,14,24,.56);border:1px solid #ffffff22;border-radius:10px;
+  padding:7px 10px;font-size:12px;font-weight:800;color:#dce8ff;text-shadow:0 1px 2px #000;pointer-events:none}
 #pcHint{position:absolute;left:14px;bottom:calc(10px + env(safe-area-inset-bottom));
   font-size:12px;color:#cfe3ff99;text-shadow:0 1px 2px #000;pointer-events:none;display:none}
 body.pc #pcHint{display:block}
+body.pc #touchHint{display:none}
 /* item card: shows name, rarity and stats of the loot you're standing on */
 #itemInfo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(104px + env(safe-area-inset-bottom));
   background:rgba(8,14,24,.85);border:2px solid #888;border-radius:12px;padding:8px 18px;text-align:center;
@@ -238,7 +340,7 @@ body.pc #pcHint{display:block}
 <!-- ================= PARTY: CREATE / JOIN ================= -->
 <div class="screen" id="scrParty">
   <h2>Party &amp; Custom Matches</h2>
-  <div class="sub">Create a party to get a share code, or type a friend's code to join their lobby. The party host picks the mode (Solos / 2v2 / 4v4) and assigns teams.</div>
+  <div class="sub">Create a party to get a share code, or type a friend's code to join their lobby. The party host picks the mode (Solos / FFA / Team 1 / Team 2 / 2v2 / 4v4) and assigns teams.</div>
   <button class="btn green" id="btnCreateParty">➕ CREATE PARTY</button>
   <div class="row">
     <input class="code" id="joinCode" placeholder="CODE" maxlength="4" autocomplete="off">
@@ -254,6 +356,9 @@ body.pc #pcHint{display:block}
   <div class="sub" id="lobbyHint">Share the code so friends can join.</div>
   <div class="row" id="modeRow">
     <button class="btn small gray modeBtn" data-mode="solos">SOLOS</button>
+    <button class="btn small gray modeBtn" data-mode="ffa">FFA</button>
+    <button class="btn small gray modeBtn" data-mode="team1">TEAM 1</button>
+    <button class="btn small gray modeBtn" data-mode="team2">TEAM 2</button>
     <button class="btn small gray modeBtn" data-mode="2v2">2v2</button>
     <button class="btn small gray modeBtn" data-mode="4v4">4v4</button>
   </div>
@@ -280,15 +385,39 @@ body.pc #pcHint{display:block}
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
   </div>
   <div id="killFeed"></div>
-  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · B build · F shield · 1-3 piece · 4-6 material</div>
+  <div id="touchHint">Left side move · right side aim · buttons handle fire, build, shield, interact, weapons, wolves, grimoire, devil powers</div>
+  <div id="pcHint">WASD move · Mouse aim · Click shoot · E interact · 1-5 weapons · B build · F shield · R wolves · T/Y/U/I grimoire · O/P/[ /] devil</div>
   <button class="hbtn" id="buildBtn">🔨<br>BUILD</button>
+  <div id="abilityPad">
+    <button class="hbtn grimBtn" data-ability="0">📖1</button>
+    <button class="hbtn grimBtn" data-ability="1">📖2</button>
+    <button class="hbtn grimBtn" data-ability="2">📖3</button>
+    <button class="hbtn grimBtn" data-ability="3">📖4</button>
+    <button class="hbtn devilBtn" data-ability="0">契1</button>
+    <button class="hbtn devilBtn" data-ability="1">契2</button>
+    <button class="hbtn devilBtn" data-ability="2">契3</button>
+    <button class="hbtn devilBtn" data-ability="3">契4</button>
+  </div>
   <button class="hbtn" id="shieldBtn">🛡<br>SHIELD</button>
+  <button class="hbtn" id="wolfBtn">☄<br>WOLVES</button>
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
   <div id="weaponPanel">
     <div id="wpnIcon">🔫</div>
     <div><div id="wpnName">RUSTFANG</div><div id="wpnRarity">COMMON</div></div>
     <div><div id="wpnAmmo">120</div><div id="wpnAmmoType">LIGHT</div></div>
   </div>
+  <div id="hotbar">
+    <button class="hotSlot sel" data-slot="0"><span class="num">1</span><span class="ico">🔫</span><span class="rar">COMMON</span></button>
+    <button class="hotSlot" data-slot="1"><span class="num">2</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
+    <button class="hotSlot" data-slot="2"><span class="num">3</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
+    <button class="hotSlot" data-slot="3"><span class="num">4</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
+    <button class="hotSlot" data-slot="4"><span class="num">5</span><span class="ico">+</span><span class="rar">EMPTY</span></button>
+  </div>
+  <div id="powerPanel">
+    <div class="powerLine" id="grimoirePower"><div class="t">📖 NO GRIMOIRE</div><div class="s">Defeat the Wizard King, then roll once.</div></div>
+    <div class="powerLine" id="devilPower"><div class="t">契 NO CONTRACT</div><div class="s">Devil contracts appear after forbidden feats.</div></div>
+  </div>
+  <button id="invBtn">🎒 BAG</button>
   <button class="hbtn" id="chestBtn">📦 OPEN CHEST</button>
   <div id="itemInfo"><div class="nm"></div><div class="st"></div></div>
   <div id="buildMenu">
@@ -302,6 +431,76 @@ body.pc #pcHint{display:block}
 </div>
 
 <div id="toast"></div>
+<div id="inventoryGui">
+  <div id="invPanel">
+    <div id="invTop"><h2>Inventory</h2><button id="invClose">CLOSE</button></div>
+    <div class="invGrid">
+      <div class="invSection"><h3>Weapons</h3><div id="invWeapons"></div></div>
+      <div class="invSection"><h3>Loadout</h3><div class="invStats" id="invStats"></div></div>
+    </div>
+  </div>
+</div>
+<div id="adminGui">
+  <div id="adminPanel">
+    <div id="adminTop"><h2>Admin Item Spawner</h2><button id="adminClose">CLOSE</button></div>
+    <div class="adminGrid">
+      <label class="adminField">Category<select id="adminType">
+        <option value="weapon">Weapon</option><option value="armor">Armor</option><option value="grimoire">Grimoire</option><option value="boss">Boss</option><option value="ammo">Ammo</option><option value="material">Material</option><option value="heal">Heal / Shield</option>
+      </select></label>
+      <label class="adminField">Item<select id="adminItem"></select></label>
+      <label class="adminField">Amount<input id="adminAmount" type="number" min="1" max="999" value="1"></label>
+      <label class="adminField">Delivery<select id="adminDelivery"><option value="ground">Spawn near me</option><option value="direct">Give directly</option></select></label>
+    </div>
+    <button id="adminSpawn">SPAWN / GIVE</button>
+  </div>
+</div>
+<div id="upgradeDraft">
+  <div id="upgradeBox">
+    <h2>Choose an Upgrade</h2>
+    <div class="sub">FFA-style modes grant a random card draft every minute.</div>
+    <div id="upgradeCards"></div>
+  </div>
+</div>
+<div id="confirmPickup">
+  <div id="confirmBox">
+    <div id="confirmTitle">Pick Up Weapon?</div>
+    <div id="confirmItems">
+      <div class="confirmItem">
+        <div class="lab">Current</div>
+        <div class="nm" id="confirmCurrentName"></div>
+        <div class="st" id="confirmCurrentStats"></div>
+      </div>
+      <div class="confirmItem">
+        <div class="lab">New</div>
+        <div class="nm" id="confirmNewName"></div>
+        <div class="st" id="confirmNewStats"></div>
+      </div>
+    </div>
+    <div id="confirmActions">
+      <button class="btn green" id="confirmEquip">EQUIP</button>
+      <button class="btn gray" id="confirmCancel">CANCEL</button>
+    </div>
+  </div>
+</div>
+<div id="grimoireRoll">
+  <div id="grimoireBox">
+    <h2>Grimoire Roll</h2>
+    <div class="sub">One roll per match. Choose carefully.</div>
+    <div id="grimoireName">Unknown Grimoire</div>
+    <div id="grimoireStats"></div>
+    <button class="btn green" id="grimoireKeep">KEEP</button>
+  </div>
+</div>
+<div id="contractOffer">
+  <div id="contractBox">
+    <h2>Devil Contract</h2>
+    <div id="contractName"></div>
+    <div id="contractDesc"></div>
+    <div id="contractCost"></div>
+    <button class="btn red" id="contractAccept">ACCEPT</button>
+    <button class="btn gray" id="contractDecline">DECLINE</button>
+  </div>
+</div>
 
 <!-- shown while the device is held in portrait -->
 <div id="rotateHint"><div style="font-size:56px">🔄</div>Rotate to landscape<div class="sub">Sleepy Royale is built for two-handed landscape play</div></div>
@@ -348,7 +547,7 @@ const CFG = {
   guardDmgMul: 0.7,       // guardians hit softer than players
   guardRofMul: 0.55,      // ...and fire slower than their gun allows
   guardAimErr: 0.28,      // ...with shaky aim
-  bossHp: 500,            // RUIN BOSS: spawns when a building is cleared
+  bossHp: 420,            // RUIN BOSS: spawns when a building is cleared
   regenDelay: 5,          // seconds without damage before you regenerate
   regenRate: 4,           // hp per second while regenerating
   autoAimRange: 320,      // aim snaps to enemies closer than this (with LOS)
@@ -358,7 +557,7 @@ const CFG = {
   shieldHits: 2,          // enemy hits the shield absorbs before breaking
   dummyZone: 660,         // top-left practice corner size (px)
   dummyHp: 50,            // practice dummies fall after this much damage
-  netHz: 15,              // state sync rate (multiplayer)
+  netHz: 60,              // state sync rate (multiplayer)
   // storm phases: [holdSeconds, shrinkSeconds, endRadiusFraction, dps]
   // (longer than before — the island is big and walks take time)
   stormPhases: [
@@ -367,19 +566,40 @@ const CFG = {
 };
 
 // Item rarity tiers: every weapon/chest/pickup is color-coded by these.
-// `animated` tiers have no fixed color — rarityCol() cycles the hue, so
-// Exotic gear visibly shimmers through the rainbow everywhere it appears.
+// `animated` tiers have no fixed color. Exotic cycles wildly; Universal
+// stays in a heavenly white/gold/cyan/lavender palette.
 const RARITY = {
-  common:    { name: 'Common',    col: '#b8c0cc' },
-  uncommon:  { name: 'Uncommon',  col: '#4fce5d' },
-  rare:      { name: 'Rare',      col: '#3f8cff' },
-  epic:      { name: 'Epic',      col: '#c45df0' },
-  legendary: { name: 'Legendary', col: '#ff9f2a' },
-  mythic:    { name: 'Mythic',    col: '#ffd94d' },
-  exotic:    { name: 'Exotic',    col: '#ff5fd0', animated: true },
+  common:    { name: 'Common',    col: '#b8c0cc', rank: 1 },
+  uncommon:  { name: 'Uncommon',  col: '#4fce5d', rank: 2 },
+  rare:      { name: 'Rare',      col: '#3f8cff', rank: 3 },
+  epic:      { name: 'Epic',      col: '#c45df0', rank: 4 },
+  legendary: { name: 'Legendary', col: '#ff9f2a', rank: 5 },
+  mythic:    { name: 'Mythic',    col: '#ffd94d', rank: 6 },
+  exotic:    { name: 'Exotic',    col: '#ff5fd0', animated: true, rank: 7, top: true },
+  universal: { name: 'Universal', col: '#ffffff', animated: true, rank: 8, top: true, universal: true },
+  astral:    { name: 'Astral',    col: '#b8fff7', animated: true, rank: 9, top: true, heavenly: true },
+  forbidden: { name: 'Forbidden', col: '#111111', animated: true, rank: 10, top: true, forbidden: true },
+  tuffinity: { name: 'Tuffinity', col: '#fffb8f', animated: true, rank: 11, top: true, tuff: true },
 };
 function rarityCol(r) {
   const def = RARITY[r];
+  if (def.universal) {
+    const t = performance.now() / 650;
+    const heavenly = [
+      [255, 255, 245],
+      [255, 230, 132],
+      [169, 236, 255],
+      [225, 202, 255],
+      [132, 190, 255],
+    ];
+    const i = Math.floor(t) % heavenly.length, j = (i + 1) % heavenly.length, f = t - Math.floor(t);
+    const ease = (1 - Math.cos(f * Math.PI)) / 2;
+    const c = heavenly[i].map((v, k) => Math.round(v + (heavenly[j][k] - v) * ease));
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
+  }
+  if (def.heavenly) return `hsl(${190 + Math.sin(performance.now() / 420) * 35},100%,${72 + Math.sin(performance.now() / 260) * 10}%)`;
+  if (def.forbidden) return `hsl(${280 + Math.sin(performance.now() / 260) * 80},95%,${36 + Math.sin(performance.now() / 180) * 18}%)`;
+  if (def.tuff) return `hsl(${45 + Math.sin(performance.now() / 120) * 45},100%,${65 + Math.sin(performance.now() / 95) * 18}%)`;
   return def.animated ? `hsl(${(performance.now() / 10) % 360},95%,62%)` : def.col;
 }
 // Ammunition types. YOU consume ammo per shot; NPCs never run dry.
@@ -408,14 +628,17 @@ const WEAPONS = {
   // ---- more normal guns (chest + NPC pool) ----
   judge:   { name: 'Judge',           icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 30, rof: 1.6,  range: 560,  spread: 0.02,  pellets: 1, speed: 1000, col: '#ffe9a8', len: 16, wid: 3, kick: 3 },
   twinbite:{ name: 'Twinbite',        icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 12, rof: 2.8,  range: 480,  spread: 0.05,  pellets: 2, speed: 950,  col: '#ffe9a8', len: 14, wid: 3, kick: 2 },
+  nailer:  { name: 'Nailer',          icon: '🔩', rarity: 'common',    ammo: 'light',  dmg: 18, rof: 4.2,  range: 460,  spread: 0.06,  pellets: 1, speed: 900,  col: '#d8d0c0', len: 13, wid: 3, kick: 1.8 },
   wasp:    { name: 'Wasp',            icon: '🔫', rarity: 'common',    ammo: 'light',  dmg: 9,  rof: 9,    range: 380,  spread: 0.11,  pellets: 1, speed: 850,  col: '#ffe9a8', len: 12, wid: 2, kick: 1 },
   drifter: { name: 'Drifter',         icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 16, rof: 5,    range: 600,  spread: 0.04,  pellets: 1, speed: 1100, col: '#d8ffd0', len: 18, wid: 3, kick: 2 },
   bruiser: { name: 'Bruiser',         icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 24, rof: 2.2,  range: 500,  spread: 0.03,  pellets: 1, speed: 1000, col: '#d8ffd0', len: 16, wid: 3, kick: 3 },
   ripsaw:  { name: 'Ripsaw',          icon: '💥', rarity: 'uncommon',  ammo: 'shell',  dmg: 8,  rof: 1.8,  range: 200,  spread: 0.3,   pellets: 4, speed: 750,  col: '#ffd27a', len: 10, wid: 3, kick: 4 },
   static:  { name: 'Static',          icon: '🔫', rarity: 'uncommon',  ammo: 'light',  dmg: 11, rof: 8.5,  range: 420,  spread: 0.08,  pellets: 1, speed: 900,  col: '#d8ffd0', len: 13, wid: 3, kick: 1.2 },
+  burst:   { name: 'Burstline',       icon: '≋', rarity: 'uncommon',  ammo: 'light',  dmg: 14, rof: 4.8,  range: 620,  spread: 0.035, pellets: 3, speed: 1050, col: '#d8ffd0', len: 16, wid: 3, kick: 2.4 },
   longtooth:{ name: 'Longtooth',      icon: '🎯', rarity: 'rare',      ammo: 'light',  dmg: 34, rof: 1.6,  range: 850,  spread: 0.01,  pellets: 1, speed: 1400, col: '#a8d9ff', len: 26, wid: 3, kick: 4 },
   undertaker:{ name: 'Undertaker',    icon: '💥', rarity: 'rare',      ammo: 'shell',  dmg: 8,  rof: 2.2,  range: 250,  spread: 0.22,  pellets: 5, speed: 800,  col: '#ffd27a', len: 12, wid: 3, kick: 4 },
   warhound:{ name: 'Warhound',        icon: '🔫', rarity: 'rare',      ammo: 'light',  dmg: 22, rof: 3.6,  range: 640,  spread: 0.03,  pellets: 1, speed: 1150, col: '#a8d9ff', len: 20, wid: 3, kick: 2.5 },
+  frostbite:{ name: 'Frostbite',      icon: '❄', rarity: 'rare',      ammo: 'energy', dmg: 28, rof: 2.8,  range: 700,  spread: 0.018, pellets: 1, speed: 1200, col: '#9fe6ff', len: 22, wid: 4, kick: 3 },
   minigun: { name: 'Meatgrinder',     icon: '🌀', rarity: 'epic',      ammo: 'light',  dmg: 8,  rof: 16,   range: 520,  spread: 0.12,  pellets: 1, speed: 1000, col: '#ffc46b', len: 16, wid: 3, kick: 1.2, special: true },
   hydra:   { name: 'Hydra',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 13, rof: 4.2,  range: 560,  spread: 0.05,  pellets: 3, speed: 1000, col: '#7dff9b', len: 18, wid: 3, kick: 3,   special: true },
   dragon:  { name: "Dragon's Breath", icon: '🔥', rarity: 'epic',      ammo: 'shell',  dmg: 7,  rof: 11,   range: 210,  spread: 0.34,  pellets: 2, speed: 480,  col: '#ff9b3d', len: 10, wid: 5, kick: 1,   special: true },
@@ -429,44 +652,137 @@ const WEAPONS = {
   hailstorm:{ name: 'Hailstorm',      icon: '🌨', rarity: 'epic', ammo: 'light',  dmg: 10, rof: 2.6, range: 520, spread: 0.09, pellets: 4, speed: 1000, col: '#cfe8ff', len: 14, wid: 3, kick: 3 },
   magma:   { name: 'Magma',           icon: '🌋', rarity: 'epic', ammo: 'shell',  dmg: 8,  rof: 12,  range: 240, spread: 0.3,  pellets: 2, speed: 500,  col: '#ff7b3d', len: 10, wid: 5, kick: 1 },
   falcon:  { name: 'Falcon',          icon: '🦅', rarity: 'epic', ammo: 'light',  dmg: 34, rof: 2.4, range: 620, spread: 0.015, pellets: 1, speed: 1300, col: '#e0a0ff', len: 20, wid: 3, kick: 3.5 },
+  pulse:   { name: 'Pulseburn',       icon: '◆', rarity: 'epic', ammo: 'energy', dmg: 24, rof: 5.5, range: 560, spread: 0.035, pellets: 2, speed: 1100, col: '#d8a0ff', len: 19, wid: 4, kick: 2.5 },
   // ---- more legendary chest weapons ----
   executioner:{ name: 'Executioner',  icon: '🪓', rarity: 'legendary', ammo: 'shell',  dmg: 10, rof: 1.6, range: 300, spread: 0.24, pellets: 6, speed: 850,  col: '#ffc46b', len: 13, wid: 4, kick: 5, big: true },
   tempest: { name: 'Tempest',         icon: '🌪', rarity: 'legendary', ammo: 'light',  dmg: 20, rof: 6.5, range: 620, spread: 0.04, pellets: 1, speed: 1200, col: '#ffc46b', len: 20, wid: 3, kick: 2 },
   kingslayer:{ name: 'Kingslayer',    icon: '🗡', rarity: 'legendary', ammo: 'energy', dmg: 55, rof: 1.4, range: 1000, spread: 0.005, pellets: 1, speed: 1700, col: '#ffdf9e', len: 30, wid: 3, kick: 5, big: true },
+  solstice:{ name: 'Solstice',        icon: '✦', rarity: 'legendary', ammo: 'energy', dmg: 38, rof: 3.4, range: 760, spread: 0.012, pellets: 2, speed: 1500, col: '#fff0a8', len: 28, wid: 4, kick: 5, big: true },
   // ---- more mythic chest weapons ----
   reaper:  { name: 'Reaper',          icon: '⚰️', rarity: 'mythic', ammo: 'energy', dmg: 16, rof: 6,   range: 550,  spread: 0.05, pellets: 1, speed: 1300, col: '#b8ffe8', len: 22, wid: 4, kick: 2, big: true, pierce: true },
   cataclysm:{ name: 'Cataclysm',      icon: '🌊', rarity: 'mythic', ammo: 'shell',  dmg: 18, rof: 1.2, range: 340,  spread: 0.18, pellets: 3, speed: 800,  col: '#7fd4ff', len: 14, wid: 5, kick: 6, big: true, splash: 60 },
   nightfall:{ name: 'Nightfall',      icon: '🌑', rarity: 'mythic', ammo: 'energy', dmg: 110, rof: 0.7, range: 1400, spread: 0.001, pellets: 1, speed: 2200, col: '#c9b6ff', len: 50, wid: 3, kick: 9, big: true },
   sunburst:{ name: 'Sunburst',        icon: '🌞', rarity: 'mythic', ammo: 'energy', dmg: 12, rof: 11,  range: 480,  spread: 0.06, pellets: 1, speed: 1100, col: '#ffe45f', len: 18, wid: 4, kick: 1.2, big: true },
+  eclipse:{ name: 'Eclipse',          icon: '◐', rarity: 'mythic', ammo: 'energy', dmg: 72, rof: 1.6, range: 920, spread: 0.004, pellets: 1, speed: 1800, col: '#e0d3ff', len: 42, wid: 5, kick: 7, big: true, pierce: true },
   // ---- more building specials ----
   earthshaker:{ name: 'Earthshaker',  icon: '🪨', rarity: 'legendary', ammo: 'energy', dmg: 45, rof: 1,  range: 520, spread: 0.02, pellets: 1, speed: 700,  col: '#d9a066', len: 18, wid: 6, kick: 7, big: true, splash: 70, special: true },
   venom:   { name: 'Venom',           icon: '🐍', rarity: 'epic',      ammo: 'light',  dmg: 10, rof: 10, range: 440, spread: 0.1,  pellets: 1, speed: 950,  col: '#8aff5d', len: 14, wid: 3, kick: 1, special: true },
   colossus:{ name: 'Colossus',        icon: '🦣', rarity: 'mythic',    ammo: 'shell',  dmg: 9,  rof: 1,  range: 300, spread: 0.3,  pellets: 8, speed: 800,  col: '#ffd27a', len: 12, wid: 4, kick: 8, big: true, special: true },
   // ---- EXOTIC weapons: only Ruin Bosses drop these; their color (and
-  //      tracers) constantly shift through the rainbow ----
-  stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 30, rof: 7,   range: 700, spread: 0.03,  pellets: 1, speed: 1300, len: 26, wid: 4, kick: 2.5, big: true, special: true, exotic: true },
-  oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 70, rof: 1.4, range: 700, spread: 0.006, pellets: 1, speed: 1500, len: 40, wid: 5, kick: 8, big: true, pierce: true, splash: 70, special: true, exotic: true },
-  starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 16, rof: 2.2, range: 520, spread: 0.18,  pellets: 6, speed: 900,  len: 16, wid: 4, kick: 6, big: true, special: true, exotic: true },
-  singularity:{ name: 'Singularity',  icon: '🌀', rarity: 'exotic', ammo: 'energy', dmg: 50, rof: 1.6, range: 750, spread: 0.005, pellets: 1, speed: 1600, len: 36, wid: 5, kick: 7, big: true, pierce: true, splash: 60, special: true, exotic: true },
-  dragonfire:{ name: 'Dragonfire',    icon: '🐲', rarity: 'exotic', ammo: 'shell',  dmg: 14, rof: 5,   range: 400, spread: 0.12,  pellets: 3, speed: 900,  len: 14, wid: 4, kick: 3, big: true, special: true, exotic: true },
-  zeus:    { name: 'Zeus',            icon: '⚡', rarity: 'exotic', ammo: 'energy', dmg: 130, rof: 0.8, range: 1500, spread: 0.001, pellets: 1, speed: 2400, len: 60, wid: 4, kick: 10, big: true, special: true, exotic: true },
-  mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 20, rof: 9,   range: 520, spread: 0.05,  pellets: 1, speed: 1200, len: 18, wid: 4, kick: 1.5, big: true, special: true, exotic: true },
-  nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 60, rof: 0.9, range: 650, spread: 0.01,  pellets: 1, speed: 800,  len: 24, wid: 6, kick: 9, big: true, splash: 110, special: true, exotic: true },
+  //      tracers) constantly shift color; Universal stays heavenly ----
+  stormc:  { name: 'Stormcaller',     icon: '🌩', rarity: 'exotic', ammo: 'energy', dmg: 68,  rof: 7,   range: 760,  spread: 0.025, pellets: 1, speed: 1450, len: 32, wid: 5, kick: 3,  big: true, special: true, exotic: true, shape: 'storm' },
+  oblivion:{ name: 'Oblivion',        icon: '🕳', rarity: 'exotic', ammo: 'energy', dmg: 150, rof: 1.4, range: 820,  spread: 0.004, pellets: 1, speed: 1550, len: 48, wid: 7, kick: 9,  big: true, pierce: true, splash: 115, special: true, exotic: true, shape: 'void' },
+  starfall:{ name: 'Starfall',        icon: '☀️', rarity: 'exotic', ammo: 'shell',  dmg: 34,  rof: 2.2, range: 580,  spread: 0.15,  pellets: 7, speed: 980,  len: 20, wid: 5, kick: 7,  big: true, special: true, exotic: true, shape: 'comet' },
+  singularity:{ name: 'Singularity',  icon: '🌀', rarity: 'exotic', ammo: 'energy', dmg: 125, rof: 1.6, range: 840,  spread: 0.003, pellets: 1, speed: 1700, len: 44, wid: 6, kick: 8,  big: true, pierce: true, splash: 95, special: true, exotic: true, shape: 'vortex' },
+  dragonfire:{ name: 'Dragonfire',    icon: '🐲', rarity: 'exotic', ammo: 'shell',  dmg: 42,  rof: 5,   range: 450,  spread: 0.10,  pellets: 4, speed: 980,  len: 20, wid: 6, kick: 4,  big: true, special: true, exotic: true, shape: 'flame' },
+  zeus:    { name: 'Zeus',            icon: '⚡', rarity: 'exotic', ammo: 'energy', dmg: 260, rof: 0.55,range: 1650, spread: 0,     pellets: 1, speed: 2600, len: 80, wid: 8, kick: 12, big: true, special: true, exotic: true, shape: 'bolt', charge: 1100 },
+  mirage:  { name: 'Mirage',          icon: '🪞', rarity: 'exotic', ammo: 'light',  dmg: 46,  rof: 9,   range: 580,  spread: 0.04,  pellets: 2, speed: 1300, len: 22, wid: 5, kick: 2,  big: true, special: true, exotic: true, shape: 'mirror' },
+  nova:    { name: 'Nova',            icon: '💫', rarity: 'exotic', ammo: 'energy', dmg: 145, rof: 0.9, range: 720,  spread: 0.006, pellets: 1, speed: 920,  len: 30, wid: 8, kick: 10, big: true, splash: 160, special: true, exotic: true, shape: 'nova' },
+  heavenfang:{ name: 'Heavenfang',     icon: '🌌', rarity: 'universal', ammo: 'energy', dmg: 340, rof: 1.8, range: 1700, spread: 0, pellets: 1, speed: 2600, len: 90, wid: 10, kick: 14, big: true, pierce: true, splash: 190, universal: true, shape: 'nova' },
+  seraphimhowl:{ name: 'Seraphim Howl', icon: '🪽', rarity: 'universal', ammo: 'energy', dmg: 220, rof: 3.4, range: 1100, spread: 0.018, pellets: 3, speed: 2200, len: 58, wid: 7, kick: 8, big: true, splash: 95, universal: true, shape: 'comet' },
+  astralpack:{ name: 'Astral Pack',     icon: '✦', rarity: 'universal', ammo: 'energy', dmg: 120, rof: 7.5, range: 900, spread: 0.055, pellets: 4, speed: 1900, len: 34, wid: 5, kick: 5, big: true, universal: true, shape: 'storm' },
+  ernstbeam:{ name: 'Ernst Beam Ultra', icon: '👑', rarity: 'tuffinity', ammo: 'energy', dmg: 999, rof: 3.2, range: 2400, spread: 0, pellets: 3, speed: 3200, len: 140, wid: 14, kick: 22, big: true, pierce: true, splash: 260, universal: true, shape: 'nova' },
 };
 const SPECIALS = ['minigun', 'hydra', 'dragon', 'railgun', 'deadeye', 'phantom', 'kaboom', 'earthshaker', 'venom', 'colossus'];
 const EXOTICS = ['stormc', 'oblivion', 'starfall', 'singularity', 'dragonfire', 'zeus', 'mirage', 'nova'];
-const NORMAL_GUNS = ['pistol', 'smg', 'shotgun', 'judge', 'wasp', 'drifter', 'bruiser', 'static', 'warhound']; // what NPCs actually carry
+Object.assign(WEAPONS, {
+  pebble: { name: 'Pebbleshot', icon: '•', rarity: 'common', ammo: 'light', dmg: 16, rof: 5.8, range: 390, spread: 0.075, pellets: 1, speed: 850, col: '#d9d0b8', len: 12, wid: 2, kick: 1 },
+  grinder: { name: 'Grinder', icon: '▣', rarity: 'common', ammo: 'light', dmg: 10, rof: 7.5, range: 420, spread: 0.1, pellets: 2, speed: 880, col: '#d9d0b8', len: 11, wid: 2, kick: 1.5 },
+  viper: { name: 'Viper', icon: '⌁', rarity: 'uncommon', ammo: 'light', dmg: 19, rof: 5.4, range: 560, spread: 0.045, pellets: 1, speed: 1050, col: '#a8ffb0', len: 17, wid: 3, kick: 2 },
+  buckler: { name: 'Buckler', icon: '◈', rarity: 'uncommon', ammo: 'shell', dmg: 7, rof: 2.6, range: 230, spread: 0.24, pellets: 6, speed: 780, col: '#ffd27a', len: 10, wid: 3, kick: 4 },
+  arcbolt: { name: 'Arcbolt', icon: '⌁', rarity: 'rare', ammo: 'energy', dmg: 31, rof: 3.2, range: 720, spread: 0.02, pellets: 1, speed: 1250, col: '#8fdcff', len: 24, wid: 4, kick: 3.5 },
+  lancer: { name: 'Lancer', icon: '╍', rarity: 'rare', ammo: 'light', dmg: 38, rof: 1.8, range: 920, spread: 0.008, pellets: 1, speed: 1500, col: '#a8d9ff', len: 30, wid: 3, kick: 5 },
+  shardstorm: { name: 'Shardstorm', icon: '✶', rarity: 'epic', ammo: 'shell', dmg: 11, rof: 2.8, range: 360, spread: 0.19, pellets: 8, speed: 900, col: '#dba6ff', len: 13, wid: 4, kick: 5, big: true },
+  ion: { name: 'Ion Splitter', icon: 'Ⅱ', rarity: 'epic', ammo: 'energy', dmg: 29, rof: 4.5, range: 680, spread: 0.03, pellets: 2, speed: 1250, col: '#cfa8ff', len: 23, wid: 4, kick: 3, big: true },
+  hammer: { name: 'Sunhammer', icon: '☀', rarity: 'legendary', ammo: 'energy', dmg: 88, rof: 0.9, range: 980, spread: 0.004, pellets: 1, speed: 1800, col: '#ffe49a', len: 44, wid: 5, kick: 8, big: true, splash: 45 },
+  monarch: { name: 'Monarch', icon: '♛', rarity: 'legendary', ammo: 'light', dmg: 42, rof: 3.6, range: 760, spread: 0.012, pellets: 2, speed: 1550, col: '#ffdf9e', len: 32, wid: 4, kick: 5, big: true },
+  abyss: { name: 'Abyssal Ray', icon: '◌', rarity: 'mythic', ammo: 'energy', dmg: 95, rof: 1.2, range: 1200, spread: 0.002, pellets: 1, speed: 2100, col: '#c9b6ff', len: 58, wid: 5, kick: 8, big: true, pierce: true },
+  meteor: { name: 'Meteor Choir', icon: '☄', rarity: 'mythic', ammo: 'shell', dmg: 22, rof: 1.4, range: 520, spread: 0.14, pellets: 5, speed: 950, col: '#ffb46b', len: 22, wid: 6, kick: 8, big: true, splash: 55 },
+});
+const NORMAL_GUNS = ['pistol', 'smg', 'shotgun', 'judge', 'nailer', 'wasp', 'drifter', 'bruiser', 'static', 'burst', 'warhound', 'frostbite']; // what NPCs actually carry
 // weapon keys grouped by rarity, exotics excluded (those are boss-only)
 const W_BY = {};
 for (const k in WEAPONS) if (!WEAPONS[k].exotic) (W_BY[WEAPONS[k].rarity] = W_BY[WEAPONS[k].rarity] || []).push(k);
 
+const UPGRADE_RARITIES = {
+  rare: { name: 'Rare', col: '#3f8cff', weight: 60 },
+  epic: { name: 'Epic', col: '#c45df0', weight: 28 },
+  legendary: { name: 'Legendary', col: '#ff9f2a', weight: 12 },
+};
+const UPGRADES = [
+  { id: 'shooting1', rarity: 'rare', name: 'Shooting 1',
+    text: 'Unlocks Aim Assist (10% aim assist) and +5% weapon damage.',
+    apply(g) { g.upgrades.aimAssist = Math.max(g.upgrades.aimAssist, 0.10); g.upgrades.dmgMul += 0.05; } },
+  { id: 'steady', rarity: 'rare', name: 'Steady Hands',
+    text: 'Tightens weapon spread by 8%.',
+    apply(g) { g.upgrades.spreadMul *= 0.92; } },
+  { id: 'runner', rarity: 'rare', name: 'Runner',
+    text: 'Move 7% faster.',
+    apply(g) { g.upgrades.speedMul += 0.07; } },
+  { id: 'fieldmedic', rarity: 'rare', name: 'Field Medic',
+    text: 'Gain +10 max HP and heal 20 HP now.',
+    apply(g) { g.me.maxHp += 10; g.me.hp = Math.min(g.me.maxHp, g.me.hp + 20); } },
+  { id: 'sharpshooter', rarity: 'epic', name: 'Sharpshooter',
+    text: 'Aim assist improves by 15% and weapon damage rises by 8%.',
+    apply(g) { g.upgrades.aimAssist = Math.min(0.45, g.upgrades.aimAssist + 0.15); g.upgrades.dmgMul += 0.08; } },
+  { id: 'quickdraw', rarity: 'epic', name: 'Quickdraw',
+    text: 'Fire rate rises by 10%.',
+    apply(g) { g.upgrades.rofMul += 0.10; } },
+  { id: 'juggernaut', rarity: 'legendary', name: 'Juggernaut',
+    text: 'Gain +25 max HP and 25 shield points.',
+    apply(g) { g.me.maxHp += 25; g.me.hp += 25; g.me.shieldPts = Math.min(MAX_SHIELD, g.me.shieldPts + 25); } },
+  { id: 'deadshot', rarity: 'legendary', name: 'Deadshot',
+    text: 'Aim assist improves by 25% and spread tightens by 15%.',
+    apply(g) { g.upgrades.aimAssist = Math.min(0.60, g.upgrades.aimAssist + 0.25); g.upgrades.spreadMul *= 0.85; } },
+];
+
 // Armor tiers: soak a % of every hit while durability lasts, then break.
 const ARMOR = [null,
   { name: 'Leather Armor',  icon: '🦺', reduce: 0.25, dur: 150, rarity: 'uncommon' },
+  { name: 'Scout Vest',     icon: '🎽', reduce: 0.32, dur: 190, rarity: 'rare' },
   { name: 'Iron Armor',     icon: '🛡', reduce: 0.4,  dur: 250, rarity: 'epic' },
-  { name: 'Guardian Plate', icon: '⚜️', reduce: 0.55, dur: 400, rarity: 'legendary' },
+  { name: 'Storm Mail',     icon: '⛈', reduce: 0.48, dur: 330, rarity: 'mythic' },
+  { name: 'Guardian Plate', icon: '⚜️', reduce: 0.6,  dur: 460, rarity: 'legendary' },
+  { name: 'Exotic Aegis',   icon: '💠', reduce: 0.82, dur: 900, rarity: 'exotic' },
 ];
 const MAX_SHIELD = 100; // shield potions fill a blue bar absorbed before HP
+const GRIMOIRES = {
+  stone: { name: 'Stone Grimoire', rarity: 38, col: '#b8a078', stats: 'Earth magic kit: armor, quake, spires, fortress.', moves: ['Bulwark', 'Quake', 'Spire', 'Fortress'] },
+  flame: { name: 'Flame Grimoire', rarity: 25, col: '#ff7b3d', stats: 'Fire magic kit: burst, wall, meteor, overheat.', moves: ['Nova', 'Fire Wall', 'Meteor', 'Overheat'] },
+  storm: { name: 'Storm Grimoire', rarity: 18, col: '#9fe6ff', stats: 'Lightning storm kit: lance, surge, cloud, thunderfall.', moves: ['Lance', 'Surge', 'Cloud', 'Thunderfall'] },
+  wind: { name: 'Wind Grimoire', rarity: 5, col: '#a8ffcf', stats: 'Wind magic kit: blast, dash, cyclone, sky domain.', moves: ['Blast', 'Dash', 'Cyclone', 'Sky Domain'] },
+  antimagic: { name: 'Anti Magic Grimoire', rarity: 1, col: '#111111', stats: 'Anti magic kit: parry, slash, null field, breaker.', moves: ['Parry', 'Slash', 'Null Field', 'Breaker'] },
+};
+const GRIMOIRE_EVOLVE = ['stone', 'flame', 'storm', 'wind', 'antimagic'];
+const DEVIL_CONTRACTS = [
+  { id: 'fang', name: 'Fang Contract', power: 'Rend Rush', moves: ['Rend', 'Pounce', 'Blood Mark', 'Fang Storm'], cost: 'Cannot revive teammates.', solo: false,
+    desc: '+18% weapon damage, but you cannot help downed teammates.',
+    apply(g) { g.contracts.noRevive = true; g.upgrades.dmgMul += 0.18; } },
+  { id: 'hunger', name: 'Hunger Contract', power: 'Blood Feast', moves: ['Feast', 'Leech', 'Frenzy', 'Devour'], cost: 'Healing is weaker.', solo: true,
+    desc: '+20% move speed, but healing pickups restore half.',
+    apply(g) { g.contracts.weakHeal = true; g.upgrades.speedMul += 0.20; } },
+  { id: 'mirror', name: 'Mirror Contract', power: 'Reflect Halo', moves: ['Halo', 'Shard Burst', 'Backlash', 'Mirror Dome'], cost: 'Armor breaks faster.', solo: true,
+    desc: '+25 shield now, but armor durability drains faster.',
+    apply(g) { g.contracts.brittleArmor = true; g.me.shieldPts = Math.min(MAX_SHIELD, g.me.shieldPts + 25); } },
+  { id: 'blood', name: 'Blood Contract', power: 'Crimson Rite', moves: ['Needle Rain', 'Blood Step', 'Hemolock', 'Crimson Garden'], cost: 'Every cast costs a little HP.', solo: true,
+    desc: 'Gain brutal blood techniques, but devil powers drain your health.',
+    apply(g) { g.contracts.bloodTax = true; g.me.maxHp += 20; g.me.hp += 20; } },
+  { id: 'shadow', name: 'Shadow Contract', power: 'Night Crawl', moves: ['Shade Cut', 'Blink', 'Blackout', 'Abyss Maw'], cost: 'Max shield is reduced.', solo: true,
+    desc: 'Fast shadow techniques, but your shield capacity is lower.',
+    apply(g) { g.contracts.shadowVeil = true; g.me.shieldPts = Math.min(g.me.shieldPts, 50); g.upgrades.speedMul += 0.08; } },
+  { id: 'blade', name: 'Blade Contract', power: 'Iron Requiem', moves: ['Cross Cut', 'Saw Dash', 'Blade Cage', 'Executioner'], cost: 'Passive regen takes longer.',
+    solo: true, desc: 'High damage melee bursts, but recovery is harsher.',
+    apply(g) { g.contracts.slowRegen = true; g.upgrades.dmgMul += 0.10; } },
+  { id: 'curse', name: 'Curse Contract', power: 'Doom Script', moves: ['Hex Bolt', 'Weakness Seal', 'Grave Pulse', 'Doom Bell'], cost: 'You move slower while hurt.',
+    solo: true, desc: 'Debuff and burst curse powers, but wounds weigh you down.',
+    apply(g) { g.contracts.curseWeight = true; g.upgrades.rofMul += 0.06; } },
+];
+const RELICS = {
+  phoenix: { name: 'Phoenix Feather', rarity: 'astral', icon: '🔥', stats: 'Cheats death once and restores 60 HP.' },
+  voidcrown: { name: 'Void Crown', rarity: 'forbidden', icon: '👑', stats: '+12% damage and bigger devil blasts.' },
+  wolffang: { name: 'Wolf Fang Relic', rarity: 'celestial', icon: '☄', stats: 'Wolf XP gains +1 and summon cooldown is shorter.' },
+  brokenhalo: { name: 'Broken Halo', rarity: 'tuffinity', icon: '◎', stats: '+60 shield and heavenly protection on pickup.' },
+};
 
 // Every guardian gets an individual (seeded) name, and every building's
 // boss has its own title — no more army of identical "Ruin Guardian"s.
@@ -476,10 +792,10 @@ const GUARD_NAMES = ['Ash Bandit', 'Rust Prowler', 'Grave Sentry', 'Dust Stalker
 const BOSS_NAMES = ['MOLOCH', 'GRIMJAW', 'VOIDMAW', 'IRONHIDE', 'SHADOWFANG',
   'DREADNOUGHT', 'BONECRUSHER', 'NIGHTTERROR', 'OBLIVAX', 'COLOSSAL REX'];
 
-const EYES    = ['Dot', 'Wide', 'Sleepy'];
-const HAIRS   = ['Spiky', 'Bowl', 'Cap'];
-const OUTFITS = ['Blue', 'Red', 'Green', 'Purple'];
-const OUTFIT_COLORS = ['#2a6de0', '#d93030', '#25a03e', '#8a3fd9'];
+const EYES    = ['Dot', 'Wide', 'Sleepy', 'Angry', 'Cyber', 'Star'];
+const HAIRS   = ['Spiky', 'Bowl', 'Cap', 'Mohawk', 'Long', 'Crown'];
+const OUTFITS = ['Blue', 'Red', 'Green', 'Purple', 'Gold', 'Shadow', 'Ice', 'Lime'];
+const OUTFIT_COLORS = ['#2a6de0', '#d93030', '#25a03e', '#8a3fd9', '#d9a21e', '#2f3545', '#36b8d8', '#89d638'];
 
 /* ═══════════ 2. UTILITIES ═══════════ */
 // mulberry32: tiny seeded PRNG so every client generates the same map
@@ -495,11 +811,13 @@ function seededRng(seed) {
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const dist2 = (ax, ay, bx, by) => (ax - bx) ** 2 + (ay - by) ** 2;
 const $ = id => document.getElementById(id);
+const rarityLabel = r => RARITY[r].name + (RARITY[r].top ? ' - BEST' : '');
 let toastTimer = 0;
 function toast(msg, ms = 1800) {
   const t = $('toast'); t.textContent = msg; t.style.display = 'block';
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', ms);
 }
+let pendingWeaponPickup = null;
 
 /* ═══════════ 3. CHARACTER ART ═══════════
    Players are drawn procedurally from a "look" object
@@ -517,7 +835,7 @@ function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
   // head (skin tone)
   ctx.fillStyle = '#ffd9a8'; ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill();
   // hair styles
-  ctx.fillStyle = '#4a2f18';
+  ctx.fillStyle = look.hairCol || '#4a2f18';
   if (look.hair === 0) {            // spiky: three triangles on top
     for (let i = -1; i <= 1; i++) {
       ctx.beginPath();
@@ -526,10 +844,22 @@ function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
     }
   } else if (look.hair === 1) {     // bowl cut: arc over the head
     ctx.beginPath(); ctx.arc(0, -2, r * 0.62, Math.PI, 2 * Math.PI); ctx.fill();
-  } else {                          // cap: colored beanie band
+  } else if (look.hair === 2) {     // cap: colored beanie band
     ctx.fillStyle = oc;
     ctx.beginPath(); ctx.arc(0, -3, r * 0.6, Math.PI, 2 * Math.PI); ctx.fill();
     ctx.fillRect(-r * 0.6, -5, r * 1.2, 4);
+  } else if (look.hair === 3) {     // mohawk
+    ctx.fillStyle = '#f0d060';
+    ctx.beginPath(); ctx.moveTo(-3, -r * 0.2); ctx.lineTo(0, -r * 1.15); ctx.lineTo(3, -r * 0.2); ctx.fill();
+  } else if (look.hair === 4) {     // long
+    ctx.fillStyle = look.hairCol || '#2b1a10';
+    ctx.beginPath(); ctx.ellipse(0, 5, r * 0.72, r * 0.85, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ffd9a8'; ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill();
+  } else {                          // crown
+    ctx.fillStyle = '#ffd94d';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.55, -r * 0.55); ctx.lineTo(-r * 0.3, -r * 1.0); ctx.lineTo(0, -r * 0.58);
+    ctx.lineTo(r * 0.3, -r * 1.0); ctx.lineTo(r * 0.55, -r * 0.55); ctx.closePath(); ctx.fill();
   }
   // eye styles
   ctx.fillStyle = '#222';
@@ -540,9 +870,50 @@ function drawCharacter(ctx, x, y, angle, look, r = CFG.playerR) {
     ctx.beginPath(); ctx.arc(-4, 1, 4, 0, 7); ctx.arc(4, 1, 4, 0, 7); ctx.fill();
     ctx.fillStyle = '#222';
     ctx.beginPath(); ctx.arc(-4, 1, 1.8, 0, 7); ctx.arc(4, 1, 1.8, 0, 7); ctx.fill();
-  } else {                          // sleepy: half-closed lines
+  } else if (look.eye === 2) {      // sleepy: half-closed lines
     ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(-7, 1); ctx.lineTo(-2, 1); ctx.moveTo(2, 1); ctx.lineTo(7, 1); ctx.stroke();
+  } else if (look.eye === 3) {      // angry
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(-8, -1); ctx.lineTo(-2, 2); ctx.moveTo(8, -1); ctx.lineTo(2, 2); ctx.stroke();
+  } else if (look.eye === 4) {      // cyber
+    ctx.strokeStyle = '#66f6ff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.rect(-9, -3, 7, 5); ctx.rect(2, -3, 7, 5); ctx.stroke();
+  } else {                          // star
+    ctx.fillStyle = '#ffd94d';
+    ctx.beginPath(); ctx.arc(-4, 0, 2.7, 0, 7); ctx.arc(4, 0, 2.7, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawArmorOverlay(ctx, x, y, angle, tier, r = CFG.playerR) {
+  if (!tier || !ARMOR[tier]) return;
+  const A = ARMOR[tier], col = rarityCol(A.rarity);
+  ctx.save(); ctx.translate(x, y);
+  ctx.rotate(angle);
+  const metal = tier <= 2 ? '#8aa0b8' : tier <= 4 ? '#b8c3d8' : tier === 5 ? '#e1b45d' : col;
+  ctx.fillStyle = metal; ctx.strokeStyle = '#111a'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.72, -r * 0.28); ctx.lineTo(-r * 0.42, r * 0.58); ctx.lineTo(0, r * 0.78);
+  ctx.lineTo(r * 0.42, r * 0.58); ctx.lineTo(r * 0.72, -r * 0.28); ctx.lineTo(r * 0.34, -r * 0.48);
+  ctx.lineTo(0, -r * 0.28); ctx.lineTo(-r * 0.34, -r * 0.48); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = col; ctx.globalAlpha = 0.55;
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.24); ctx.lineTo(-r * 0.22, r * 0.42); ctx.lineTo(0, r * 0.58); ctx.lineTo(r * 0.22, r * 0.42); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = metal; ctx.strokeStyle = '#111a';
+  for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.ellipse(side * r * 0.78, -r * 0.22, r * 0.24, r * 0.16, side * 0.45, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  if (tier >= 3) {
+    ctx.fillStyle = col;
+    ctx.fillRect(-r * 0.48, -r * 0.72, r * 0.96, r * 0.12);
+  }
+  if (ARMOR[tier].rarity === 'exotic') {
+    ctx.rotate(-angle);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = rarityCol('exotic'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r + 9, 0, 7); ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
@@ -563,6 +934,9 @@ function showScreen(id) {
   if (id) $(id).classList.add('active');
   $('hud').classList.toggle('active', id === null); // HUD only during a match
 }
+function isFfaStyleMode(mode) {
+  return mode === 'ffa' || mode === 'team1' || mode === 'team2';
+}
 function saveProfile() {
   myName = $('nameInput').value.trim().slice(0, 12) || myName;
   try { localStorage.setItem('sleepyRoyale', JSON.stringify({ look: myLook, name: myName })); } catch (e) {}
@@ -570,6 +944,7 @@ function saveProfile() {
 
 // --- customization screen ---
 const custCtx = $('custPrev').getContext('2d');
+let adminUnlocked = false;
 function renderCustPreview() {
   custCtx.clearRect(0, 0, 180, 180);
   custCtx.fillStyle = '#223148'; custCtx.fillRect(0, 0, 180, 180);
@@ -606,7 +981,10 @@ document.querySelectorAll('.modeBtn').forEach(b => b.addEventListener('click', (
 $('btnToMenu').addEventListener('click', () => { game = null; net.disconnect(); showScreen('scrMenu'); });
 $('btnAgain').addEventListener('click', () => {
   game = null;
-  if (net.party) showScreen('scrLobby'); else startSoloMatch();
+  if (net.party) {
+    net.send({ t: 'reset_match' });
+    showScreen('scrLobby');
+  } else startSoloMatch();
 });
 
 // --- lobby rendering (shared party lobby + host custom-match controls) ---
@@ -615,7 +993,10 @@ function renderLobby() {
   $('lobbyCode').textContent = p.code;
   const isHost = p.hostId === net.selfId;
   $('lobbyHint').textContent = isHost
-    ? (p.mode === 'solos' ? 'Solos: everyone for themselves. Tap START when ready.'
+    ? (p.mode === 'ffa' ? 'Free for All: unlimited joins, no bots, no teams, upgrade cards every minute.'
+       : p.mode === 'team1' ? 'Team 1: everyone is allied, no normal bots, FFA loot and upgrades, co-op against ruins and bosses.'
+       : p.mode === 'team2' ? 'Team 2: unlimited joins, no normal bots, FFA loot and upgrades, two teams. Tap a player to switch team.'
+       : p.mode === 'solos' ? 'Solos: everyone for themselves. Tap START when ready.'
        : `Mode ${p.mode}: tap a player to switch their team.`)
     : 'Waiting for the host to start the match…';
   $('btnStartMatch').style.display = isHost ? '' : 'none';
@@ -632,13 +1013,23 @@ function renderLobby() {
     const nm = document.createElement('span'); nm.className = 'nm';
     nm.textContent = pl.name + (pl.id === net.selfId ? ' (you)' : '');
     const tag = document.createElement('span');
-    if (p.mode === 'solos') { tag.className = 'teamTag teamS'; tag.textContent = 'SOLO'; }
+    if (p.mode === 'ffa') {
+      const allied = net.allies.has(pl.id);
+      tag.className = 'teamTag ' + (allied ? 'teamA' : 'teamF');
+      tag.textContent = allied ? 'ALLY' : 'FFA';
+    }
+    else if (p.mode === 'solos') { tag.className = 'teamTag teamS'; tag.textContent = 'SOLO'; }
     else { tag.className = 'teamTag team' + pl.team; tag.textContent = 'TEAM ' + pl.team; }
     row.appendChild(cv); row.appendChild(nm);
     if (pl.id === p.hostId) { const st = document.createElement('span'); st.className = 'hostStar'; st.textContent = '★'; row.appendChild(st); }
     row.appendChild(tag);
     // host taps a player row to flip them between team A and B
-    if (isHost && p.mode !== 'solos') {
+    if (p.mode === 'ffa' && pl.id !== net.selfId) {
+      row.addEventListener('click', () => {
+        if (net.allies.has(pl.id)) net.allies.delete(pl.id); else net.allies.add(pl.id);
+        renderLobby();
+      });
+    } else if (isHost && !['solos', 'ffa', 'team1'].includes(p.mode)) {
       row.addEventListener('click', () => net.send({ t: 'assign_team', playerId: pl.id, team: pl.team === 'A' ? 'B' : 'A' }));
     }
     list.appendChild(row);
@@ -651,7 +1042,7 @@ function renderLobby() {
    host/port; when opened as a local file it targets localhost:8080.
    Solo mode never touches the network. */
 const net = {
-  ws: null, selfId: null, party: null, connecting: false,
+  ws: null, selfId: null, party: null, connecting: false, allies: new Set(),
   url() {
     if (location.protocol.startsWith('http'))
       return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
@@ -673,7 +1064,7 @@ const net = {
       this.ws = null;
     };
   },
-  disconnect() { this.party = null; if (this.ws) { this.ws.close(); this.ws = null; } },
+  disconnect() { this.party = null; this.allies.clear(); if (this.ws) { this.ws.close(); this.ws = null; } },
   send(obj) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj)); },
   onMessage(m) {
     switch (m.t) {
@@ -684,6 +1075,10 @@ const net = {
         if (this.party) { this.party = m.party; renderLobby(); } break;
       case 'match_start':   // everyone builds the same map from m.seed
         startNetworkMatch(m); break;
+      case 'match_reset':
+        this.party = m.party;
+        game = null;
+        renderLobby(); showScreen('scrLobby'); break;
       case 'peer_state':  if (game) applyPeerState(m); break;
       case 'peer_shoot':  if (game) applyPeerShoot(m); break;
       case 'peer_build':  if (game) placeBuild(m.gx, m.gy, m.piece, m.mat, false); break;
@@ -859,9 +1254,10 @@ function makePlayer(id, name, look, team, x, y, isBot) {
     shieldHits: 0,          // >0 = a frontal shield is up (see deployShield)
     shieldPts: 0,           // blue bonus-HP from shield potions (absorbed first)
     armorTier: 0, armorDur: 0, // equipped ARMOR tier + remaining durability
-    weapon: 'pistol', lastShot: 0, hurtFlash: 0,
+    downed: false, downT: 0, grimoire: null, antiReady: 0,
+    weapon: 'pistol', weapons: ['pistol'], activeSlot: 0, lastShot: 0, hurtFlash: 0, chargeShot: null,
     // remote interpolation targets
-    tx: x, ty: y, taim: -Math.PI / 2,
+    tx: x, ty: y, px: x, py: y, vx: 0, vy: 0, taim: -Math.PI / 2, lastStateT: performance.now(),
     // bot AI state
     ai: isBot ? { mode: 'wander', wx: x, wy: y, think: 0 } : null,
   };
@@ -882,6 +1278,13 @@ function baseGame(seed, mode) {
     lastNetSend: 0, nearAction: null,
     buildMode: false, piece: 'wall', mat: 'wood',
     ammo: { ...CFG.startAmmo }, kills: 0,
+    upgrades: { aimAssist: 0, dmgMul: 0, rofMul: 0, spreadMul: 1, speedMul: 0, picks: [] },
+    xp: 0, level: 1, nextLevelXp: 100,
+    contracts: {}, contractOffered: false, grimoireRolled: false, ruinBossKills: 0, heavenlySpawned: false,
+    relics: [], bossIntro: null,
+    grimoireTower: { x: CFG.world / 2, y: CFG.world / 2, open: false },
+    nextUpgradeAt: isFfaStyleMode(mode) ? performance.now() + 60000 : Infinity,
+    upgradeOpen: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
     // practice range: bare training figures in the top-left corner —
     // shoot them to warm up; they get back up after a few seconds
@@ -903,11 +1306,13 @@ function baseGame(seed, mode) {
 }
 
 // 3-5 guardians per building — a whole crew defending the compound.
+// FFA-style party modes keep ruins lighter: only two guardians per ruin.
 // Clear them ALL and that building's RUIN BOSS emerges (see guardianDied).
 function spawnGuardians(g) {
   g.map.buildings.forEach((b, i) => {
     const rng = seededRng(g.seed + 71 * i); // same crew on every client
-    for (let j = 0; j < b.occupants; j++) {
+    const occupants = isFfaStyleMode(g.mode) ? 2 : b.occupants;
+    for (let j = 0; j < occupants; j++) {
       const gu = makePlayer('guard' + i + '_' + j, GUARD_NAMES[(rng() * GUARD_NAMES.length) | 0],
         { eye: 1, hair: (rng() * 3) | 0, outfit: 1 }, 'G',
         b.x0 + 80 + rng() * (b.x1 - b.x0 - 160),
@@ -953,6 +1358,7 @@ function startSoloMatch() {
     g.players['bot' + i] = bot;
   }
   spawnGuardians(g);
+  spawnWizardBoss(g);
   game = g; showScreen(null); resetHudState();
 }
 
@@ -968,6 +1374,7 @@ function startNetworkMatch(m) {
     if (pl.id === net.selfId) g.me = p;
   });
   spawnGuardians(g);
+  spawnWizardBoss(g);
   game = g; showScreen(null); resetHudState();
 }
 
@@ -976,6 +1383,315 @@ function resetHudState() {
   $('buildMenu').classList.remove('show'); $('buildBtn').classList.remove('on');
   $('killFeed').innerHTML = ''; $('itemInfo').style.display = 'none';
   $('chestBtn').classList.remove('show');
+  $('upgradeDraft').classList.remove('show'); $('upgradeCards').innerHTML = '';
+  closePickupConfirm();
+}
+
+function weaponStatLine(key) {
+  const w = WEAPONS[key];
+  return `DMG ${w.dmg}${w.pellets > 1 ? 'x' + w.pellets : ''} / ${w.rof}/s / ${AMMO[w.ammo].name}`;
+}
+function showPickupConfirm(pk) {
+  if (!game || !pk || pk.kind !== 'weapon') return;
+  if (pendingWeaponPickup && pendingWeaponPickup !== pk.id) closePickupConfirm();
+  pendingWeaponPickup = pk.id;
+  input.fire = false;
+  game.me.chargeShot = null;
+  const cur = WEAPONS[game.me.weapon], next = WEAPONS[pk.weapon];
+  $('confirmTitle').textContent = game.me.weapons.length >= 5 ? 'Replace Active Weapon?' : 'Pick Up Weapon?';
+  $('confirmCurrentName').textContent = cur.icon + ' ' + cur.name;
+  $('confirmCurrentName').style.color = rarityCol(cur.rarity);
+  $('confirmCurrentStats').textContent = rarityLabel(cur.rarity) + ' / ' + weaponStatLine(game.me.weapon);
+  $('confirmNewName').textContent = next.icon + ' ' + next.name;
+  $('confirmNewName').style.color = rarityCol(next.rarity);
+  $('confirmNewStats').textContent = rarityLabel(next.rarity) + ' / ' + weaponStatLine(pk.weapon);
+  $('confirmPickup').classList.add('show');
+}
+function closePickupConfirm() {
+  pendingWeaponPickup = null;
+  const el = $('confirmPickup');
+  if (el) el.classList.remove('show');
+}
+function confirmWeaponPickup() {
+  const id = pendingWeaponPickup;
+  closePickupConfirm();
+  if (id) takePickup(id, true, true);
+}
+function selectWeaponSlot(i) {
+  if (!game || !game.me.alive) return;
+  const w = game.me.weapons[i];
+  if (!w) return;
+  game.me.activeSlot = i;
+  game.me.weapon = w;
+  game.me.chargeShot = null;
+}
+function addWeaponToInventory(key, confirmed = false) {
+  const inv = game.me.weapons;
+  const existing = inv.indexOf(key);
+  if (existing >= 0) { selectWeaponSlot(existing); return true; }
+  if (inv.length < 5) {
+    inv.push(key);
+    selectWeaponSlot(inv.length - 1);
+    return true;
+  }
+  if (!confirmed) return false;
+  inv[game.me.activeSlot] = key;
+  selectWeaponSlot(game.me.activeSlot);
+  return true;
+}
+function dropWeaponSlot(i) {
+  if (!game || i === 0 || !game.me.weapons[i]) return;
+  const key = game.me.weapons[i];
+  spawnItem({ id: 'dropwpn_' + performance.now(), x: game.me.x + Math.cos(game.me.aim) * 38, y: game.me.y + Math.sin(game.me.aim) * 38, kind: 'weapon', weapon: key });
+  game.me.weapons.splice(i, 1);
+  game.me.activeSlot = Math.min(game.me.activeSlot, game.me.weapons.length - 1);
+  selectWeaponSlot(game.me.activeSlot);
+  renderInventoryGui();
+}
+function toggleInventoryGui(force) {
+  if (!game) return;
+  const el = $('inventoryGui');
+  const show = force === undefined ? !el.classList.contains('show') : force;
+  el.classList.toggle('show', show);
+  if (show) renderInventoryGui();
+}
+function renderInventoryGui() {
+  if (!game || !$('inventoryGui').classList.contains('show')) return;
+  const wrap = $('invWeapons'); wrap.innerHTML = '';
+  game.me.weapons.forEach((key, i) => {
+    const w = WEAPONS[key], col = rarityCol(w.rarity);
+    const row = document.createElement('div'); row.className = 'invWeapon'; row.style.borderLeftColor = col;
+    row.innerHTML = `<div class="ico">${w.icon}</div><div><div class="nm" style="color:${col}">${i + 1}. ${w.name}</div><div class="st">${rarityLabel(w.rarity)} · DMG ${w.dmg}${w.pellets > 1 ? 'x' + w.pellets : ''} · ${w.rof}/s · ${AMMO[w.ammo].name}</div></div>`;
+    const eq = document.createElement('button'); eq.textContent = i === game.me.activeSlot ? 'EQUIPPED' : 'EQUIP'; eq.addEventListener('click', () => { selectWeaponSlot(i); renderInventoryGui(); });
+    const dr = document.createElement('button'); dr.className = 'invDrop'; dr.textContent = 'DROP'; dr.disabled = i === 0; dr.addEventListener('click', () => dropWeaponSlot(i));
+    row.appendChild(eq); row.appendChild(dr); wrap.appendChild(row);
+  });
+  const A = game.me.armorTier ? ARMOR[game.me.armorTier] : null;
+  const gr = game.me.grimoire ? GRIMOIRES[game.me.grimoire] : null;
+  const devil = DEVIL_CONTRACTS.find(c => game.contracts[c.id]);
+  const wolfText = `Tier ${game.wolfTier || 0} · XP ${game.wolfXp || 0}/${wolfNextXp()}`;
+  $('invStats').innerHTML = [
+    ['Armor', A ? `${A.icon} ${A.name} · ${game.me.armorDur} durability` : 'None'],
+    ['Grimoire', gr ? gr.name + ' · ' + gr.moves.join(', ') : 'None'],
+    ['Devil', devil ? devil.name + ' · ' + devil.moves.join(', ') : 'None'],
+    ['Relics', game.relics.length ? game.relics.map(k => RELICS[k].name).join(', ') : 'None'],
+    ['Wolves', wolfText],
+    ['Ammo', `Light ${game.ammo.light} · Shell ${game.ammo.shell} · Energy ${game.ammo.energy}`],
+    ['Materials', `Wood ${game.mats.wood} · Brick ${game.mats.brick} · Metal ${game.mats.metal}`],
+  ].map(([k, v]) => `<div class="invStat"><b>${k}</b>${v}</div>`).join('');
+}
+function adminOptionsFor(type) {
+  if (type === 'weapon') return Object.keys(WEAPONS).map(k => [k, WEAPONS[k].name + ' (' + rarityLabel(WEAPONS[k].rarity) + ')']);
+  if (type === 'armor') return ARMOR.map((a, i) => a && [String(i), a.name]).filter(Boolean);
+  if (type === 'grimoire') return Object.keys(GRIMOIRES).map(k => [k, GRIMOIRES[k].name]);
+  if (type === 'boss') return [['herrernst', 'Herr Ernst'], ['wizard', 'Wizard King'], ['heavenly', 'Heavenly Restrictor'], ['ruin', 'Ruin Boss']];
+  if (type === 'ammo') return Object.keys(AMMO).map(k => [k, AMMO[k].name]);
+  if (type === 'material') return ['wood', 'brick', 'metal'].map(k => [k, k]);
+  return [['heal', 'Medkit +80 HP'], ['pot', 'Shield Potion +50']];
+}
+function refreshAdminItems() {
+  const type = $('adminType').value, sel = $('adminItem');
+  sel.innerHTML = adminOptionsFor(type).map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+}
+function openAdminPanel() {
+  if (!game) return toast('Start a match first');
+  if (!adminUnlocked) {
+    const key = prompt('Admin key');
+    if (key !== 'cloverisdatuffest') return toast('Wrong admin key');
+    adminUnlocked = true; toast('Admin unlocked');
+  }
+  refreshAdminItems();
+  $('adminGui').classList.add('show');
+}
+function adminSpawn() {
+  if (!game || !adminUnlocked) return;
+  const type = $('adminType').value, item = $('adminItem').value, amount = clamp(+$('adminAmount').value || 1, 1, 999);
+  const direct = $('adminDelivery').value === 'direct';
+  const dropAt = i => ({ x: clamp(game.me.x + 44 + i * 18, 30, CFG.world - 30), y: clamp(game.me.y + 22 + i * 10, 30, CFG.world - 30) });
+  if (direct) {
+    if (type === 'weapon') addWeaponToInventory(item, true);
+    else if (type === 'armor') { game.me.armorTier = +item; game.me.armorDur = ARMOR[+item].dur; }
+    else if (type === 'grimoire') equipGrimoire(item);
+    else if (type === 'boss') spawnAdminBoss(item);
+    else if (type === 'ammo') game.ammo[item] += CFG.ammoPack[item] * amount;
+    else if (type === 'material') game.mats[item] += amount;
+    else if (item === 'heal') game.me.hp = Math.min(game.me.maxHp, game.me.hp + 80 * amount);
+    else addShieldPts(50 * amount);
+  } else {
+    for (let i = 0; i < amount; i++) {
+      const p = dropAt(i);
+      if (type === 'weapon') spawnItem({ id: 'admin_w_' + performance.now() + '_' + i, ...p, kind: 'weapon', weapon: item });
+      else if (type === 'armor') spawnItem({ id: 'admin_a_' + performance.now() + '_' + i, ...p, kind: 'armor', tier: +item });
+      else if (type === 'grimoire') spawnItem({ id: 'admin_g_' + performance.now() + '_' + i, ...p, kind: 'grimoire', grimoire: item });
+      else if (type === 'boss') spawnAdminBoss(item);
+      else if (type === 'ammo') spawnItem({ id: 'admin_am_' + performance.now() + '_' + i, ...p, kind: 'ammo', ammo: item });
+      else if (type === 'material') spawnItem({ id: 'admin_m_' + performance.now() + '_' + i, ...p, kind: 'mat', mat: item, amount });
+      else spawnItem({ id: 'admin_h_' + performance.now() + '_' + i, ...p, kind: item, amount: item === 'heal' ? 80 : 50 });
+    }
+  }
+  toast('Admin spawned: ' + item);
+  renderInventoryGui();
+}
+function grantAdminBossProtection() {
+  const until = performance.now() + 30000;
+  for (const id in game.players) {
+    const p = game.players[id];
+    if (!p.guard) { p.protectedUntil = until; addEffect('shield', p.x, p.y, true); }
+  }
+  toast('30s protection for everyone', 2600);
+}
+function spawnAdminBoss(kind, x = CFG.world / 2, y = CFG.world / 2) {
+  let b;
+  x = CFG.world / 2; y = CFG.world / 2;
+  if (kind === 'herrernst') {
+    b = makePlayer('herrErnst_' + performance.now(), 'HERR ERNST', { eye: 1, hair: 4, outfit: 4, hairCol: '#ffe680' }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.adminBoss = true; b.heavenly = true; b.weapon = 'ernstbeam';
+    b.hp = b.maxHp = 12000; b.dmgMul = 1.25; b.home = { x, y };
+    b.ernst = true;
+    addKillFeed('👑 HERR ERNST ist gespawned. Viel Glück.');
+    toast('HERR ERNST spawned', 2600);
+  } else if (kind === 'wizard') {
+    b = makePlayer('adminWizard_' + performance.now(), 'WIZARD KING', { eye: 4, hair: 5, outfit: 6 }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.wizard = true; b.weapon = 'zeus'; b.hp = b.maxHp = 1150; b.dmgMul = 0.75; b.home = { x, y }; b.lastAoE = 0;
+  } else if (kind === 'heavenly') {
+    b = makePlayer('adminHeavenly_' + performance.now(), 'HEAVENLY RESTRICTOR', { eye: 5, hair: 5, outfit: 4 }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.heavenly = true; b.weapon = 'heavenfang'; b.hp = b.maxHp = 1600; b.dmgMul = 0.85; b.home = { x, y };
+  } else {
+    b = makePlayer('adminRuinBoss_' + performance.now(), 'ADMIN RUIN BOSS', { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
+    b.guard = true; b.boss = true; b.adminBoss = true; b.weapon = 'dragonfire'; b.hp = b.maxHp = CFG.bossHp; b.home = { x, y };
+  }
+  game.players[b.id] = b;
+  grantAdminBossProtection();
+  startBossIntro(b, kind === 'herrernst' ? 'HERR ERNST' : b.name);
+  addEffect(kind === 'herrernst' ? 'heaven' : 'boom', x, y, true);
+  return b;
+}
+function startBossIntro(b, title) {
+  game.bossIntro = { title, sub: b.ernst ? 'THE TUFFINITY FINAL EXAM' : 'ADMIN BOSS ARRIVAL', life: 4, maxLife: 4 };
+  game.shake = Math.max(game.shake, 18);
+  for (let i = 0; i < 10; i++) addEffect('skybeam', b.x + (Math.random() - 0.5) * 520, b.y + (Math.random() - 0.5) * 520, true);
+}
+function awardXP(n, reason) {
+  if (!game || !game.me) return;
+  game.xp += n;
+  while (game.xp >= game.nextLevelXp) {
+    game.xp -= game.nextLevelXp;
+    game.level++;
+    game.nextLevelXp = Math.round(game.nextLevelXp * 1.35 + 40);
+    game.me.maxHp += 5;
+    game.me.hp = Math.min(game.me.maxHp, game.me.hp + 20);
+    game.mats.wood += 20; game.mats.brick += 12; game.mats.metal += 6;
+    toast('LEVEL ' + game.level + '! +HP and supplies', 2200);
+  }
+  if (reason) addKillFeed('+' + n + ' XP · ' + reason);
+}
+function rollGrimoire() {
+  if (game.grimoireRolled) return toast('You already rolled a grimoire this match');
+  game.grimoireRolled = true;
+  const rng = seededRng(game.seed + 5555 + (game.me.id || 'me').length * 17);
+  const total = Object.values(GRIMOIRES).reduce((s, g) => s + g.rarity, 0);
+  let roll = rng() * total, key = 'flame';
+  for (const k in GRIMOIRES) { roll -= GRIMOIRES[k].rarity; if (roll <= 0) { key = k; break; } }
+  game.pendingGrimoire = key;
+  const gr = GRIMOIRES[key];
+  $('grimoireName').textContent = gr.name;
+  $('grimoireName').style.color = gr.col;
+  $('grimoireStats').textContent = gr.stats;
+  $('grimoireRoll').classList.add('show');
+}
+function keepRolledGrimoire() {
+  if (!game || !game.pendingGrimoire) return;
+  const key = game.pendingGrimoire;
+  game.pendingGrimoire = null;
+  $('grimoireRoll').classList.remove('show');
+  equipGrimoire(key);
+}
+function equipGrimoire(key) {
+  const old = game.me.grimoire;
+  if (old) spawnItem({ id: 'grim_' + performance.now(), x: game.me.x + 24, y: game.me.y, kind: 'grimoire', grimoire: old });
+  game.me.grimoire = key;
+  game.me.antiReady = 0;
+  toast('📖 ' + GRIMOIRES[key].name);
+  awardXP(key === 'antimagic' ? 140 : key === 'wind' ? 90 : 45, 'grimoire');
+}
+function evolveGrimoire() {
+  if (!game || !game.me.grimoire) return;
+  const idx = GRIMOIRE_EVOLVE.indexOf(game.me.grimoire);
+  if (idx < 0 || idx >= GRIMOIRE_EVOLVE.length - 1) return toast('Grimoire already fully awakened');
+  const next = GRIMOIRE_EVOLVE[idx + 1], old = GRIMOIRES[game.me.grimoire].name;
+  game.me.grimoire = next;
+  game.me.antiReady = 0;
+  addEffect('heaven', game.me.x, game.me.y, true);
+  toast(old + ' evolved into ' + GRIMOIRES[next].name, 2600);
+  addKillFeed('📖 GRIMOIRE EVOLVED: ' + GRIMOIRES[next].name.toUpperCase());
+}
+function offerDevilContract() {
+  if (!game || game.contractOffered || game.mode === 'solo') return;
+  game.contractOffered = true;
+  const pool = DEVIL_CONTRACTS.filter(c => c.solo || game.mode !== 'solo');
+  const c = pool[(seededRng(game.seed + 7777)() * pool.length) | 0];
+  game.pendingContract = c;
+  $('contractName').textContent = c.name;
+  $('contractDesc').textContent = c.desc + ' Powers: ' + c.moves.join(' / ');
+  $('contractCost').textContent = 'Sacrifice: ' + c.cost;
+  $('contractOffer').classList.add('show');
+}
+function acceptDevilContract() {
+  if (!game || !game.pendingContract) return;
+  const c = game.pendingContract; game.pendingContract = null;
+  $('contractOffer').classList.remove('show');
+  c.apply(game); toast('Contract accepted: ' + c.name, 2400);
+}
+function declineDevilContract() {
+  if (game) game.pendingContract = null;
+  $('contractOffer').classList.remove('show');
+}
+
+function weightedUpgradeRarity(rng) {
+  const total = Object.values(UPGRADE_RARITIES).reduce((sum, r) => sum + r.weight, 0);
+  let roll = rng() * total;
+  for (const key in UPGRADE_RARITIES) {
+    roll -= UPGRADE_RARITIES[key].weight;
+    if (roll <= 0) return key;
+  }
+  return 'rare';
+}
+function drawUpgradeOptions() {
+  const rng = seededRng(game.seed + 9001 + game.upgrades.picks.length * 97);
+  const chosen = [];
+  for (let tries = 0; chosen.length < 3 && tries < 50; tries++) {
+    const rarity = weightedUpgradeRarity(rng);
+    const pool = UPGRADES.filter(u => u.rarity === rarity && !chosen.includes(u));
+    const pick = pool[(rng() * pool.length) | 0];
+    if (pick) chosen.push(pick);
+  }
+  while (chosen.length < 3) chosen.push(UPGRADES[(rng() * UPGRADES.length) | 0]);
+  return chosen;
+}
+function showUpgradeDraft() {
+  if (!game || game.upgradeOpen || !isFfaStyleMode(game.mode) || !game.me.alive) return;
+  game.upgradeOpen = true;
+  input.fire = false;
+  const wrap = $('upgradeCards'); wrap.innerHTML = '';
+  for (const up of drawUpgradeOptions()) {
+    const rar = UPGRADE_RARITIES[up.rarity];
+    const card = document.createElement('button');
+    card.className = 'upgradeCard';
+    card.style.borderColor = rar.col;
+    card.innerHTML = `<div class="rar" style="color:${rar.col}">${rar.name}</div><div class="nm">${up.name}</div><div class="st">${up.text}</div>`;
+    card.addEventListener('click', () => chooseUpgrade(up));
+    wrap.appendChild(card);
+  }
+  $('upgradeDraft').classList.add('show');
+}
+function chooseUpgrade(up) {
+  if (!game || !game.upgradeOpen) return;
+  up.apply(game);
+  game.upgrades.picks.push(up.id);
+  game.upgradeOpen = false;
+  game.nextUpgradeAt = performance.now() + 60000;
+  $('upgradeDraft').classList.remove('show');
+  toast('Upgrade: ' + up.name);
 }
 
 /* ═══════════ 7. TOUCH INPUT ═══════════
@@ -1057,7 +1773,7 @@ canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
    Auto-enabled on devices with a fine pointer and no touch screen, or
    the moment a movement key is pressed. Touch devices are unaffected.
    Controls: WASD/arrows move · mouse aims · click shoots (or places a
-   piece in build mode) · E interact · B build · F shield · 1-3 piece
+   piece in build mode) · E interact · B build · F shield · R wolves · 1-3 piece
    · 4-6 material. Auto-aim is disabled — the mouse IS the aim. */
 const pc = { active: false, keys: {}, mx: 0, my: 0 };
 function enablePcMode() {
@@ -1072,18 +1788,24 @@ if (window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matche
 const MOVE_KEYS = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0], arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0] };
 window.addEventListener('keydown', e => {
   if (e.target && e.target.tagName === 'INPUT') return; // typing a name/code
+  if (e.key === 'F2') { e.preventDefault(); openAdminPanel(); return; }
   const k = e.key.toLowerCase();
   if (MOVE_KEYS[k]) { enablePcMode(); pc.keys[k] = true; e.preventDefault(); }
   if (!pc.active || !game || e.repeat) return;
   if (k === 'e') doInteract();
   else if (k === 'b' || k === 'q') toggleBuildMode();
   else if (k === 'f') deployShield();
-  else if (k === '1') selectPiece('wall');
-  else if (k === '2') selectPiece('ramp');
-  else if (k === '3') selectPiece('floor');
-  else if (k === '4') selectMat('wood');
-  else if (k === '5') selectMat('brick');
-  else if (k === '6') selectMat('metal');
+  else if (k === 'r') summonHeavenWolves();
+  else if (k === 'tab') { e.preventDefault(); toggleInventoryGui(); }
+  else if (['t', 'y', 'u', 'i'].includes(k)) activateGrimoire(['t', 'y', 'u', 'i'].indexOf(k));
+  else if (['o', 'p', '[', ']'].includes(k)) activateDevilPower(['o', 'p', '[', ']'].indexOf(k));
+  else if (['1', '2', '3', '4', '5'].includes(k)) selectWeaponSlot(+k - 1);
+  else if (k === 'z') selectPiece('wall');
+  else if (k === 'x') selectPiece('ramp');
+  else if (k === 'c') selectPiece('floor');
+  else if (k === 'v') selectMat('wood');
+  else if (k === 'g') selectMat('brick');
+  else if (k === 'h') selectMat('metal');
 });
 window.addEventListener('keyup', e => { pc.keys[e.key.toLowerCase()] = false; });
 
@@ -1123,10 +1845,169 @@ function deployShield() {
   addEffect('shield', game.me.x + Math.cos(game.me.aim) * 26, game.me.y + Math.sin(game.me.aim) * 26);
   toast('🛡 Shield up! Blocks ' + CFG.shieldHits + ' hits');
 }
+function summonHeavenWolves() {
+  if (!game || !game.me.alive) return;
+  if (!heavenlyWolfWeapon()) return toast('Equip a Heavenly wolf weapon');
+  const now = performance.now(), ready = game.nextWolfSummon || 0;
+  if (now < ready) return toast('Wolves ready in ' + Math.ceil((ready - now) / 1000) + 's');
+  const tier = (game.wolfTier || 0) + (game.me.weapon === 'astralpack' ? 2 : game.me.weapon === 'seraphimhowl' ? 1 : 0);
+  const count = Math.min(6, 3 + Math.floor(tier / 2));
+  for (const id in game.players) {
+    const p = game.players[id];
+    if (p.allyWolf && p.owner === game.me.id) { p.alive = false; addEffect('break', p.x, p.y); }
+  }
+  for (let i = 0; i < count; i++) {
+    const a = game.me.aim + (i - (count - 1) / 2) * 0.55;
+    const wolf = makePlayer('allyWolf_' + game.me.id + '_' + now + '_' + i, wolfNameForTier(tier), { eye: 5, hair: 3, outfit: 4 }, game.me.team, game.me.x + Math.cos(a) * 72, game.me.y + Math.sin(a) * 72, true);
+    wolf.guard = true; wolf.allyWolf = true; wolf.owner = game.me.id; wolf.weapon = tier >= 4 ? 'stormc' : tier >= 2 ? 'arcbolt' : 'arcbolt';
+    wolf.hp = wolf.maxHp = 180 + tier * 45; wolf.home = { x: game.me.x, y: game.me.y }; wolf.dmgMul = 0.9 + tier * 0.16;
+    wolf.spawnT = now; wolf.lastBite = 0;
+    game.players[wolf.id] = wolf;
+    addEffect('skybeam', wolf.x, wolf.y, true);
+  }
+  game.nextWolfSummon = now + Math.max(12000, 30000 - tier * 2200 - (game.relics.includes('wolffang') ? 4500 : 0));
+  addEffect('heaven', game.me.x, game.me.y, true);
+  toast(wolfNameForTier(tier) + ' pack summoned');
+}
+function heavenlyWolfWeapon() {
+  return game && ['heavenfang', 'seraphimhowl', 'astralpack'].includes(game.me.weapon);
+}
+function wolfNextXp() { return 2 + (game?.wolfTier || 0) * 2; }
+function wolfNameForTier(t) {
+  return t >= 5 ? 'Astral Alpha' : t >= 4 ? 'Thunder Wolf' : t >= 3 ? 'Aegis Wolf' : t >= 2 ? 'Swift Wolf' : t >= 1 ? 'Hunter Wolf' : 'Heaven Wolf';
+}
+function awardWolfXp(n = 1) {
+  if (!game) return;
+  game.wolfXp = (game.wolfXp || 0) + n + (game.relics?.includes('wolffang') ? 1 : 0);
+  while ((game.wolfTier || 0) < 5 && game.wolfXp >= wolfNextXp()) {
+    game.wolfXp -= wolfNextXp(); game.wolfTier = (game.wolfTier || 0) + 1;
+    addEffect('heaven', game.me.x, game.me.y, true);
+    toast('Wolf upgrade: ' + wolfNameForTier(game.wolfTier), 2400);
+    if (game.wolfTier === 3) spawnItem({ id: 'seraphim_trial_' + performance.now(), x: game.me.x + 55, y: game.me.y, kind: 'weapon', weapon: 'seraphimhowl' });
+    if (game.wolfTier === 5) spawnItem({ id: 'astral_trial_' + performance.now(), x: game.me.x + 65, y: game.me.y + 18, kind: 'weapon', weapon: 'astralpack' });
+  }
+}
+function damageEnemiesAround(x, y, radius, dmg, by, knock = 0) {
+  for (const id in game.players) {
+    const p = game.players[id];
+    if (!p.alive || p === game.me) continue;
+    if (!p.guard && game.me.team !== 'S' && p.team === game.me.team) continue;
+    if (!p.guard && game.mode === 'ffa' && net.allies.has(id)) continue;
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d > radius) continue;
+    hurtLocal(p, Math.round(dmg * (1 - d / radius * 0.35)), by);
+    if (knock && d > 1) { p.x += (p.x - x) / d * knock; p.y += (p.y - y) / d * knock; }
+    addEffect('hit', p.x, p.y, true);
+  }
+}
+function abilityReady(bucket, slot) {
+  bucket[slot] ??= 0;
+  return Math.max(0, bucket[slot] - performance.now());
+}
+function addShieldPts(n) {
+  const cap = game.contracts.shadowVeil ? 50 : MAX_SHIELD;
+  game.me.shieldPts = Math.min(cap, game.me.shieldPts + n);
+}
+function activateGrimoire(slot = 0) {
+  if (!game || !game.me.alive) return;
+  const key = game.me.grimoire;
+  if (!key) return toast('No grimoire equipped');
+  game.grimoireCooldowns ||= [0, 0, 0, 0];
+  const now = performance.now(), ready = game.grimoireCooldowns[slot] || 0;
+  if (now < ready) return toast(GRIMOIRES[key].moves[slot] + ' ready in ' + Math.ceil((ready - now) / 1000) + 's');
+  const x = game.me.x + Math.cos(game.me.aim) * 105, y = game.me.y + Math.sin(game.me.aim) * 105;
+  if (key === 'stone') {
+    if (slot === 0) { game.me.armorTier = Math.max(game.me.armorTier, 3); game.me.armorDur = Math.max(game.me.armorDur, 260); damageEnemiesAround(game.me.x, game.me.y, 145, 34, game.me.id, 35); addEffect('boom', game.me.x, game.me.y, true); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 215, 52, game.me.id, 85); addEffect('stone', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(x, y, 120, 76, game.me.id, 130); addEffect('place', x, y, true); }
+    else { game.me.armorTier = Math.max(game.me.armorTier, 5); game.me.armorDur = Math.max(game.me.armorDur, 420); damageEnemiesAround(game.me.x, game.me.y, 230, 44, game.me.id, 65); addEffect('heaven', game.me.x, game.me.y, true); }
+  } else if (key === 'flame') {
+    if (slot === 0) { damageEnemiesAround(x, y, 190, 58, game.me.id, 45); addEffect('boom', x, y, true); }
+    else if (slot === 1) { for (let i = -1; i <= 1; i++) damageEnemiesAround(game.me.x + Math.cos(game.me.aim + i * 0.35) * 150, game.me.y + Math.sin(game.me.aim + i * 0.35) * 150, 95, 42, game.me.id, 35); addEffect('flame', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(x + Math.cos(game.me.aim) * 120, y + Math.sin(game.me.aim) * 120, 235, 88, game.me.id, 70); addEffect('skybeam', x, y, true); addEffect('boom', x, y, true); }
+    else { game.upgrades.dmgMul += 0.08; game.me.hurtFlash = 0.35; damageEnemiesAround(game.me.x, game.me.y, 175, 46, game.me.id, 55); addEffect('boom', game.me.x, game.me.y, true); }
+  } else if (key === 'storm') {
+    if (slot === 0) { damageEnemiesAround(x, y, 230, 72, game.me.id, 20); addEffect('skybeam', x, y, true); }
+    else if (slot === 1) { addShieldPts(35); damageEnemiesAround(game.me.x, game.me.y, 180, 36, game.me.id, 60); addEffect('shield', game.me.x, game.me.y, true); }
+    else if (slot === 2) { for (let i = 0; i < 5; i++) addEffect('skybeam', x + (Math.random() - 0.5) * 260, y + (Math.random() - 0.5) * 260, true); damageEnemiesAround(x, y, 250, 54, game.me.id, 30); }
+    else { for (let i = 0; i < 8; i++) addEffect('skybeam', game.me.x + (Math.random() - 0.5) * 420, game.me.y + (Math.random() - 0.5) * 420, true); damageEnemiesAround(game.me.x, game.me.y, 310, 86, game.me.id, 80); }
+  } else if (key === 'wind') {
+    if (slot === 0) { damageEnemiesAround(x, y, 240, 48, game.me.id, 105); addEffect('wind', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 210, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 210, 30, CFG.world - 30); addEffect('shield', game.me.x, game.me.y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 58, game.me.id, 150); addEffect('wind', game.me.x, game.me.y, true); }
+    else { game.upgrades.speedMul += 0.05; damageEnemiesAround(game.me.x, game.me.y, 330, 62, game.me.id, 125); addEffect('wind', game.me.x, game.me.y, true); }
+  } else if (key === 'antimagic') {
+    if (slot === 0) { game.me.antiReady = 0; game.me.antiBurstUntil = now + 1500; game.me.antiBurstCount = 0; addEffect('shield', game.me.x, game.me.y, true); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 230, 92, game.me.id, 80); addEffect('heaven', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 48, game.me.id, 40); addShieldPts(25); addEffect('sigil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(x, y, 300, 120, game.me.id, 120); game.me.antiReady = 0; addEffect('heaven', x, y, true); }
+  }
+  game.grimoireCooldowns[slot] = now + [9000, 12000, 15000, 22000][slot];
+  toast(GRIMOIRES[key].moves[slot]);
+}
+function activateDevilPower(slot = 0) {
+  if (!game || !game.me.alive) return;
+  const active = Object.keys(game.contracts).find(k => game.contracts[k]);
+  if (!active) return toast('No devil contract active');
+  const def = DEVIL_CONTRACTS.find(c => c.id === active);
+  game.devilCooldowns ||= [0, 0, 0, 0];
+  const now = performance.now(), ready = game.devilCooldowns[slot] || 0;
+  if (now < ready) return toast(def.moves[slot] + ' ready in ' + Math.ceil((ready - now) / 1000) + 's');
+  const x = game.me.x + Math.cos(game.me.aim) * 115, y = game.me.y + Math.sin(game.me.aim) * 115;
+  if (active === 'fang') {
+    if (slot === 0) { damageEnemiesAround(x, y, 170, 70, game.me.id, 75); addEffect('devil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 160, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 160, 30, CFG.world - 30); damageEnemiesAround(game.me.x, game.me.y, 115, 52, game.me.id, 55); }
+    else if (slot === 2) { game.upgrades.dmgMul += 0.06; damageEnemiesAround(x, y, 190, 38, game.me.id, 25); addEffect('devil', x, y, true); }
+    else { damageEnemiesAround(game.me.x, game.me.y, 250, 92, game.me.id, 115); addEffect('devil', game.me.x, game.me.y, true); }
+  } else if (active === 'hunger') {
+    if (slot === 0) { damageEnemiesAround(x, y, 160, 44, game.me.id, 30); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 35); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 190, 38, game.me.id, 20); addShieldPts(30); }
+    else if (slot === 2) { game.upgrades.speedMul += 0.06; game.upgrades.rofMul += 0.06; addEffect('devil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(game.me.x, game.me.y, 260, 78, game.me.id, 65); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 55); }
+    addEffect('shield', game.me.x, game.me.y, true);
+  } else if (active === 'mirror') {
+    if (slot === 0) { addShieldPts(45); damageEnemiesAround(game.me.x, game.me.y, 150, 38, game.me.id, 55); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 180, 64, game.me.id, 90); addEffect('break', x, y, true); }
+    else if (slot === 2) { game.me.shieldHits = Math.max(game.me.shieldHits, 3); damageEnemiesAround(game.me.x, game.me.y, 175, 42, game.me.id, 80); }
+    else { game.me.shieldPts = MAX_SHIELD; damageEnemiesAround(game.me.x, game.me.y, 250, 72, game.me.id, 120); }
+    addEffect('heaven', game.me.x, game.me.y, true);
+  } else if (active === 'blood') {
+    game.me.hp = Math.max(1, game.me.hp - (slot + 1) * 4);
+    if (slot === 0) { for (let i = -2; i <= 2; i++) damageEnemiesAround(x + i * 34, y, 80, 36, game.me.id, 28); addEffect('devil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 190, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 190, 30, CFG.world - 30); damageEnemiesAround(game.me.x, game.me.y, 130, 54, game.me.id, 50); addEffect('devil', game.me.x, game.me.y, true); }
+    else if (slot === 2) { damageEnemiesAround(x, y, 210, 42, game.me.id, 15); game.upgrades.spreadMul *= 0.96; addEffect('sigil', x, y, true); }
+    else { damageEnemiesAround(game.me.x, game.me.y, 310, 96, game.me.id, 80); game.me.hp = Math.min(game.me.maxHp, game.me.hp + 30); addEffect('devil', game.me.x, game.me.y, true); }
+  } else if (active === 'shadow') {
+    if (slot === 0) { damageEnemiesAround(x, y, 185, 58, game.me.id, 80); addEffect('devil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 240, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 240, 30, CFG.world - 30); addEffect('sigil', game.me.x, game.me.y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 240, 35, game.me.id, 110); game.me.shieldHits = Math.max(game.me.shieldHits, 1); addEffect('devil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(x, y, 260, 110, game.me.id, 150); addEffect('devil', x, y, true); }
+  } else if (active === 'blade') {
+    if (slot === 0) { damageEnemiesAround(x, y, 140, 82, game.me.id, 105); addEffect('devil', x, y, true); }
+    else if (slot === 1) { game.me.x = clamp(game.me.x + Math.cos(game.me.aim) * 170, 30, CFG.world - 30); game.me.y = clamp(game.me.y + Math.sin(game.me.aim) * 170, 30, CFG.world - 30); damageEnemiesAround(game.me.x, game.me.y, 120, 72, game.me.id, 95); addEffect('devil', game.me.x, game.me.y, true); }
+    else if (slot === 2) { for (let i = 0; i < 6; i++) damageEnemiesAround(game.me.x + Math.cos(i / 6 * Math.PI * 2) * 110, game.me.y + Math.sin(i / 6 * Math.PI * 2) * 110, 80, 42, game.me.id, 65); addEffect('sigil', game.me.x, game.me.y, true); }
+    else { damageEnemiesAround(x, y, 190, 140, game.me.id, 170); addEffect('devil', x, y, true); }
+  } else if (active === 'curse') {
+    if (slot === 0) { damageEnemiesAround(x, y, 190, 50, game.me.id, 35); addEffect('sigil', x, y, true); }
+    else if (slot === 1) { damageEnemiesAround(x, y, 230, 34, game.me.id, 20); game.upgrades.dmgMul += 0.04; addEffect('devil', x, y, true); }
+    else if (slot === 2) { damageEnemiesAround(game.me.x, game.me.y, 260, 64, game.me.id, 90); addEffect('boom', game.me.x, game.me.y, true); }
+    else { for (let i = 0; i < 6; i++) addEffect('skybeam', game.me.x + (Math.random() - 0.5) * 360, game.me.y + (Math.random() - 0.5) * 360, true); damageEnemiesAround(game.me.x, game.me.y, 320, 118, game.me.id, 125); }
+  }
+  game.devilCooldowns[slot] = now + [9000, 12000, 15000, 22000][slot];
+  toast(def.moves[slot]);
+}
 function doInteract() {
   if (!game || !game.nearAction) return;
   if (game.nearAction.kind === 'chest') openChestById(game.nearAction.c.id, game.me.id, true);
+  else if (game.nearAction.kind === 'revive') revivePlayer(game.nearAction.p);
   else takePickup(game.nearAction.pk.id, true);
+}
+function revivePlayer(p) {
+  if (!p || !p.downed) return;
+  if (game.contracts.noRevive) return toast('Your contract forbids reviving teammates');
+  p.downed = false; p.hp = Math.max(35, p.maxHp * 0.35); p.downT = 0;
+  addEffect('shield', p.x, p.y, true);
+  awardXP(50, 'revive');
 }
 function selectPiece(piece) {
   game.piece = piece;
@@ -1138,10 +2019,24 @@ function selectMat(mat) {
 }
 press($('fireBtn'), () => input.fire = true, () => input.fire = false);
 press($('buildBtn'), toggleBuildMode);
+document.querySelectorAll('.grimBtn').forEach(b => press(b, () => activateGrimoire(+b.dataset.ability)));
+document.querySelectorAll('.devilBtn').forEach(b => press(b, () => activateDevilPower(+b.dataset.ability)));
 press($('shieldBtn'), deployShield);
+press($('wolfBtn'), summonHeavenWolves);
+press($('invBtn'), () => toggleInventoryGui());
+press($('invClose'), () => toggleInventoryGui(false));
+press($('adminClose'), () => $('adminGui').classList.remove('show'));
+press($('adminSpawn'), adminSpawn);
+$('adminType').addEventListener('change', refreshAdminItems);
 press($('chestBtn'), doInteract);
+press($('confirmEquip'), confirmWeaponPickup);
+press($('confirmCancel'), closePickupConfirm);
+press($('grimoireKeep'), keepRolledGrimoire);
+press($('contractAccept'), acceptDevilContract);
+press($('contractDecline'), declineDevilContract);
 document.querySelectorAll('.pieceBtn').forEach(b => press(b, () => selectPiece(b.dataset.piece)));
 document.querySelectorAll('.matBtn').forEach(b => press(b, () => selectMat(b.dataset.mat)));
+document.querySelectorAll('.hotSlot').forEach(b => press(b, () => selectWeaponSlot(+b.dataset.slot)));
 
 /* ═══════════ 8. BUILDING ═══════════
    Pieces live on a grid keyed "gx,gy".
@@ -1210,7 +2105,22 @@ function autoAimPick() {
 let lastAmmoWarn = 0;
 function tryShoot(p, mine) {
   const w = WEAPONS[p.weapon], now = performance.now();
-  if (now - p.lastShot < 1000 / w.rof) return;
+  const rofMul = p === game.me ? 1 + game.upgrades.rofMul : 1;
+  if (now - p.lastShot < 1000 / (w.rof * rofMul)) return;
+  if (p === game.me && w.charge) {
+    if (!p.chargeShot) {
+      if (game.ammo[w.ammo] < 1) {
+        if (now - lastAmmoWarn > 900) { lastAmmoWarn = now; toast('Out of ' + AMMO[w.ammo].name + ' ammo!'); }
+        return;
+      }
+      p.chargeShot = { weapon: p.weapon, start: now, ready: now + w.charge, aim: p.aim };
+      toast('⚡ Charging Zeus...');
+      return;
+    }
+    if (now < p.chargeShot.ready) return;
+    p.aim = p.chargeShot.aim;
+    p.chargeShot = null;
+  }
   if (p === game.me) { // only YOU consume ammo; NPCs never run dry
     if (game.ammo[w.ammo] < 1) {
       if (now - lastAmmoWarn > 900) { lastAmmoWarn = now; toast('Out of ' + AMMO[w.ammo].name + ' ammo!'); }
@@ -1224,17 +2134,24 @@ function tryShoot(p, mine) {
 }
 function fireBullets(p, aim, mine) {
   const w = WEAPONS[p.weapon];
+  const spreadMul = p === game.me ? game.upgrades.spreadMul : 1;
+  const grimMul = p === game.me && game.me.grimoire === 'flame' ? 0.14 : p === game.me && game.me.grimoire === 'storm' ? 0.06 : 0;
+  const dmgMul = p === game.me ? 1 + game.upgrades.dmgMul + grimMul : 1;
+  const npcBossMul = p.heavenly ? 0.28 : p.wizard ? 0.42 : p.boss ? 0.62 : 1;
   for (let i = 0; i < w.pellets; i++) {
-    const a = aim + (Math.random() - 0.5) * 2 * w.spread;
+    const a = aim + (Math.random() - 0.5) * 2 * w.spread * spreadMul;
     game.bullets.push({
       x: p.x + Math.cos(a) * (CFG.playerR + 8), y: p.y + Math.sin(a) * (CFG.playerR + 8),
       dx: Math.cos(a), dy: Math.sin(a), speed: w.speed,
-      dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1)),
+      dist: 0, maxDist: w.range, dmg: Math.round(w.dmg * (p.dmgMul || 1) * dmgMul * npcBossMul),
       owner: p.id, team: p.team, mine,
       npc: !!p.guard,                        // guardian bullets: self-authoritative hits
       col: w.col || '#fff', len: w.len, wid: w.wid, // tracer style
       exo: !!w.exotic,                       // exotic tracers cycle the rainbow
-      splash: w.splash || 0, pierce: !!w.pierce, hitIds: [],
+      universal: !!w.universal,
+      shape: w.shape || 'line',
+      splash: p.heavenly ? Math.min(w.splash || 0, 85) : w.splash || 0, pierce: !!w.pierce, hitIds: [],
+      homingTarget: null,
     });
   }
   addEffect('muzzle', p.x + Math.cos(aim) * (CFG.playerR + 10), p.y + Math.sin(aim) * (CFG.playerR + 10), w.big);
@@ -1270,6 +2187,7 @@ function explode(b) {
   for (const id in g.players) {
     const p = g.players[id];
     if (!p.alive) continue;
+    if (b.npc && p.guard) continue; // guardians/bosses never hurt each other
     if (p.team !== 'S' && p.team === b.team && id !== b.owner) continue; // no friendly splash
     if (dist2(b.x, b.y, p.x, p.y) < R * R) { addDmgNum(p.x, p.y, sd); applyBulletDamage(p, id, sd, b); }
   }
@@ -1289,6 +2207,13 @@ function updateBullets(dt) {
     let travel = b.speed * dt;
     while (travel > 0) {
       const s = Math.min(step, travel); travel -= s;
+      if (b.homingTarget && g.players[b.homingTarget] && g.players[b.homingTarget].alive) {
+        const hp = g.players[b.homingTarget];
+        const a = Math.atan2(hp.y - b.y, hp.x - b.x);
+        b.dx = b.dx * 0.82 + Math.cos(a) * 0.18;
+        b.dy = b.dy * 0.82 + Math.sin(a) * 0.18;
+        const l = Math.hypot(b.dx, b.dy) || 1; b.dx /= l; b.dy /= l;
+      }
       b.x += b.dx * s; b.y += b.dy * s; b.dist += s;
       // out of range or out of world
       if (b.dist >= b.maxDist || b.x < 0 || b.y < 0 || b.x > CFG.world || b.y > CFG.world) {
@@ -1328,6 +2253,7 @@ function updateBullets(dt) {
       for (const id in g.players) {
         const p = g.players[id];
         if (!p.alive || id === b.owner) continue;
+        if (b.npc && p.guard) continue; // guardians/bosses never shoot each other
         if (p.team !== 'S' && p.team === b.team) continue; // no friendly fire
         // guardians/bosses and regular bots never damage each other, even
         // by accident — a stray bullet meant for the real player must not
@@ -1337,6 +2263,19 @@ function updateBullets(dt) {
         if (b.pierce && b.hitIds.indexOf(id) >= 0) continue; // already lanced
         const pr = (p.boss ? 27 : CFG.playerR) + 2;
         if (dist2(b.x, b.y, p.x, p.y) < pr * pr) {
+          const antiNow = performance.now();
+          const antiBurst = p.antiBurstUntil && antiNow < p.antiBurstUntil && (p.antiBurstCount || 0) < 10;
+          if (p === g.me && p.grimoire === 'antimagic' && (antiBurst || antiNow >= (p.antiReady || 0))) {
+            const oldOwner = b.owner;
+            if (!antiBurst) { p.antiReady = antiNow + 10000; p.antiBurstUntil = antiNow + 650; p.antiBurstCount = 0; }
+            p.antiBurstCount++;
+            b.owner = p.id; b.team = p.team; b.mine = true; b.npc = false; b.homingTarget = oldOwner;
+            const a = Math.atan2(-b.dy, -b.dx);
+            b.dx = Math.cos(a); b.dy = Math.sin(a); b.dist = 0; b.hitIds = [];
+            addEffect('shield', p.x, p.y, true);
+            toast('Anti Magic parry!');
+            continue outer;
+          }
           // frontal shield: absorbs the bullet if it comes head-on
           // (every client simulates this; shieldHits is synced in state)
           if (p.shieldHits > 0 && b.dx * Math.cos(p.aim) + b.dy * Math.sin(p.aim) < -0.35) {
@@ -1361,10 +2300,16 @@ function updateBullets(dt) {
 }
 
 function hurtLocal(p, dmg, by) {
+  if (p.protectedUntil && performance.now() < p.protectedUntil) {
+    addEffect('shield', p.x, p.y, true);
+    if (p === game.me) toast('Protected');
+    return;
+  }
   // 1) armor soaks a % of the hit while its durability lasts
   if (p.armorTier) {
     const soaked = Math.min(Math.round(dmg * ARMOR[p.armorTier].reduce), p.armorDur);
-    p.armorDur -= soaked; dmg -= soaked;
+    const durLoss = Math.round(soaked * (p === game.me && game.contracts.brittleArmor ? 1.35 : p.grimoire === 'stone' ? 0.85 : 1));
+    p.armorDur -= durLoss; dmg -= soaked;
     if (p.armorDur <= 0) {
       p.armorTier = 0; p.armorDur = 0;
       if (p === game.me) toast('🦺 Armor destroyed!');
@@ -1379,10 +2324,20 @@ function hurtLocal(p, dmg, by) {
   p.lastHurtT = performance.now(); // pauses the passive regen
   if (p === game.me) game.shake = Math.min(12, game.shake + 6);
   if (p.hp <= 0 && p.alive) {
+    if (p === game.me && game.phoenixReady) {
+      game.phoenixReady = false; p.hp = 60; p.shieldPts = Math.min(MAX_SHIELD, p.shieldPts + 40);
+      p.protectedUntil = performance.now() + 5000; addEffect('heaven', p.x, p.y, true); toast('Phoenix Feather saved you!', 2600); return;
+    }
+    if (!p.guard && game.mode !== 'solo' && !p.downed) {
+      p.downed = true; p.hp = 1; p.downT = 28;
+      addKillFeed(p.name + ' is downed');
+      if (p.grimoire) { spawnItem({ id: 'dropgrim_' + p.id + '_' + performance.now(), x: p.x + 18, y: p.y, kind: 'grimoire', grimoire: p.grimoire }); p.grimoire = null; }
+      return;
+    }
     p.alive = false; p.hp = 0;
     addEffect('break', p.x, p.y);
     const killer = game.players[by];
-    if (killer === game.me) game.kills++; // elimination counter in the HUD
+    if (killer === game.me) { game.kills++; awardXP(p.boss ? 160 : p.guard ? 70 : 100, p.boss ? 'boss down' : p.guard ? 'guardian down' : 'elimination'); }
     addKillFeed((killer ? killer.name : 'Storm') + ' ⚔ ' + p.name);
     if (p.guard) guardianDied(p);
   }
@@ -1394,15 +2349,44 @@ function hurtLocal(p, dmg, by) {
 function guardianDied(p) {
   if (p.dropDone) return;
   p.dropDone = true;
+  if (p.adminBoss) {
+    if (p.ernst) spawnItem({ id: 'ernstbeam_drop_' + performance.now(), x: p.x, y: p.y, kind: 'weapon', weapon: 'ernstbeam' });
+    if (p.ernst) spawnItem({ id: 'ernst_relic_' + performance.now(), x: p.x + 55, y: p.y, kind: 'relic', relic: 'brokenhalo' });
+    return addEffect('heaven', p.x, p.y, true);
+  }
+  if (p.allyWolf || p.heavenWolf || p.bldIdx === undefined) return addEffect('break', p.x, p.y, true);
+  if (p.wizard) {
+    game.grimoireTower.open = true;
+    spawnItem({ id: 'grimoire_roll', x: p.x, y: p.y, kind: 'grimoireRoll' });
+    spawnItem({ id: 'wiz_armor', x: p.x + 42, y: p.y + 8, kind: 'armor', tier: 6 });
+    spawnItem({ id: 'void_relic_' + performance.now(), x: p.x - 48, y: p.y + 8, kind: 'relic', relic: 'voidcrown' });
+    addKillFeed('📖 WIZARD KING defeated — grimoire roll opened!');
+    offerDevilContract();
+    maybeSpawnHeavenlyRestrictor();
+    return addEffect('boom', p.x, p.y, true);
+  }
+  if (p.heavenly) {
+    spawnItem({ id: 'universal_weapon', x: p.x, y: p.y, kind: 'weapon', weapon: 'heavenfang' });
+    spawnItem({ id: 'universal_howl', x: p.x + 58, y: p.y + 18, kind: 'weapon', weapon: 'seraphimhowl' });
+    spawnItem({ id: 'universal_armor', x: p.x + 46, y: p.y, kind: 'armor', tier: 6 });
+    spawnItem({ id: 'wolf_relic_' + performance.now(), x: p.x - 55, y: p.y + 18, kind: 'relic', relic: 'wolffang' });
+    addKillFeed('🌌 UNIVERSAL weapon dropped!');
+    return addEffect('heaven', p.x, p.y, true);
+  }
   const i = p.bldIdx, bld = game.map.buildings[i];
   if (p.boss) {
     // the boss reward: an EXOTIC weapon (animated rarity), the
-    // building's special, and supplies
+    // building's special, exotic armor, and supplies
     spawnItem({ id: 'bw' + i, x: p.x, y: p.y, kind: 'weapon', weapon: bld.exotic });
     spawnItem({ id: 'bs' + i, x: p.x + 50, y: p.y - 10, kind: 'weapon', weapon: bld.drop });
+    spawnItem({ id: 'bar' + i, x: p.x - 34, y: p.y - 42, kind: 'armor', tier: 6 });
     spawnItem({ id: 'ba' + i, x: p.x + 20, y: p.y + 44, kind: 'ammo', ammo: 'energy' });
     spawnItem({ id: 'bh' + i, x: p.x - 46, y: p.y + 20, kind: 'heal', amount: 80 });
-    addKillFeed('👑 RUIN BOSS down — EXOTIC dropped!');
+    if (game.ruinBossKills === 0) spawnItem({ id: 'phoenix_relic_' + i, x: p.x + 75, y: p.y + 35, kind: 'relic', relic: 'phoenix' });
+    addKillFeed('👑 RUIN BOSS down — EXOTIC loot dropped!');
+    game.ruinBossKills++;
+    evolveGrimoire();
+    maybeSpawnHeavenlyRestrictor();
   } else {
     // regular occupant: modest, seeded consolation loot
     const rng = seededRng(game.seed + 13 + p.home.x * 7 + p.home.y);
@@ -1423,40 +2407,104 @@ function spawnRuinBoss(i) {
   const bld = game.map.buildings[i];
   bld.bossUp = true;
   const x = (bld.x0 + bld.x1) / 2, y = (bld.y0 + bld.y1) / 2;
+  // each building's boss has its own flavor (weapon + hp multiplier) AND
+  // its own unique proper name — bossType keeps the flavor for any
+  // future type-based logic (VFX, etc.) without repeating "FLAME RUIN
+  // BOSS" across multiple buildings the way a shared type label would
+  const types = [
+    { name: 'FLAME RUIN BOSS', weapon: 'dragonfire', hp: 1.0 },
+    { name: 'VOID RUIN BOSS', weapon: 'oblivion', hp: 1.25 },
+    { name: 'STORM RUIN BOSS', weapon: 'stormc', hp: 0.9 },
+    { name: 'COLOSSUS RUIN BOSS', weapon: 'colossus', hp: 1.45 },
+  ];
+  const type = types[i % types.length];
   const name = BOSS_NAMES[i % BOSS_NAMES.length];
   const b = makePlayer('boss' + i, name, { eye: 1, hair: 2, outfit: 3 }, 'G', x, y, true);
-  b.guard = true; b.boss = true; b.weapon = bld.gweapon;
-  b.hp = b.maxHp = CFG.bossHp; b.home = { x, y }; b.bldIdx = i;
+  b.guard = true; b.boss = true; b.bossType = type.name; b.weapon = type.weapon;
+  b.hp = b.maxHp = Math.round(CFG.bossHp * type.hp * (isFfaStyleMode(game.mode) ? 0.65 : 1)); b.home = { x, y }; b.bldIdx = i;
   game.players[b.id] = b;
   addEffect('boom', x, y);
   addKillFeed('⚠ ' + name + ' has emerged!');
   toast('⚠ ' + name + '! Slay it for an EXOTIC weapon', 2600);
 }
 
-function takePickup(id, mine) {
+function takePickup(id, mine, confirmed = false) {
   const pk = game.pickups.find(p => p.id === id);
   if (!pk || pk.taken) return;
+  if (mine && pk.kind === 'weapon' && game.me.weapons.length >= 5 && !confirmed) return showPickupConfirm(pk);
   pk.taken = true;
   if (mine) {
-    if (pk.kind === 'weapon') game.me.weapon = pk.weapon;
-    else if (pk.kind === 'heal') game.me.hp = Math.min(CFG.maxHp, game.me.hp + pk.amount);
-    else if (pk.kind === 'mat') game.mats[pk.mat] += pk.amount;
+    if (pk.kind === 'weapon') {
+      game.me.chargeShot = null;
+      if (!addWeaponToInventory(pk.weapon, confirmed)) { pk.taken = false; return showPickupConfirm(pk); }
+      awardXP(15, 'weapon found');
+    }
+    else if (pk.kind === 'grimoireRoll') rollGrimoire();
+    else if (pk.kind === 'grimoire') equipGrimoire(pk.grimoire);
+    else if (pk.kind === 'relic') equipRelic(pk.relic);
+    else if (pk.kind === 'heal') { game.me.hp = Math.min(game.me.maxHp, game.me.hp + pk.amount * (game.contracts.weakHeal ? 0.5 : 1)); awardXP(8, 'healed'); }
+    else if (pk.kind === 'mat') { game.mats[pk.mat] += pk.amount; awardXP(6, 'supplies'); }
     else if (pk.kind === 'armor') {
       // only an upgrade (or a fresher copy of the same tier) replaces
       const better = pk.tier > game.me.armorTier ||
         (pk.tier === game.me.armorTier && ARMOR[pk.tier].dur > game.me.armorDur);
       if (!better) { pk.taken = false; return toast('Your current armor is better'); }
       game.me.armorTier = pk.tier; game.me.armorDur = ARMOR[pk.tier].dur;
+      awardXP(20 + pk.tier * 8, 'armor equipped');
     }
-    else if (pk.kind === 'pot') game.me.shieldPts = Math.min(MAX_SHIELD, game.me.shieldPts + pk.amount);
-    else game.ammo[pk.ammo] += CFG.ammoPack[pk.ammo];
+    else if (pk.kind === 'pot') { addShieldPts(pk.amount); awardXP(10, 'shielded'); }
+    else { game.ammo[pk.ammo] += CFG.ammoPack[pk.ammo]; awardXP(5, 'ammo'); }
     toast(pk.icon + ' ' + pk.label);
     net.send({ t: 'pickup_taken', id });
   }
 }
 
 function addDmgNum(x, y, n) { game.dmgNums.push({ x, y: y - 20, n, life: 0.8 }); }
-function addEffect(kind, x, y, big) { game.effects.push({ kind, x, y, big, life: kind === 'muzzle' ? 0.07 : kind === 'boom' ? 0.35 : 0.3 }); }
+function addEffect(kind, x, y, big) {
+  const life = kind === 'muzzle' ? 0.12 : kind === 'skybeam' ? 0.85 : ['sigil','stone','flame','wind','devil'].includes(kind) ? 1.05 : kind === 'heaven' ? 1.55 : kind === 'boom' ? 0.55 : kind === 'shield' ? 0.5 : 0.34;
+  game.effects.push({ kind, x, y, big, life, maxLife: life, rot: Math.random() * Math.PI * 2 });
+  spawnParticles(kind, x, y, big);
+}
+function equipRelic(key) {
+  if (!RELICS[key] || game.relics.includes(key)) return toast('Relic already owned');
+  game.relics.push(key);
+  if (key === 'brokenhalo') { addShieldPts(60); game.me.protectedUntil = performance.now() + 8000; }
+  if (key === 'voidcrown') game.upgrades.dmgMul += 0.12;
+  if (key === 'phoenix') game.phoenixReady = true;
+  addEffect('heaven', game.me.x, game.me.y, true);
+  toast('Relic acquired: ' + RELICS[key].name, 2600);
+}
+function spawnParticles(kind, x, y, big) {
+  if (!game) return;
+  const palettes = {
+    muzzle: ['#fff5b8', '#ffbd5a', '#ff6a3d'],
+    hit: ['#ffffff', '#ffd36b', '#ff775d'],
+    shield: ['#d8fbff', '#6ee7ff', '#378bff'],
+    boom: ['#fff0a8', '#ff9b3d', '#ef3f22'],
+    skybeam: ['#ffffff', '#9fe6ff', '#6f9dff'],
+    sigil: ['#f1d3ff', '#b46bff', '#6d35ff'],
+    stone: ['#fff0c2', '#b99262', '#6f5840'],
+    flame: ['#fff2a8', '#ff8b35', '#e6361e'],
+    wind: ['#eafff4', '#87ffd0', '#74b7ff'],
+    devil: ['#ffd0d6', '#ff3557', '#47000c'],
+    heaven: ['#fffdf0', '#ffe684', '#a9ecff', '#e1caff'],
+    place: ['#ffe0a0', '#b9814a', '#6d5030'],
+    break: ['#f2d7b0', '#9b7b5a', '#64513c'],
+  };
+  const pal = palettes[kind] || palettes.hit;
+  const count = kind === 'heaven' ? 42 : kind === 'boom' ? 36 : kind === 'skybeam' ? 26 : ['sigil','stone','flame','wind','devil'].includes(kind) ? 28 : big ? 20 : 12;
+  for (let i = 0; i < count && game.effects.length < 280; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = (kind === 'skybeam' ? 90 : kind === 'heaven' ? 210 : kind === 'boom' || kind === 'flame' ? 190 : kind === 'wind' ? 260 : 120) * (0.35 + Math.random());
+    const inward = kind === 'skybeam' ? Math.PI / 2 : 0;
+    game.effects.push({
+      kind: 'particle', x, y, rot: a, maxLife: 0.35 + Math.random() * 0.45, life: 0.35 + Math.random() * 0.45,
+      vx: Math.cos(a + inward) * sp, vy: Math.sin(a + inward) * sp - (kind === 'skybeam' ? 160 : 0),
+      size: (big ? 4 : 2) + Math.random() * (kind === 'heaven' ? 5 : 3),
+      col: pal[(Math.random() * pal.length) | 0],
+    });
+  }
+}
 function addKillFeed(txt) {
   const d = document.createElement('div'); d.textContent = txt;
   $('killFeed').prepend(d);
@@ -1473,26 +2521,26 @@ function chestLoot(tier, rng) {
   const P = r => W_BY[r]; // weapon pool by rarity (exotics never in chests)
   if (tier === 'epic') return [
     { kind: 'weapon', weapon: rng() < 0.55 ? pick(P('epic')) : pick(P('rare')) },
-    rng() < 0.4 ? { kind: 'armor', tier: 2 } : { kind: 'pot', amount: 25 },
+    rng() < 0.4 ? { kind: 'armor', tier: rng() < 0.5 ? 2 : 3 } : { kind: 'pot', amount: 25 },
     { kind: 'heal', amount: 50 },
     { kind: 'ammo', ammo: pick(['light', 'shell', 'energy']) },
   ];
   if (tier === 'legendary') return [
     { kind: 'weapon', weapon: rng() < 0.5 ? pick(P('legendary')) : pick(P('epic')) },
-    rng() < 0.5 ? { kind: 'armor', tier: rng() < 0.4 ? 3 : 2 } : { kind: 'pot', amount: 50 },
+    rng() < 0.5 ? { kind: 'armor', tier: rng() < 0.35 ? 5 : 4 } : { kind: 'pot', amount: 50 },
     { kind: 'ammo', ammo: 'energy' },
     { kind: 'mat', mat: pick(['brick', 'metal']), amount: 60 },
   ];
   if (tier === 'mythic') return [
     { kind: 'weapon', weapon: pick(P('mythic')) },
     { kind: 'weapon', weapon: pick(P('mythic').concat(P('legendary'))) },
-    { kind: 'armor', tier: 3 },
+    { kind: 'armor', tier: rng() < 0.55 ? 5 : 4 },
     { kind: 'pot', amount: 50 },
     { kind: 'ammo', ammo: 'energy' },
   ];
   return [ // normal: commons through rares, small defensive rolls
     { kind: 'weapon', weapon: pick(P('common').concat(P('uncommon'), P('rare'))) },
-    rng() < 0.3 ? { kind: 'armor', tier: 1 } : rng() < 0.5 ? { kind: 'pot', amount: 25 }
+    rng() < 0.3 ? { kind: 'armor', tier: rng() < 0.5 ? 1 : 2 } : rng() < 0.5 ? { kind: 'pot', amount: 25 }
       : rng() < 0.7 ? { kind: 'heal', amount: 30 } : { kind: 'mat', mat: pick(['wood', 'brick', 'metal']), amount: 40 },
     { kind: 'ammo', ammo: pick(['light', 'shell']) },
   ];
@@ -1521,6 +2569,16 @@ function spawnItem(def) {
     it.icon = '🧪'; it.label = `Shield Potion +${it.amount}`;
     it.rarity = it.amount >= 50 ? 'epic' : 'rare';
     it.stats = `Bonus shield HP, absorbed before health (max ${MAX_SHIELD})`;
+  } else if (it.kind === 'grimoireRoll') {
+    it.icon = '📖'; it.label = 'Grimoire Roll'; it.rarity = 'exotic';
+    it.stats = 'Roll once this match. Anti Magic is rarest; Wind is second rarest.';
+  } else if (it.kind === 'grimoire') {
+    const gr = GRIMOIRES[it.grimoire];
+    it.icon = '📘'; it.label = gr.name; it.rarity = it.grimoire === 'antimagic' ? 'exotic' : it.grimoire === 'wind' ? 'mythic' : 'legendary';
+    it.stats = gr.stats;
+  } else if (it.kind === 'relic') {
+    const r = RELICS[it.relic];
+    it.icon = r.icon; it.label = r.name; it.rarity = r.rarity; it.stats = r.stats;
   } else { // ammo
     it.icon = it.ammo === 'energy' ? '🔋' : it.ammo === 'shell' ? '🔻' : '🔸';
     it.label = `+${CFG.ammoPack[it.ammo]} ${AMMO[it.ammo].name} ammo`;
@@ -1542,7 +2600,65 @@ function openChestById(id, by, mine) {
       y: clamp(c.y + Math.sin(a) * d, 30, CFG.world - 30) });
   });
   addEffect('place', c.x, c.y);
+  if (mine) awardXP(c.tier === 'mythic' ? 55 : c.tier === 'legendary' ? 40 : c.tier === 'epic' ? 28 : 18, CHEST_TIERS[c.tier].name + ' chest');
   if (mine) net.send({ t: 'chest_open', id });
+}
+
+function maybeSpawnHeavenlyRestrictor() {
+  if (game.heavenlySpawned || !game.grimoireTower.open || game.ruinBossKills < 2) return;
+  game.heavenlySpawned = true;
+  const t = game.grimoireTower;
+  if (game.me && game.me.grimoire === 'antimagic') spawnItem({ id: 'astral_tower_' + performance.now(), x: t.x - 95, y: t.y + 35, kind: 'weapon', weapon: 'astralpack' });
+  addEffect('heaven', t.x, t.y, true);
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2;
+    addEffect('skybeam', t.x + Math.cos(a) * 130, t.y + Math.sin(a) * 130, true);
+  }
+  const h = makePlayer('heavenlyRestrictor', 'HEAVENLY RESTRICTOR', { eye: 5, hair: 5, outfit: 4 }, 'G', t.x, t.y, true);
+  h.guard = true; h.boss = true; h.heavenly = true; h.weapon = 'heavenfang';
+  h.hp = h.maxHp = 1600; h.home = { x: t.x, y: t.y }; h.dmgMul = 0.85;
+  game.players[h.id] = h;
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * Math.PI * 2;
+    const wolf = makePlayer('heavenWolf' + i, 'Star Wolf', { eye: 5, hair: 3, outfit: 4 }, 'G', t.x + Math.cos(a) * 90, t.y + Math.sin(a) * 90, true);
+    wolf.guard = true; wolf.heavenWolf = true; wolf.weapon = 'arcbolt'; wolf.hp = wolf.maxHp = 110; wolf.home = { x: t.x, y: t.y }; wolf.dmgMul = 0.65;
+    game.players[wolf.id] = wolf;
+  }
+  addKillFeed('🌌 HEAVENLY RESTRICTOR has descended!');
+  spawnItem({ id: 'univ_hint', x: t.x + 70, y: t.y + 20, kind: 'ammo', ammo: 'energy' });
+}
+
+function updateAllyWolves(dt) {
+  const g = game, now = performance.now();
+  for (const id in g.players) {
+    const wolf = g.players[id];
+    if (!wolf.allyWolf || !wolf.alive) continue;
+    const owner = g.players[wolf.owner] || g.me;
+    if (!owner || !owner.alive || now - (wolf.spawnT || now) > 45000) {
+      wolf.alive = false; addEffect('break', wolf.x, wolf.y); continue;
+    }
+    let target = null, best = 560 ** 2;
+    for (const oid in g.players) {
+      const o = g.players[oid];
+      if (o === wolf || !o.alive || o.allyWolf) continue;
+      if (!o.guard && wolf.team !== 'S' && o.team === wolf.team) continue;
+      if (!o.guard && g.mode === 'ffa' && net.allies.has(oid)) continue;
+      const d = dist2(wolf.x, wolf.y, o.x, o.y);
+      if (d < best) { best = d; target = o; }
+    }
+    let tx = owner.x + Math.cos(owner.aim + (id.charCodeAt(id.length - 1) % 3 - 1) * 0.8) * 92;
+    let ty = owner.y + Math.sin(owner.aim + (id.charCodeAt(id.length - 1) % 3 - 1) * 0.8) * 92;
+    if (target) { tx = target.x; ty = target.y; wolf.aim = Math.atan2(target.y - wolf.y, target.x - wolf.x); }
+    const dx = tx - wolf.x, dy = ty - wolf.y, d = Math.hypot(dx, dy);
+    movePlayer(wolf, d > 18 ? dx / d : 0, d > 18 ? dy / d : 0, dt, target ? 1.24 : 1.05);
+    if (target && d < 95 && now - (wolf.lastBite || 0) > 520) {
+      wolf.lastBite = now;
+      const dmg = target.boss ? 42 : target.guard ? 34 : 24;
+      hurtLocal(target, dmg, wolf.id);
+      awardWolfXp(target.boss ? 2 : 1);
+      addEffect('skybeam', target.x, target.y, true);
+    }
+  }
 }
 
 /* ═══════════ 10. BOTS (solo mode) ═══════════
@@ -1602,6 +2718,7 @@ function updateGuardians(dt) {
   for (const id in g.players) {
     const gu = g.players[id];
     if (!gu.guard || !gu.alive) continue;
+    if (gu.allyWolf) continue;
     // nearest living non-NPC target (guardians measure from their home;
     // a Ruin Boss measures from wherever it currently stands, but only
     // hunts within ~900px of its ruined building)
@@ -1617,17 +2734,33 @@ function updateGuardians(dt) {
     }
     let mx = 0, my = 0;
     if (target) {
+      if (gu.ernst) runErnstPhases(gu, target);
       // guardians are deliberately sloppy shots; the boss is sharper
-      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.12 : CFG.guardAimErr);
+      gu.aim = Math.atan2(target.y - gu.y, target.x - gu.x) + (Math.random() - 0.5) * (gu.boss ? 0.26 : CFG.guardAimErr);
       const dts = Math.sqrt(dist2(gu.x, gu.y, target.x, target.y));
-      if (gu.boss && dts > 230) {          // boss closes the distance
+      if (gu.boss && dts > 300) {          // boss closes the distance
         mx = Math.cos(gu.aim); my = Math.sin(gu.aim);
       } else {                             // strafe around the target
         const side = (id.charCodeAt(id.length - 1) % 2 ? 1 : -1);
         mx = -Math.sin(gu.aim) * side; my = Math.cos(gu.aim) * side;
       }
       const w = WEAPONS[gu.weapon], now = performance.now();
-      const rof = w.rof * (gu.boss ? 1 : CFG.guardRofMul); // nerfed cadence
+      const bossRof = gu.wizard ? 0.45 : gu.heavenly ? 0.42 : gu.boss ? 0.58 : CFG.guardRofMul;
+      const rof = w.rof * bossRof; // nerfed cadence
+      if (gu.wizard && now - (gu.lastAoE || 0) > 5200) {
+        gu.lastAoE = now;
+        addEffect('sigil', target.x, target.y, true);
+        addEffect('skybeam', target.x, target.y, true);
+        for (let k = 0; k < 3; k++) {
+          const a = Math.random() * Math.PI * 2, d = 80 + Math.random() * 120;
+          addEffect('skybeam', target.x + Math.cos(a) * d, target.y + Math.sin(a) * d, true);
+        }
+        for (const oid in g.players) {
+          const o = g.players[oid];
+          if (!o.alive || o.guard) continue;
+          if (dist2(o.x, o.y, target.x, target.y) < 125 * 125) hurtLocal(o, 22, gu.id);
+        }
+      }
       if (now - gu.lastShot > 1000 / rof && dts < w.range + 60) {
         gu.lastShot = now;
         fireBullets(gu, gu.aim, false);
@@ -1639,7 +2772,12 @@ function updateGuardians(dt) {
       const a = Math.atan2(gu.home.y - gu.y, gu.home.x - gu.x);
       mx = Math.cos(a); my = Math.sin(a); gu.aim = a;
     }
-    movePlayer(gu, mx, my, dt, gu.boss ? 0.75 : 0.5);
+    movePlayer(gu, mx, my, dt, gu.boss ? 0.58 : 0.5);
+    if (gu.wizard && dist2(gu.x, gu.y, gu.home.x, gu.home.y) > 170 * 170) {
+      const a = Math.atan2(gu.home.y - gu.y, gu.home.x - gu.x);
+      gu.x = gu.home.x + Math.cos(a + Math.PI) * 160;
+      gu.y = gu.home.y + Math.sin(a + Math.PI) * 160;
+    }
     if (!gu.boss && gu.bld) { // guardians stay in the house, always
       gu.x = clamp(gu.x, gu.bld.x0 + 34, gu.bld.x1 - 34);
       gu.y = clamp(gu.y, gu.bld.y0 + 34, gu.bld.y1 - 34);
@@ -1727,9 +2865,41 @@ function movePlayer(p, mx, my, dt, speedMul = 1) {
 
 function applyPeerState(m) {
   const p = game.players[m.id]; if (!p) return;
+  const now = performance.now(), age = Math.max(16, now - (p.lastStateT || now));
+  p.vx = (m.x - (p.tx ?? p.x)) / (age / 1000);
+  p.vy = (m.y - (p.ty ?? p.y)) / (age / 1000);
+  p.px = p.x; p.py = p.y; p.lastStateT = now;
   p.tx = m.x; p.ty = m.y; p.taim = m.aim;
   p.hp = m.hp; p.weapon = m.weapon; p.shieldHits = m.sh || 0; p.shieldPts = m.sp || 0;
+  p.armorTier = m.ar || 0; p.armorDur = m.ad || 0;
   if (p.alive && !m.alive) { p.alive = false; addEffect('break', p.x, p.y); }
+}
+
+function runErnstPhases(gu, target) {
+  const pct = gu.hp / gu.maxHp;
+  gu.phase ||= 1;
+  if (pct <= 0.7 && gu.phase < 2) {
+    gu.phase = 2; gu.x = CFG.world / 2; gu.y = CFG.world / 2; gu.dmgMul = 1.45;
+    for (let i = 0; i < 10; i++) addEffect('skybeam', target.x + (Math.random() - 0.5) * 420, target.y + (Math.random() - 0.5) * 420, true);
+    damageEnemiesAround(target.x, target.y, 260, 65, gu.id, 70);
+    addKillFeed('Herr Ernst Phase 2: Klassenarbeit!');
+  }
+  if (pct <= 0.4 && gu.phase < 3) {
+    gu.phase = 3;
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const c = makePlayer('ernstClone_' + performance.now() + '_' + i, 'ERNST CLONE', { eye: 1, hair: 4, outfit: 4, hairCol: '#ffe680' }, 'G', gu.x + Math.cos(a) * 120, gu.y + Math.sin(a) * 120, true);
+      c.guard = true; c.boss = true; c.adminBoss = true; c.weapon = 'zeus'; c.hp = c.maxHp = 900; c.dmgMul = 0.55; c.home = { x: c.x, y: c.y };
+      game.players[c.id] = c; addEffect('heaven', c.x, c.y, true);
+    }
+    addKillFeed('Herr Ernst Phase 3: Doppelstunde!');
+  }
+  if (pct <= 0.1 && gu.phase < 4) {
+    gu.phase = 4; gu.dmgMul = 1.9; gu.hp = Math.max(gu.hp, gu.maxHp * 0.16);
+    for (let i = 0; i < 14; i++) addEffect('skybeam', gu.x + (Math.random() - 0.5) * 620, gu.y + (Math.random() - 0.5) * 620, true);
+    damageEnemiesAround(gu.x, gu.y, 360, 120, gu.id, 150);
+    addKillFeed('Herr Ernst FINAL PHASE: Keine Gnade!');
+  }
 }
 
 // guardians are scenery-monsters: they never count toward win conditions
@@ -1746,13 +2916,18 @@ function aliveTeams() {
 function update(dt) {
   const g = game;
 
-  if (g.me.alive) {
+  if (g.me.alive && !g.me.downed) {
+    if (g.me.chargeShot && g.me.chargeShot.weapon !== g.me.weapon) g.me.chargeShot = null;
+    if (g.me.chargeShot && performance.now() >= g.me.chargeShot.ready) tryShoot(g.me, g.mode !== 'solo');
     // movement: WASD/arrows in PC mode, virtual joystick on touch
     let mvx = input.joyVec.x, mvy = input.joyVec.y;
     if (pc.active) {
       for (const k in MOVE_KEYS) if (pc.keys[k]) { mvx += MOVE_KEYS[k][0]; mvy += MOVE_KEYS[k][1]; }
     }
-    movePlayer(g.me, mvx, mvy, dt);
+    if (g.me.chargeShot) { mvx = 0; mvy = 0; }
+    const grimSpeed = g.me.grimoire === 'wind' ? 0.18 : g.me.grimoire === 'storm' ? 0.08 : 0;
+    const curseSlow = g.contracts.curseWeight && g.me.hp < g.me.maxHp * 0.55 ? -0.14 : 0;
+    movePlayer(g.me, mvx, mvy, dt, 1 + g.upgrades.speedMul + grimSpeed + curseSlow);
     if (pc.active) {
       // the mouse cursor IS the aim — recomputed every frame so walking
       // (which moves the camera under the cursor) keeps the aim true
@@ -1762,15 +2937,24 @@ function update(dt) {
     } else {
       // auto-aim (touch only): track the locked enemy unless the player
       // is actively dragging in the aim zone (manual aim always wins)
-      g.aimLock = g.buildMode ? null : autoAimPick();
-      if (g.aimLock && input.aimId === null)
-        g.me.aim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
+      const ffaStyle = isFfaStyleMode(g.mode);
+      const assistReady = !ffaStyle || g.upgrades.aimAssist > 0;
+      g.aimLock = g.buildMode || !assistReady ? null : autoAimPick();
+      if (g.aimLock && input.aimId === null) {
+        const targetAim = Math.atan2(g.aimLock.y - g.me.y, g.aimLock.x - g.me.x);
+        if (ffaStyle) {
+          const turn = Math.atan2(Math.sin(targetAim - g.me.aim), Math.cos(targetAim - g.me.aim));
+          g.me.aim += turn * g.upgrades.aimAssist;
+        } else g.me.aim = targetAim;
+      }
     }
     if (input.fire && !g.buildMode) tryShoot(g.me, g.mode !== 'solo');
     // easier health: passive regeneration after a few calm seconds
-    if (g.me.hp < g.me.maxHp && performance.now() - (g.me.lastHurtT || 0) > CFG.regenDelay * 1000)
+    if (g.me.hp < g.me.maxHp && performance.now() - (g.me.lastHurtT || 0) > CFG.regenDelay * (g.contracts.slowRegen ? 1.8 : 1) * 1000)
       g.me.hp = Math.min(g.me.maxHp, g.me.hp + CFG.regenRate * dt);
   } else g.aimLock = null;
+
+  if (isFfaStyleMode(g.mode) && performance.now() >= g.nextUpgradeAt) showUpgradeDraft();
 
   // proximity -> contextual interact button (chests + ground loot),
   // preferring loot when both are in range so chests can't shadow items
@@ -1786,6 +2970,15 @@ function update(dt) {
     if (!g.nearAction && !c.opened && dist2(g.me.x, g.me.y, c.x, c.y) < 70 * 70)
       g.nearAction = { kind: 'chest', c };
   }
+  if (!g.nearAction && !g.contracts.noRevive) {
+    for (const id in g.players) {
+      const p = g.players[id];
+      if (p === g.me || !p.downed) continue;
+      const teammate = p.team !== 'S' && p.team === g.me.team;
+      const ally = g.mode === 'ffa' && net.allies.has(id);
+      if ((teammate || ally) && dist2(g.me.x, g.me.y, p.x, p.y) < 72 * 72) { g.nearAction = { kind: 'revive', p }; break; }
+    }
+  }
   // the interact button exists ONLY while there is really something to
   // open or pick up right here (and never in build mode / while dead)
   if (g.buildMode) g.nearAction = null;
@@ -1800,10 +2993,16 @@ function update(dt) {
       info.firstElementChild.style.color = t.glow;
       info.lastElementChild.textContent = 'Loot spills out — grab what you want';
       info.style.borderColor = t.glow;
+    } else if (g.nearAction.kind === 'revive') {
+      btn.textContent = '✚ REVIVE';
+      info.firstElementChild.textContent = '✚ REVIVE ' + g.nearAction.p.name.toUpperCase();
+      info.firstElementChild.style.color = '#7fd4ff';
+      info.lastElementChild.textContent = 'Bring them back before bleed-out';
+      info.style.borderColor = '#7fd4ff';
     } else {
       const pk = g.nearAction.pk, col = rarityCol(pk.rarity);
       btn.textContent = '🖐 PICK UP';
-      info.firstElementChild.textContent = pk.icon + ' ' + pk.label + ' — ' + RARITY[pk.rarity].name.toUpperCase();
+      info.firstElementChild.textContent = pk.icon + ' ' + pk.label + ' — ' + rarityLabel(pk.rarity).toUpperCase();
       info.firstElementChild.style.color = col;
       info.lastElementChild.textContent = pk.stats;
       info.style.borderColor = col;
@@ -1813,7 +3012,14 @@ function update(dt) {
   updateBullets(dt);
   updateStorm(dt);
   if (g.mode === 'solo') updateBots(dt);
+  updateAllyWolves(dt);
   if (g.npcAuthority) updateGuardians(dt);
+  for (const id in g.players) {
+    const p = g.players[id];
+    if (p.downed && (p.downT -= dt) <= 0) {
+      p.downed = false; p.alive = false; p.hp = 0; addEffect('break', p.x, p.y); addKillFeed(p.name + ' bled out');
+    }
+  }
   // downed practice dummies get back up after a short pause
   for (const dm of g.dummies)
     if (dm.hp <= 0 && (dm.respawn -= dt) <= 0) dm.hp = CFG.dummyHp;
@@ -1823,23 +3029,40 @@ function update(dt) {
   for (const id in g.players) {
     const p = g.players[id];
     if (p === g.me || (p.isBot && g.npcAuthority)) continue;
-    p.x += (p.tx - p.x) * Math.min(1, dt * 12);
-    p.y += (p.ty - p.y) * Math.min(1, dt * 12);
-    p.aim = p.taim;
+    const lead = Math.min(0.12, (performance.now() - (p.lastStateT || performance.now())) / 1000);
+    const tx = p.tx + clamp(p.vx || 0, -CFG.playerSpeed * 1.5, CFG.playerSpeed * 1.5) * lead;
+    const ty = p.ty + clamp(p.vy || 0, -CFG.playerSpeed * 1.5, CFG.playerSpeed * 1.5) * lead;
+    const snap = dist2(p.x, p.y, tx, ty) > 280 * 280;
+    if (snap) { p.x = tx; p.y = ty; }
+    else {
+      const k = 1 - Math.exp(-dt * 10);
+      p.x += (tx - p.x) * k;
+      p.y += (ty - p.y) * k;
+    }
+    p.aim += Math.atan2(Math.sin(p.taim - p.aim), Math.cos(p.taim - p.aim)) * Math.min(1, dt * 14);
   }
 
   // decay timers + drop claimed loot from the list
   for (const id in g.players) g.players[id].hurtFlash = Math.max(0, g.players[id].hurtFlash - dt);
+  if (pendingWeaponPickup && !g.pickups.some(p => p.id === pendingWeaponPickup && !p.taken)) closePickupConfirm();
   if (g.pickups.some(p => p.taken)) g.pickups = g.pickups.filter(p => !p.taken);
-  g.effects = g.effects.filter(e => (e.life -= dt) > 0);
+  g.effects = g.effects.filter(e => {
+    e.life -= dt;
+    if (e.kind === 'particle') {
+      e.x += e.vx * dt; e.y += e.vy * dt;
+      e.vx *= Math.pow(0.08, dt); e.vy = e.vy * Math.pow(0.10, dt) + 220 * dt;
+    }
+    return e.life > 0;
+  });
   g.dmgNums = g.dmgNums.filter(d => { d.y -= 40 * dt; return (d.life -= dt) > 0; });
+  if (g.bossIntro && (g.bossIntro.life -= dt) <= 0) g.bossIntro = null;
 
   // send our state to the party at CFG.netHz
   if (g.mode !== 'solo') {
     const now = performance.now();
     if (now - g.lastNetSend > 1000 / CFG.netHz) {
       g.lastNetSend = now;
-      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon, sh: g.me.shieldHits, sp: g.me.shieldPts });
+      net.send({ t: 'state', x: g.me.x, y: g.me.y, aim: g.me.aim, hp: g.me.hp, alive: g.me.alive, weapon: g.me.weapon, sh: g.me.shieldHits, sp: g.me.shieldPts, ar: g.me.armorTier, ad: g.me.armorDur });
       if (g.npcAuthority) { // host also ships a guardian snapshot
         const list = [];
         for (const id in g.players) { const p = g.players[id];
@@ -1855,6 +3078,9 @@ function update(dt) {
     const total = Object.values(g.players).filter(p => !p.guard).length;
     if (!g.me.alive) {
       g.over = true; endMatch(false, alive + 1);
+    } else if (g.mode === 'team1') {
+      const pveAlive = Object.values(g.players).some(p => p.guard && p.alive);
+      if (!pveAlive) { g.over = true; endMatch(true, 1); }
     } else if (total > 1) {
       if (g.mode === 'solo' || g.mode === 'solos') {
         if (alive <= 1) { g.over = true; endMatch(true, 1); }
@@ -2028,6 +3254,16 @@ function render() {
     }
     ctx.restore();
   }
+  // grimoire tower
+  const gt = g.grimoireTower, gtx = gt.x - cx, gty = gt.y - cy;
+  if (gtx > -120 && gty > -120 && gtx < VW + 120 && gty < VH + 120) {
+    drawShadow(gtx, gty + 34, 42);
+    ctx.fillStyle = '#1b1630'; ctx.fillRect(gtx - 32, gty - 54, 64, 96);
+    ctx.strokeStyle = gt.open ? rarityCol('exotic') : '#8a6dff'; ctx.lineWidth = 4; ctx.strokeRect(gtx - 32, gty - 54, 64, 96);
+    ctx.fillStyle = '#30205a'; ctx.beginPath(); ctx.moveTo(gtx - 44, gty - 54); ctx.lineTo(gtx, gty - 98); ctx.lineTo(gtx + 44, gty - 54); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.font = '26px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('📖', gtx, gty - 14);
+    ctx.strokeStyle = '#b46bff88'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(gtx, gty, 70 + Math.sin(performance.now() / 260) * 6, 0, 7); ctx.stroke();
+  }
 
   // ground loot: chest spills + guardian/boss drops, rarity-colored
   for (const pk of g.pickups) {
@@ -2038,6 +3274,15 @@ function render() {
     drawShadow(x, y + 4, 13);
     ctx.strokeStyle = rc; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(x, y, (pk.kind === 'weapon' ? 21 : 16) * pulse, 0, 7); ctx.stroke();
+    if (pk.rarity === 'exotic') {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(performance.now() / 250);
+      ctx.strokeStyle = rc; ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath(); ctx.moveTo(0, -30 * pulse); ctx.lineTo(7, -22 * pulse); ctx.lineTo(0, -16 * pulse); ctx.lineTo(-7, -22 * pulse); ctx.closePath(); ctx.stroke();
+      }
+      ctx.restore();
+    }
     ctx.fillStyle = '#1c2434'; ctx.fillRect(x - 12, y - 12, 24, 24);
     ctx.strokeStyle = rc; ctx.lineWidth = 2; ctx.strokeRect(x - 12, y - 12, 24, 24);
     ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(pk.icon, x, y + 5);
@@ -2057,13 +3302,72 @@ function render() {
   }
 
   // bullets: per-weapon tracer color/length (railgun = long blue beam,
-  // exotic weapons fire rainbow-shifting tracers)
+  // exotic weapons fire rainbow-shifting tracers; Universal fires heavenly light)
   ctx.lineCap = 'round';
   for (const b of g.bullets) {
-    ctx.strokeStyle = b.exo ? rarityCol('exotic') : b.col; ctx.lineWidth = b.wid;
-    ctx.beginPath();
-    ctx.moveTo(b.x - b.dx * b.len - cx, b.y - b.dy * b.len - cy);
-    ctx.lineTo(b.x - cx, b.y - cy); ctx.stroke();
+    const bx = b.x - cx, by = b.y - cy, col = b.universal ? rarityCol('universal') : b.exo ? rarityCol('exotic') : b.col;
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = b.wid;
+    if (b.shape === 'void') {
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 120);
+      ctx.strokeStyle = '#111'; ctx.lineWidth = b.wid + 5;
+      ctx.beginPath(); ctx.arc(0, 0, b.wid + 8, 0, 7); ctx.stroke();
+      ctx.strokeStyle = col; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, b.wid + 14, 0.4, Math.PI * 1.6); ctx.stroke();
+      ctx.restore();
+    } else if (b.shape === 'vortex') {
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 80);
+      ctx.strokeStyle = col; ctx.lineWidth = 4;
+      ctx.beginPath();
+      for (let i = 0; i < 18; i++) {
+        const a = i * 0.55, r = 2 + i * 0.9;
+        if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.stroke(); ctx.restore();
+    } else if (b.shape === 'orb') {
+      ctx.beginPath(); ctx.arc(bx, by, b.wid + 5, 0, 7); ctx.fill();
+      ctx.globalAlpha = 0.38; ctx.beginPath(); ctx.arc(bx, by, b.wid + 12, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    } else if (b.shape === 'comet') {
+      ctx.beginPath(); ctx.arc(bx, by, b.wid + 5, 0, 7); ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = b.wid;
+      ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
+      ctx.quadraticCurveTo(bx - b.dx * b.len * 0.45 + b.dy * 12, by - b.dy * b.len * 0.45 - b.dx * 12, bx, by); ctx.stroke();
+    } else if (b.shape === 'nova') {
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(performance.now() / 90);
+      ctx.beginPath();
+      for (let i = 0; i < 12; i++) {
+        const r = i % 2 ? b.wid + 4 : b.wid + 16, a = i * Math.PI / 6;
+        if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath(); ctx.fill(); ctx.restore();
+    } else if (b.shape === 'flame') {
+      ctx.beginPath(); ctx.moveTo(bx, by);
+      ctx.lineTo(bx - b.dx * b.len - b.dy * 8, by - b.dy * b.len + b.dx * 8);
+      ctx.lineTo(bx - b.dx * b.len + b.dy * 8, by - b.dy * b.len - b.dx * 8);
+      ctx.closePath(); ctx.fill();
+    } else if (b.shape === 'storm' || b.shape === 'bolt') {
+      ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
+      ctx.lineTo(bx - b.dx * b.len * 0.65 + b.dy * 9, by - b.dy * b.len * 0.65 - b.dx * 9);
+      ctx.lineTo(bx - b.dx * b.len * 0.35 - b.dy * 7, by - b.dy * b.len * 0.35 + b.dx * 7);
+      ctx.lineTo(bx, by); ctx.stroke();
+      if (b.shape === 'storm') {
+        ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len * 0.45, by - b.dy * b.len * 0.45);
+        ctx.lineTo(bx - b.dx * b.len * 0.25 + b.dy * 16, by - b.dy * b.len * 0.25 - b.dx * 16); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bx - b.dx * b.len * 0.72, by - b.dy * b.len * 0.72);
+        ctx.lineTo(bx - b.dx * b.len * 0.55 - b.dy * 14, by - b.dy * b.len * 0.55 + b.dx * 14); ctx.stroke();
+      }
+    } else if (b.shape === 'mirror') {
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx - b.dx * b.len + b.dy * side * 5, by - b.dy * b.len - b.dx * side * 5);
+        ctx.lineTo(bx + b.dy * side * 5, by - b.dx * side * 5); ctx.stroke();
+      }
+      ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 2;
+      ctx.strokeRect(bx - 7, by - 7, 14, 14);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(bx - b.dx * b.len, by - b.dy * b.len);
+      ctx.lineTo(bx, by); ctx.stroke();
+    }
   }
 
   // players (draw dead ones as ghosts fading is skipped — just skip them)
@@ -2081,7 +3385,28 @@ function render() {
       ctx.strokeStyle = p.team === 'A' ? '#2a6de0' : '#d93030'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, CFG.playerR + 5, 0, 7); ctx.stroke();
     }
+    if (p.protectedUntil && performance.now() < p.protectedUntil) {
+      const pulse = 7 + Math.sin(performance.now() / 130) * 3;
+      ctx.strokeStyle = rarityCol('universal'); ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, bodyR + pulse + 8, 0, 7); ctx.stroke();
+    }
+    if (p.chargeShot) {
+      const pct = clamp((performance.now() - p.chargeShot.start) / (p.chargeShot.ready - p.chargeShot.start), 0, 1);
+      ctx.strokeStyle = rarityCol('exotic'); ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(x, y, bodyR + 18, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2); ctx.stroke();
+    }
     drawCharacter(ctx, x, y, p.aim, p.look, bodyR);
+    drawArmorOverlay(ctx, x, y, p.aim, p.armorTier, bodyR);
+    if (p.grimoire) {
+      ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = GRIMOIRES[p.grimoire].col;
+      ctx.fillText(p.grimoire === 'antimagic' ? '📕' : '📘', x + bodyR + 12, y - bodyR);
+    }
+    if (p.downed) {
+      ctx.strokeStyle = '#ffdf6b'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, bodyR + 16, 0, 7); ctx.stroke();
+      ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffdf6b';
+      ctx.fillText('DOWN', x, y + bodyR + 24);
+    }
     // deployed shield: cyan arc facing the aim; dashed once cracked
     if (p.shieldHits > 0) {
       const cracked = p.shieldHits < CFG.shieldHits;
@@ -2117,29 +3442,101 @@ function render() {
     ctx.fillStyle = '#2c5e2eE0'; ctx.beginPath(); ctx.arc(x, y, t.r, 0, 7); ctx.fill();
   }
 
-  // effects (muzzle flash / impacts / build dust)
+  // effects (layered magic, impacts, particles, beams)
   for (const e of g.effects) {
     const x = e.x - cx, y = e.y - cy;
+    const p = clamp(e.life / (e.maxLife || e.life || 1), 0, 1), q = 1 - p;
     if (e.kind === 'muzzle') {
-      ctx.fillStyle = '#ffec8a';
-      ctx.beginPath(); ctx.arc(x, y, e.big ? 15 : 9, 0, 7); ctx.fill();
+      const r = (e.big ? 22 : 13) * (0.8 + q);
+      const grd = ctx.createRadialGradient(x, y, 1, x, y, r);
+      grd.addColorStop(0, `rgba(255,255,230,${p})`);
+      grd.addColorStop(0.38, `rgba(255,188,70,${p * 0.75})`);
+      grd.addColorStop(1, 'rgba(255,80,20,0)');
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
     } else if (e.kind === 'hit') {
-      ctx.strokeStyle = `rgba(255,255,255,${e.life * 3})`; ctx.lineWidth = 2;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(e.rot + q * 2);
+      ctx.strokeStyle = `rgba(255,255,255,${p})`; ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6);
-      ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2, r1 = 4 + q * 8, r2 = 13 + q * 18; ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1); ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2); }
+      ctx.stroke(); ctx.restore();
     } else if (e.kind === 'shield') { // bullet soaked by a shield
-      ctx.strokeStyle = `rgba(127,232,255,${e.life * 3})`; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(x, y, (0.3 - e.life) * 90 + 6, 0, 7); ctx.stroke();
+      const rr = 14 + q * 72;
+      ctx.strokeStyle = `rgba(180,246,255,${p})`; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(x, y, rr, -0.25 * Math.PI, 1.25 * Math.PI); ctx.stroke();
+      ctx.strokeStyle = `rgba(80,160,255,${p * 0.55})`; ctx.lineWidth = 12;
+      ctx.beginPath(); ctx.arc(x, y, rr * 0.72, 0, 7); ctx.stroke();
     } else if (e.kind === 'boom') { // Doomsday explosion
-      const rr = (0.35 - e.life) * 320 + 24;
-      ctx.fillStyle = `rgba(255,130,50,${e.life * 1.6})`;
-      ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.fill();
-      ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.4})`; ctx.lineWidth = 4;
+      const rr = 24 + q * (e.big ? 300 : 190);
+      const grd = ctx.createRadialGradient(x, y, 4, x, y, rr);
+      grd.addColorStop(0, `rgba(255,245,180,${p * 0.9})`);
+      grd.addColorStop(0.24, `rgba(255,140,40,${p * 0.65})`);
+      grd.addColorStop(1, 'rgba(120,20,0,0)');
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(255,235,150,${p})`; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.stroke();
+    } else if (e.kind === 'skybeam') {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const top = -120, bot = y + 38, width = e.big ? 26 : 16;
+      const grd = ctx.createLinearGradient(x, top, x, bot);
+      grd.addColorStop(0, `rgba(255,255,255,0)`);
+      grd.addColorStop(0.35, `rgba(150,220,255,${p * 0.45})`);
+      grd.addColorStop(1, `rgba(255,255,255,${p})`);
+      ctx.strokeStyle = grd; ctx.lineWidth = width; ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bot); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${p})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bot); ctx.stroke();
+      ctx.strokeStyle = `rgba(120,190,255,${p * 0.8})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 28 + q * 40, 0, 7); ctx.stroke();
+      ctx.restore();
+    } else if (e.kind === 'sigil') {
+      const rr = 34 + q * 135;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(e.rot + q * 1.8);
+      ctx.strokeStyle = `rgba(205,145,255,${p})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, 7); ctx.stroke();
+      ctx.strokeStyle = `rgba(130,80,255,${p * 0.75})`; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; ctx.moveTo(Math.cos(a) * rr * 0.25, Math.sin(a) * rr * 0.25); ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      ctx.stroke(); ctx.strokeRect(-rr * 0.5, -rr * 0.5, rr, rr); ctx.restore();
+    } else if (e.kind === 'stone') {
+      const rr = 28 + q * 150;
+      ctx.strokeStyle = `rgba(235,198,142,${p})`; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.stroke();
+      ctx.fillStyle = `rgba(120,88,58,${p * 0.55})`;
+      for (let i = 0; i < 9; i++) { const a = e.rot + i * 0.7; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * rr * 0.45, y + Math.sin(a) * rr * 0.45); ctx.lineTo(x + Math.cos(a + 0.18) * rr * 0.7, y + Math.sin(a + 0.18) * rr * 0.7); ctx.lineTo(x + Math.cos(a - 0.12) * rr * 0.82, y + Math.sin(a - 0.12) * rr * 0.82); ctx.fill(); }
+    } else if (e.kind === 'flame') {
+      const rr = 22 + q * 180;
+      const grd = ctx.createRadialGradient(x, y, 3, x, y, rr);
+      grd.addColorStop(0, `rgba(255,250,180,${p})`);
+      grd.addColorStop(0.35, `rgba(255,90,25,${p * 0.75})`);
+      grd.addColorStop(1, 'rgba(255,20,0,0)');
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(255,190,75,${p})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, rr * 0.72, e.rot, e.rot + Math.PI * 1.5); ctx.stroke();
+    } else if (e.kind === 'wind') {
+      const rr = 38 + q * 170;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(e.rot + q * 3.5);
+      ctx.strokeStyle = `rgba(180,255,224,${p})`; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(0, 0, rr * (0.55 + i * 0.13), i * 1.2, i * 1.2 + Math.PI * 1.05); ctx.stroke(); }
+      ctx.restore();
+    } else if (e.kind === 'devil') {
+      const rr = 26 + q * 165;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(e.rot - q * 2);
+      ctx.strokeStyle = `rgba(255,45,78,${p})`; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, 7); ctx.stroke();
+      ctx.strokeStyle = `rgba(80,0,15,${p})`; ctx.lineWidth = 8;
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(Math.cos(a) * rr * 0.25, Math.sin(a) * rr * 0.25); ctx.quadraticCurveTo(Math.cos(a + 0.35) * rr * 0.85, Math.sin(a + 0.35) * rr * 0.85, Math.cos(a) * rr * 1.15, Math.sin(a) * rr * 1.15); ctx.stroke(); }
+      ctx.restore();
+    } else if (e.kind === 'heaven') {
+      const rr = 36 + q * 250, col = rarityCol('universal');
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.translate(x, y); ctx.rotate(e.rot - q);
+      ctx.strokeStyle = col; ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(0, 0, rr, 0, 7); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${p * 0.85})`; ctx.lineWidth = 2;
+      for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(Math.cos(a) * rr * 0.3, Math.sin(a) * rr * 0.3); ctx.lineTo(Math.cos(a) * rr * 1.08, Math.sin(a) * rr * 1.08); ctx.stroke(); }
+      ctx.font = 'bold 36px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = col; ctx.fillText('UNIVERSAL', 0, -rr * 0.32);
+      ctx.restore();
+    } else if (e.kind === 'particle') {
+      const a = p * p, s = e.size * (0.4 + p);
+      ctx.fillStyle = e.col.replace(')', `,${a})`).replace('rgb', 'rgba');
+      ctx.beginPath(); ctx.arc(x, y, s, 0, 7); ctx.fill();
     } else { // place / break dust ring
-      ctx.strokeStyle = `rgba(255,220,120,${e.life * 2.5})`; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(x, y, (0.3 - e.life) * 120 + 8, 0, 7); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,220,120,${p})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, 12 + q * 85, 0, 7); ctx.stroke();
     }
   }
 
@@ -2213,6 +3610,21 @@ function render() {
     ctx.fillStyle = hurtVignette; ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
   }
+  if (g.bossIntro) {
+    const p = clamp(g.bossIntro.life / g.bossIntro.maxLife, 0, 1);
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${0.58 * Math.min(1, p * 2)})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.min(72, W / 10)}px sans-serif`;
+    ctx.fillStyle = rarityCol('tuffinity');
+    ctx.shadowColor = rarityCol('universal'); ctx.shadowBlur = 28;
+    ctx.fillText(g.bossIntro.title, W / 2, H * 0.42);
+    ctx.font = `bold ${Math.min(24, W / 28)}px sans-serif`;
+    ctx.fillStyle = '#fff6c8'; ctx.shadowBlur = 12;
+    ctx.fillText(g.bossIntro.sub, W / 2, H * 0.42 + 44);
+    ctx.restore();
+  }
 
   // virtual joystick (only while touched)
   if (input.joyId !== null) {
@@ -2241,7 +3653,7 @@ function render() {
   $('hpFill').style.width = (hpPct * 100) + '%';
   $('hpFill').style.background = hpPct > 0.5 ? 'linear-gradient(#5dff7a,#25a03e)'
     : hpPct > 0.25 ? 'linear-gradient(#ffd66b,#e08a2a)' : 'linear-gradient(#ff7b6b,#d93030)';
-  $('hpText').textContent = `❤️ ${Math.ceil(g.me.hp)} / ${CFG.maxHp}` +
+  $('hpText').textContent = `❤️ ${Math.ceil(g.me.hp)} / ${Math.ceil(g.me.maxHp)}` +
     (g.me.shieldPts > 0 ? `  ·  🛡 ${Math.ceil(g.me.shieldPts)}` : '');
   $('spFill').style.width = (g.me.shieldPts / MAX_SHIELD * 100) + '%';
   const ai = $('armorInfo');
@@ -2254,23 +3666,86 @@ function render() {
   $('stormText').textContent = s.label;
   $('stormBar').style.width = ((s.pct || 0) * 100) + '%';
   $('matInfo').firstChild.textContent = `🪵 ${g.mats.wood}  🧱 ${g.mats.brick}  ⛓️ ${g.mats.metal}`;
-  $('aliveInfo').textContent = `⚔ ${g.kills} · ${countAlive()} alive`;
+  $('aliveInfo').textContent = `LV ${g.level} · XP ${g.xp}/${g.nextLevelXp} · ⚔ ${g.kills} · ${countAlive()} alive`;
   // shield button state: shows hits left while up, dims when unaffordable
   const sbtn = $('shieldBtn');
   sbtn.innerHTML = g.me.shieldHits > 0 ? `🛡<br>${g.me.shieldHits} HIT${g.me.shieldHits > 1 ? 'S' : ''}` : `🛡<br>${CFG.shieldCost}🪵`;
   sbtn.classList.toggle('off', g.me.shieldHits === 0 && g.mats.wood < CFG.shieldCost);
+  const wbtn = $('wolfBtn'), wolfReady = Math.max(0, (g.nextWolfSummon || 0) - performance.now());
+  wbtn.classList.toggle('show', heavenlyWolfWeapon());
+  wbtn.classList.toggle('off', wolfReady > 0);
+  wbtn.innerHTML = wolfReady > 0 ? `☄<br>${Math.ceil(wolfReady / 1000)}s` : '☄<br>WOLVES';
+  const hasDevil = Object.keys(g.contracts).some(k => g.contracts[k]);
+  const activeDevil = Object.keys(g.contracts).find(k => g.contracts[k]);
+  const devilDefForButtons = DEVIL_CONTRACTS.find(c => c.id === activeDevil);
+  g.grimoireCooldowns ||= [0, 0, 0, 0]; g.devilCooldowns ||= [0, 0, 0, 0];
+  document.querySelectorAll('.grimBtn').forEach((b, i) => {
+    const ready = Math.max(0, (g.grimoireCooldowns[i] || 0) - performance.now());
+    const label = g.me.grimoire ? GRIMOIRES[g.me.grimoire].moves[i] : 'LOCKED';
+    b.classList.toggle('off', !g.me.grimoire || ready > 0);
+    b.innerHTML = ready > 0 ? `📖${i + 1}<br>${Math.ceil(ready / 1000)}s` : `📖${i + 1}<br>${label}`;
+  });
+  document.querySelectorAll('.devilBtn').forEach((b, i) => {
+    const ready = Math.max(0, (g.devilCooldowns[i] || 0) - performance.now());
+    const label = devilDefForButtons ? devilDefForButtons.moves[i] : 'LOCKED';
+    b.classList.toggle('off', !hasDevil || ready > 0);
+    b.innerHTML = ready > 0 ? `契${i + 1}<br>${Math.ceil(ready / 1000)}s` : `契${i + 1}<br>${label}`;
+  });
 
   // weapon panel (standard shooter layout: icon / name+rarity / ammo);
   // exotic weapons animate their color right in the panel
   const wpn = WEAPONS[g.me.weapon], wcol = rarityCol(wpn.rarity), ammoLeft = g.ammo[wpn.ammo];
+  const charging = g.me.chargeShot && g.me.chargeShot.weapon === g.me.weapon;
   $('wpnIcon').textContent = wpn.icon;
   $('wpnName').textContent = wpn.name.toUpperCase();
   $('wpnName').style.color = wcol;
-  $('wpnRarity').textContent = RARITY[wpn.rarity].name.toUpperCase();
+  $('wpnRarity').textContent = charging ? 'CHARGING' : rarityLabel(wpn.rarity).toUpperCase();
   $('wpnAmmo').textContent = ammoLeft;
   $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
   $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
   $('weaponPanel').style.borderLeftColor = wcol;
+  const gp = $('grimoirePower'), dp = $('devilPower');
+  if (g.me.grimoire) {
+    const gr = GRIMOIRES[g.me.grimoire];
+    const idx = GRIMOIRE_EVOLVE.indexOf(g.me.grimoire), next = GRIMOIRE_EVOLVE[idx + 1];
+    gp.querySelector('.t').textContent = '📖 ' + gr.name.toUpperCase();
+    gp.querySelector('.s').textContent = gr.stats + (next ? ` · Next: ${GRIMOIRES[next].name}` : ' · Fully awakened') + (g.me.grimoire === 'antimagic' ? ` · Parry ${Math.max(0, ((g.me.antiReady || 0) - performance.now()) / 1000).toFixed(0)}s` : '');
+    gp.style.borderLeftColor = gr.col;
+  } else {
+    gp.querySelector('.t').textContent = '📖 NO GRIMOIRE';
+    gp.querySelector('.s').textContent = 'Defeat Wizard King, pick up Grimoire Roll.';
+    gp.style.borderLeftColor = '#888';
+  }
+  const activeContract = Object.keys(g.contracts).find(k => g.contracts[k]);
+  const contractDef = DEVIL_CONTRACTS.find(c => c.id === activeContract);
+  dp.querySelector('.t').textContent = activeContract ? '契 DEVIL CONTRACT' : '契 NO CONTRACT';
+  dp.querySelector('.s').textContent = contractDef ? `${contractDef.name}: ${contractDef.power}` : 'Not available in solo.';
+  dp.style.borderLeftColor = activeContract ? '#ff3d5a' : '#888';
+  document.querySelectorAll('.hotSlot').forEach((slot, i) => {
+    const key = g.me.weapons[i], icon = slot.querySelector('.ico'), rar = slot.querySelector('.rar');
+    slot.classList.toggle('sel', i === g.me.activeSlot);
+    if (key) {
+      const hw = WEAPONS[key], hc = rarityCol(hw.rarity);
+      icon.textContent = hw.icon;
+      rar.textContent = RARITY[hw.rarity].name.toUpperCase();
+      rar.style.color = hc;
+      slot.style.borderColor = i === g.me.activeSlot ? '#ffd94d' : hc;
+    } else {
+      icon.textContent = '+';
+      rar.textContent = 'EMPTY';
+      rar.style.color = '#9db2c9';
+      slot.style.borderColor = '#ffffff24';
+    }
+  });
+  renderInventoryGui();
+}
+
+function spawnWizardBoss(g) {
+  const t = g.grimoireTower;
+  const w = makePlayer('wizardBoss', 'WIZARD KING', { eye: 4, hair: 5, outfit: 6 }, 'G', t.x, t.y, true);
+  w.guard = true; w.boss = true; w.wizard = true; w.weapon = 'zeus';
+  w.hp = w.maxHp = 1150; w.home = { x: t.x, y: t.y }; w.lastAoE = 0; w.dmgMul = 0.75;
+  g.players[w.id] = w;
 }
 
 // Minimap (top-right): buildings, chests, storm circle, you, teammates,
@@ -2306,6 +3781,7 @@ function drawMinimap() {
     let col = null;
     if (p.guard) col = '#ff5f5f';
     else if (id === g.me.id) col = '#ffffff';
+    else if (g.mode === 'ffa' && net.allies.has(id)) col = '#5dff7a';
     else if (p.team !== 'S' && p.team === g.me.team) col = '#5dff7a';
     if (!col) continue;                           // enemies stay hidden
     ctx.fillStyle = col;
