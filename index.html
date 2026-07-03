@@ -82,6 +82,20 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #hud.spectating #weaponPanel,#hud.spectating #hotbar,#hud.spectating #abilityPad,#hud.spectating #chestBtn,
 #hud.spectating #buildMenu,#hud.spectating #invBtn,#hud.spectating #adminBtnHud,#hud.spectating #itemInfo
   {display:none !important}
+/* Downed (revivable, bleeding out): same idea as spectating but shown
+   BEFORE true death, with a countdown so it's obvious what's happening
+   and that it will resolve (revive or bleed out) rather than looking
+   like the game just froze. */
+#downedBar{position:absolute;top:calc(64px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+  display:none;align-items:center;gap:10px;background:rgba(40,8,8,.82);border:1px solid #ff6b6b88;
+  border-radius:12px;padding:8px 14px;pointer-events:none;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#downedText{font-weight:900;letter-spacing:1px;color:#ff8a8a;font-size:15px;white-space:nowrap}
+#downedTimer{font-weight:900;color:#fff;font-size:15px;font-variant-numeric:tabular-nums}
+#hud.downed #downedBar{display:flex}
+#hud.downed #fireBtn,#hud.downed #buildBtn,#hud.downed #shieldBtn,#hud.downed #wolfBtn,
+#hud.downed #weaponPanel,#hud.downed #hotbar,#hud.downed #abilityPad,#hud.downed #buildMenu,
+#hud.downed #invBtn,#hud.downed #adminBtnHud,#hud.downed #chestBtn,#hud.downed #itemInfo
+  {display:none !important}
 /* Device-adaptive HUD scaling: #hudInner is sized larger/smaller than
    the real viewport by 1/scale, then transform-scaled back down/up to
    exactly fill it again. Every button/panel inside is laid out in that
@@ -445,6 +459,10 @@ body.pc #touchHint{display:none}
     <div id="spectateText">👁 SPECTATING</div>
     <button id="specPrev">◀</button>
     <button id="specNext">▶</button>
+  </div>
+  <div id="downedBar">
+    <div id="downedText">⚠ DOWNED — awaiting rescue</div>
+    <div id="downedTimer">28s</div>
   </div>
   <div id="killFeed"></div>
   <div id="touchHint">Left side move · right side aim · buttons handle fire, build, shield, interact, weapons, wolves, grimoire, devil powers</div>
@@ -1021,6 +1039,24 @@ function showScreen(id) {
 }
 function isFfaStyleMode(mode) {
   return mode === 'ffa' || mode === 'team1' || mode === 'team2';
+}
+// The 28s "downed" (revivable) state is only worth entering if someone
+// could actually revive you. Without this check, modes with no real
+// teammates (solos, or FFA with no chosen ally) would force a pointless
+// 28s wait — with no UI feedback and no chance of rescue — before you
+// could truly die and start spectating.
+function canBeRescued(p) {
+  if (game.mode === 'solo' || game.mode === 'solos') return false; // every player for themself
+  if (game.mode === 'ffa') {
+    for (const id of net.allies) { const o = game.players[id]; if (o && o.alive) return true; }
+    return false;
+  }
+  if (p.team === 'S') return false; // no real team assigned
+  for (const id in game.players) {
+    const o = game.players[id];
+    if (o !== p && o.alive && !o.guard && o.team === p.team) return true;
+  }
+  return false;
 }
 function saveProfile() {
   myName = $('nameInput').value.trim().slice(0, 12) || myName;
@@ -2472,7 +2508,7 @@ function hurtLocal(p, dmg, by) {
       game.phoenixReady = false; p.hp = 60; p.shieldPts = Math.min(MAX_SHIELD, p.shieldPts + 40);
       p.protectedUntil = performance.now() + 5000; addEffect('heaven', p.x, p.y, true); toast('Phoenix Feather saved you!', 2600); return;
     }
-    if (!p.guard && game.mode !== 'solo' && !p.downed) {
+    if (!p.guard && canBeRescued(p) && !p.downed) {
       p.downed = true; p.hp = 1; p.downT = 28;
       addKillFeed(p.name + ' is downed');
       if (p.grimoire) { spawnItem({ id: 'dropgrim_' + p.id + '_' + performance.now(), x: p.x + 18, y: p.y, kind: 'grimoire', grimoire: p.grimoire }); p.grimoire = null; }
@@ -3863,6 +3899,11 @@ function render() {
     const target = g.players[g.spectateId];
     $('spectateText').textContent = target ? `👁 SPECTATING ${target.name.toUpperCase()}` : '👁 SPECTATING';
   }
+  // downed (revivable): make the otherwise-invisible bleed-out timer
+  // visible so it doesn't look like the game just froze
+  const downed = g.me.alive && g.me.downed;
+  $('hud').classList.toggle('downed', downed);
+  if (downed) $('downedTimer').textContent = Math.max(0, Math.ceil(g.me.downT)) + 's';
 
   // HUD text refresh — HP bar shifts green -> orange -> red as it drops
   const hpPct = g.me.hp / CFG.maxHp;
