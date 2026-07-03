@@ -67,6 +67,17 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
    ============================================================ */
 #hud{position:fixed;inset:0;z-index:10;display:none;pointer-events:none}
 #hud.active{display:block}
+/* Device-adaptive HUD scaling: #hudInner is sized larger/smaller than
+   the real viewport by 1/scale, then transform-scaled back down/up to
+   exactly fill it again. Every button/panel inside is laid out in that
+   pre-transform coordinate space, so ALL of them (position AND size)
+   shrink or grow together as one unit with no dead margins or clipped
+   corners — this is what actually fixes overlap on small phones and
+   makes everything scale up nicely on large tablets/desktops. --ui-scale
+   is computed from real device dimensions in resize() (see JS). */
+#hudInner{position:absolute;top:0;left:0;transform-origin:top left;
+  width:calc(100% / var(--ui-scale,1));height:calc(100% / var(--ui-scale,1));
+  transform:scale(var(--ui-scale,1))}
 #hud .hbtn{position:absolute;pointer-events:auto;display:flex;align-items:center;justify-content:center;
   font-weight:800;color:#fff;border:none;border-radius:50%;touch-action:none}
 #fireBtn{right:calc(24px + env(safe-area-inset-right));bottom:calc(110px + env(safe-area-inset-bottom));
@@ -387,6 +398,7 @@ body.pc #touchHint{display:none}
 
 <!-- ================= IN-GAME HUD ================= -->
 <div id="hud">
+ <div id="hudInner">
   <div id="topHud">
     <div id="hpWrap"><div id="spOuter"><div id="spFill"></div></div><div id="hpOuter"><div id="hpFill"></div></div><div id="hpText">❤️ 100 / 100</div><div id="armorInfo"></div></div>
     <div id="stormInfo"><span id="stormText">storm</span><div id="stormBarO"><div id="stormBar"></div></div></div>
@@ -437,6 +449,7 @@ body.pc #touchHint{display:none}
     <button class="matBtn" data-mat="brick">🧱 BRICK</button>
     <button class="matBtn" data-mat="metal">⛓️ METAL</button>
   </div>
+ </div>
 </div>
 
 <div id="toast"></div>
@@ -1130,6 +1143,16 @@ function resize() {
   ZOOM = clamp(H / 760, 0.55, 1);
   canvas.width = W * DPR; canvas.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // Device-adaptive HUD scale (separate from ZOOM, which only affects
+  // the game camera): the whole button/panel overlay was laid out
+  // against a ~1180x820 iPad-landscape reference. Scaling uniformly by
+  // the tighter of the width/height ratios guarantees every element
+  // still fits inside ANY real screen without overlapping — small
+  // phones shrink the whole HUD down, large desktop monitors can grow
+  // it up a bit for legibility. See #hudInner in CSS for how the scale
+  // is applied without breaking each element's screen-corner anchor.
+  const uiScale = clamp(Math.min(W / 1180, H / 820), 0.5, 1.3);
+  document.documentElement.style.setProperty('--ui-scale', uiScale);
   // cached full-screen gradients: cinematic edge darkening + red hurt flash
   vignette = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.45, W / 2, H / 2, Math.max(W, H) * 0.72);
   vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,0.42)');
