@@ -135,19 +135,25 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
 #hpText{font-size:13px;margin-top:3px;color:#cfe3ff;text-shadow:0 1px 2px #000}
 #stormInfo{text-align:center;font-size:15px;font-weight:700;color:#d9b6ff;text-shadow:0 1px 3px #000}
 #matInfo{text-align:right;font-size:15px;font-weight:700;text-shadow:0 1px 3px #000;line-height:1.5}
-/* weapon panel: standard-shooter style — icon, name, big ammo count */
+/* weapon panel: a compact stat card — logo+name, then damage/ammo,
+   fire rate, and rarity stacked underneath (standard-shooter layout) */
 #weaponPanel{position:absolute;right:calc(158px + env(safe-area-inset-right));
-  bottom:calc(24px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:12px;
-  background:rgba(8,14,24,.62);border:1px solid #ffffff22;border-left:5px solid #fff;
-  border-radius:12px;padding:8px 16px;pointer-events:none;
+  bottom:calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:5px;
+  background:rgba(8,14,24,.72);border:1px solid #ffffff22;border-left:5px solid #fff;
+  border-radius:12px;padding:10px 16px;pointer-events:none;min-width:196px;
   backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-#wpnIcon{font-size:28px;line-height:1}
-#wpnName{font-size:14px;font-weight:800;letter-spacing:1.5px}
-#wpnRarity{font-size:10px;font-weight:700;letter-spacing:2px;color:#9db2c9}
-#wpnAmmo{font-size:28px;font-weight:900;color:#fff;min-width:52px;text-align:right;
-  font-variant-numeric:tabular-nums}
+.wpnHead{display:flex;align-items:center;gap:9px}
+#wpnIcon{font-size:26px;line-height:1}
+#wpnName{font-size:15px;font-weight:800;letter-spacing:1.5px}
+.wpnRow{display:flex;justify-content:space-between;align-items:baseline;
+  font-variant-numeric:tabular-nums;border-top:1px solid #ffffff1a;padding-top:5px}
+#wpnDmg{font-size:16px;font-weight:800;color:#fff}
+.wpnAmmoWrap{text-align:right;white-space:nowrap}
+#wpnAmmo{font-size:16px;font-weight:800;color:#fff}
 #wpnAmmo.dry{color:#ff5f5f}
-#wpnAmmoType{font-size:9px;font-weight:700;letter-spacing:2px;color:#9db2c9;text-align:right}
+#wpnAmmoType{font-size:9px;font-weight:700;letter-spacing:1.5px;color:#9db2c9;margin-left:4px}
+#wpnRof{font-size:11px;font-weight:700;color:#cfd8e6;letter-spacing:.5px}
+#wpnRarity{font-size:10px;font-weight:800;letter-spacing:2px;color:#9db2c9}
 #hotbar{position:absolute;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);
   display:flex;gap:8px;pointer-events:auto;background:rgba(8,14,24,.52);border:1px solid #ffffff22;
   padding:6px;border-radius:8px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
@@ -263,11 +269,13 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
   #itemInfo{bottom:calc(64px + env(safe-area-inset-bottom));padding:5px 12px;max-width:300px}
   #itemInfo .nm{font-size:13px}
   #itemInfo .st{font-size:10px}
-  #weaponPanel{right:calc(110px + env(safe-area-inset-right));bottom:calc(8px + env(safe-area-inset-bottom));padding:5px 10px;gap:8px;border-left-width:4px}
-  #wpnIcon{font-size:18px}
-  #wpnName{font-size:11px;letter-spacing:1px}
+  #weaponPanel{right:calc(110px + env(safe-area-inset-right));bottom:calc(8px + env(safe-area-inset-bottom));padding:5px 10px;gap:3px;border-left-width:4px;min-width:150px}
+  #wpnIcon{font-size:16px}
+  #wpnName{font-size:10px;letter-spacing:1px}
+  .wpnRow{padding-top:3px}
+  #wpnDmg,#wpnAmmo{font-size:12px}
+  #wpnRof{font-size:9px}
   #wpnRarity{font-size:8px}
-  #wpnAmmo{font-size:18px;min-width:34px}
   #hotbar{bottom:calc(4px + env(safe-area-inset-bottom));gap:4px;padding:4px}
   .hotSlot{width:44px;height:40px}.hotSlot .ico{font-size:15px}.hotSlot .rar{display:none}
   #powerPanel{top:54px}.powerLine{min-width:132px;font-size:10px;padding:5px 7px}.powerLine .s{display:none}
@@ -402,9 +410,10 @@ body.pc #touchHint{display:none}
   <button class="hbtn" id="wolfBtn">☄<br>WOLVES</button>
   <button class="hbtn" id="fireBtn">🔥 FIRE</button>
   <div id="weaponPanel">
-    <div id="wpnIcon">🔫</div>
-    <div><div id="wpnName">RUSTFANG</div><div id="wpnRarity">COMMON</div></div>
-    <div><div id="wpnAmmo">120</div><div id="wpnAmmoType">LIGHT</div></div>
+    <div class="wpnHead"><span id="wpnIcon">🔫</span><span id="wpnName">RUSTFANG</span></div>
+    <div class="wpnRow"><span id="wpnDmg">DMG 20</span><span class="wpnAmmoWrap"><span id="wpnAmmo">120</span><span id="wpnAmmoType">LIGHT</span></span></div>
+    <div id="wpnRof">3.5 shots/sec</div>
+    <div id="wpnRarity">COMMON</div>
   </div>
   <div id="hotbar">
     <button class="hotSlot sel" data-slot="0"><span class="num">1</span><span class="ico">🔫</span><span class="rar">COMMON</span></button>
@@ -3692,14 +3701,17 @@ function render() {
     b.innerHTML = ready > 0 ? `契${i + 1}<br>${Math.ceil(ready / 1000)}s` : `契${i + 1}<br>${label}`;
   });
 
-  // weapon panel (standard shooter layout: icon / name+rarity / ammo);
-  // exotic weapons animate their color right in the panel
+  // weapon panel: LOGO+NAME / DAMAGE+AMMUNITION / FIRE RATE / RARITY;
+  // exotic (and higher) weapons animate their color right in the panel
   const wpn = WEAPONS[g.me.weapon], wcol = rarityCol(wpn.rarity), ammoLeft = g.ammo[wpn.ammo];
   const charging = g.me.chargeShot && g.me.chargeShot.weapon === g.me.weapon;
   $('wpnIcon').textContent = wpn.icon;
   $('wpnName').textContent = wpn.name.toUpperCase();
   $('wpnName').style.color = wcol;
+  $('wpnDmg').textContent = 'DMG ' + wpn.dmg + (wpn.pellets > 1 ? '×' + wpn.pellets : '');
+  $('wpnRof').textContent = wpn.rof + ' shots/sec';
   $('wpnRarity').textContent = charging ? 'CHARGING' : rarityLabel(wpn.rarity).toUpperCase();
+  $('wpnRarity').style.color = wcol;
   $('wpnAmmo').textContent = ammoLeft;
   $('wpnAmmo').classList.toggle('dry', ammoLeft < 1);
   $('wpnAmmoType').textContent = AMMO[wpn.ammo].name.toUpperCase();
