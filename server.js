@@ -170,8 +170,8 @@ wss.on('connection', ws => {
         });
         break;
       }
-      case 'reset_match': {
-        if (!party) return;
+      case 'reset_match': { // only the party leader may restart for everyone
+        if (!party || party.hostId !== ws.id) return;
         party.started = false;
         broadcast(party, { t: 'match_reset', party: lobbyPayload(party) });
         break;

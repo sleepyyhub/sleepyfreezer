@@ -67,6 +67,21 @@ input.name{width:230px;height:52px;font-size:20px;text-align:center;border-radiu
    ============================================================ */
 #hud{position:fixed;inset:0;z-index:10;display:none;pointer-events:none}
 #hud.active{display:block}
+/* Spectate mode (you died, match still going): a top-center banner
+   with prev/next buttons to browse who's still alive. Combat controls
+   (fire/build/shield/wolves/weapon panel/hotbar/abilities/bag) are
+   hidden via .spectating on #hud since they do nothing while dead. */
+#spectateBar{position:absolute;top:calc(64px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+  display:none;align-items:center;gap:10px;background:rgba(8,14,24,.78);border:1px solid #ffdd6688;
+  border-radius:12px;padding:8px 14px;pointer-events:auto;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#spectateText{font-weight:900;letter-spacing:1px;color:#ffdd66;font-size:15px;white-space:nowrap}
+#specPrev,#specNext{border:none;border-radius:8px;background:#1b2739;color:#fff;font-weight:1000;
+  min-width:38px;min-height:38px;font-size:16px}
+#hud.spectating #spectateBar{display:flex}
+#hud.spectating #fireBtn,#hud.spectating #buildBtn,#hud.spectating #shieldBtn,#hud.spectating #wolfBtn,
+#hud.spectating #weaponPanel,#hud.spectating #hotbar,#hud.spectating #abilityPad,#hud.spectating #chestBtn,
+#hud.spectating #buildMenu,#hud.spectating #invBtn,#hud.spectating #adminBtnHud,#hud.spectating #itemInfo
+  {display:none !important}
 /* Device-adaptive HUD scaling: #hudInner is sized larger/smaller than
    the real viewport by 1/scale, then transform-scaled back down/up to
    exactly fill it again. Every button/panel inside is laid out in that
@@ -411,7 +426,10 @@ body.pc #touchHint{display:none}
 <div class="screen" id="scrOver">
   <h1 id="overTitle">VICTORY!</h1>
   <div class="sub" id="overSub"></div>
+  <!-- only the party leader can restart for everyone; other members
+       see a waiting message instead of a button that would do nothing -->
   <button class="btn green" id="btnAgain">PLAY AGAIN</button>
+  <div class="sub" id="waitHostHint" style="display:none">Waiting for the party leader to restart…</div>
   <button class="btn gray" id="btnToMenu">MAIN MENU</button>
 </div>
 
@@ -422,6 +440,11 @@ body.pc #touchHint{display:none}
     <div id="hpWrap"><div id="spOuter"><div id="spFill"></div></div><div id="hpOuter"><div id="hpFill"></div></div><div id="hpText">❤️ 100 / 100</div><div id="armorInfo"></div></div>
     <div id="stormInfo"><span id="stormText">storm</span><div id="stormBarO"><div id="stormBar"></div></div></div>
     <div id="matInfo">🪵 0&nbsp; 🧱 0&nbsp; ⛓️ 0<br><span id="aliveInfo">0 alive</span></div>
+  </div>
+  <div id="spectateBar">
+    <div id="spectateText">👁 SPECTATING</div>
+    <button id="specPrev">◀</button>
+    <button id="specNext">▶</button>
   </div>
   <div id="killFeed"></div>
   <div id="touchHint">Left side move · right side aim · buttons handle fire, build, shield, interact, weapons, wolves, grimoire, devil powers</div>
@@ -1082,6 +1105,9 @@ document.querySelectorAll('.modeBtn').forEach(b => b.addEventListener('click', (
 }));
 $('btnToMenu').addEventListener('click', () => { game = null; net.disconnect(); showScreen('scrMenu'); });
 $('btnAgain').addEventListener('click', () => {
+  // client-side guard mirrors the server's authority check: only the
+  // party leader can restart a shared match for everyone
+  if (net.party && net.party.hostId !== net.selfId) return toast('Only the party leader can restart');
   game = null;
   if (net.party) {
     net.send({ t: 'reset_match' });
@@ -1398,6 +1424,7 @@ function baseGame(seed, mode) {
     nextUpgradeAt: isFfaStyleMode(mode) ? performance.now() + 60000 : Infinity,
     upgradeOpen: false,
     camX: 0, camY: 0, shake: 0, aimLock: null,
+    spectateId: null, deathPlacement: null, // spectate mode: see update()
     // practice range: bare training figures in the top-left corner —
     // shoot them to warm up; they get back up after a few seconds
     dummies: [
@@ -2138,6 +2165,8 @@ document.querySelectorAll('.grimBtn').forEach(b => press(b, () => activateGrimoi
 document.querySelectorAll('.devilBtn').forEach(b => press(b, () => activateDevilPower(+b.dataset.ability)));
 press($('shieldBtn'), deployShield);
 press($('wolfBtn'), summonHeavenWolves);
+press($('specPrev'), () => cycleSpectate(-1));
+press($('specNext'), () => cycleSpectate(1));
 press($('invBtn'), () => toggleInventoryGui());
 press($('invClose'), () => toggleInventoryGui(false));
 press($('adminClose'), () => $('adminGui').classList.remove('show'));
@@ -3027,6 +3056,31 @@ function aliveTeams() {
   for (const id in game.players) { const p = game.players[id]; if (p.alive && !p.guard) t.add(p.team === 'S' ? p.id : p.team); }
   return t;
 }
+// spectate mode: who the camera follows once you die but the match
+// (still) isn't over. Prefers a teammate/ally if you have one alive,
+// otherwise anyone still standing.
+function spectateCandidates() {
+  return Object.keys(game.players).filter(id => {
+    const p = game.players[id];
+    return p.alive && !p.guard;
+  });
+}
+function pickSpectateTarget() {
+  const cands = spectateCandidates();
+  if (!cands.length) return null;
+  const g = game, mine = cands.find(id => {
+    const p = g.players[id];
+    return p.team !== 'S' && p.team === g.me.team;
+  });
+  return mine || cands[0];
+}
+function cycleSpectate(dir) {
+  const cands = spectateCandidates();
+  if (!cands.length) { game.spectateId = null; return; }
+  let idx = cands.indexOf(game.spectateId);
+  idx = (idx + dir + cands.length) % cands.length;
+  game.spectateId = cands[idx];
+}
 
 function update(dt) {
   const g = game;
@@ -3071,7 +3125,17 @@ function update(dt) {
     // easier health: passive regeneration after a few calm seconds
     if (g.me.hp < g.me.maxHp && performance.now() - (g.me.lastHurtT || 0) > CFG.regenDelay * (g.contracts.slowRegen ? 1.8 : 1) * 1000)
       g.me.hp = Math.min(g.me.maxHp, g.me.hp + CFG.regenRate * dt);
-  } else g.aimLock = null;
+  } else {
+    g.aimLock = null;
+    // spectating: only once truly dead (downed-but-revivable players
+    // stay on their own body) and only while the match continues
+    if (!g.me.alive && !g.over) {
+      const cur = g.spectateId && g.players[g.spectateId];
+      if (!cur || !cur.alive || cur.guard) g.spectateId = pickSpectateTarget();
+    } else {
+      g.spectateId = null;
+    }
+  }
 
   if (isFfaStyleMode(g.mode) && performance.now() >= g.nextUpgradeAt) showUpgradeDraft();
 
@@ -3191,21 +3255,38 @@ function update(dt) {
     }
   }
 
+  // Dying no longer ends the match for you immediately — record your
+  // placement once, then keep spectating (camera follows another
+  // living player, see the spectate block above) until the match
+  // actually concludes for everyone.
+  if (!g.me.alive && g.deathPlacement == null) g.deathPlacement = countAlive() + 1;
+
   // win / lose detection (a 1-player lobby never auto-wins)
   if (!g.over) {
     const alive = countAlive();
     const total = Object.values(g.players).filter(p => !p.guard).length;
-    if (!g.me.alive) {
-      g.over = true; endMatch(false, alive + 1);
-    } else if (g.mode === 'team1') {
+    let matchEnded = false, won = false;
+    if (g.mode === 'team1') {
+      // co-op vs PVE: a shared win once the bosses are cleared, even for
+      // players who were downed/died earlier
       const pveAlive = Object.values(g.players).some(p => p.guard && p.alive);
-      if (!pveAlive) { g.over = true; endMatch(true, 1); }
+      matchEnded = !pveAlive; won = true;
     } else if (total > 1) {
       if (g.mode === 'solo' || g.mode === 'solos') {
-        if (alive <= 1) { g.over = true; endMatch(true, 1); }
-      } else if (aliveTeams().size <= 1) { // team modes: last team standing
-        g.over = true; endMatch(true, 1);
+        matchEnded = alive <= 1;
+        won = g.me.alive; // if exactly one remains and it's not you, you didn't win
+      } else {
+        const teams = aliveTeams(); // team modes: last team standing wins as
+        matchEnded = teams.size <= 1; // a whole, even for teammates who died earlier
+        if (matchEnded) {
+          const survivor = [...teams][0];
+          won = survivor !== undefined && (g.me.team === 'S' ? survivor === g.me.id : survivor === g.me.team);
+        }
       }
+    }
+    if (matchEnded) {
+      g.over = true;
+      endMatch(won, won ? 1 : (g.deathPlacement || alive + 1));
     }
   }
 }
@@ -3214,6 +3295,11 @@ function endMatch(won, placement) {
   setTimeout(() => {
     $('overTitle').textContent = won ? '🏆 VICTORY ROYALE!' : '💀 ELIMINATED';
     $('overSub').textContent = won ? 'Last one standing. GG!' : `You placed #${placement}. Better luck next drop!`;
+    // only the party leader can restart for everyone — solo players
+    // (no party) always get their own PLAY AGAIN button
+    const isHost = !net.party || net.party.hostId === net.selfId;
+    $('btnAgain').style.display = isHost ? '' : 'none';
+    $('waitHostHint').style.display = isHost ? 'none' : 'block';
     showScreen('scrOver');
   }, 900);
 }
@@ -3227,8 +3313,11 @@ function render() {
   // ZOOM < 1: the whole world pass is drawn scaled down, so the view
   // covers VW x VH world units instead of W x H.
   const VW = W / ZOOM, VH = H / ZOOM;
-  g.camX = g.me.x - VW / 2;
-  g.camY = g.me.y - VH / 2;
+  // while spectating (dead, match still going), the camera follows the
+  // spectated player instead of your own corpse
+  const camAnchor = (!g.me.alive && g.spectateId && g.players[g.spectateId]) || g.me;
+  g.camX = camAnchor.x - VW / 2;
+  g.camY = camAnchor.y - VH / 2;
   g.shake *= 0.86;
   const cx = g.camX + (Math.random() - 0.5) * g.shake;
   const cy = g.camY + (Math.random() - 0.5) * g.shake;
@@ -3766,6 +3855,14 @@ function render() {
   }
 
   drawMinimap();
+
+  // spectate mode: swap the combat HUD for a "who am I watching" banner
+  const spectating = !g.me.alive && !g.over;
+  $('hud').classList.toggle('spectating', spectating);
+  if (spectating) {
+    const target = g.players[g.spectateId];
+    $('spectateText').textContent = target ? `👁 SPECTATING ${target.name.toUpperCase()}` : '👁 SPECTATING';
+  }
 
   // HUD text refresh — HP bar shifts green -> orange -> red as it drops
   const hpPct = g.me.hp / CFG.maxHp;
