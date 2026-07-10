@@ -17,19 +17,19 @@ Ein Third-Person Action-RPG in einer kleinen 3D-Welt:
 
 ## Umsetzung in Etappen
 
-### Etappe 1 — Grundgerüst
-- Projekt-Setup (Vite, Three.js)
-- Szene, Kamera, Licht, Render-Loop
-- Boden + Testwürfel
+### Etappe 1 — Grundgerüst ✅
+- [x] Projekt-Setup (Vite, Three.js)
+- [x] Szene, Kamera, Licht (Cel-Shading/Toon-Look), Render-Loop
 
-### Etappe 2 — Spieler & Steuerung
-- Spielerfigur (erstmal simple Form/Kapsel)
-- WASD-Bewegung + folgende Kamera
-- Kollision mit der Welt
+### Etappe 2 — Spieler & Steuerung ✅
+- [x] Spielerfigur "Kaito" (Low-Poly-Schwertkämpfer mit Katana)
+- [x] WASD-Bewegung + Sprint, Lauf-/Idle-Animation
+- [x] Third-Person-Kamera (Maus drehen, Mausrad zoomen)
+- [x] Kollision mit Hindernissen + Weltgrenze
 
-### Etappe 3 — Welt
-- Größere Karte mit Hindernissen und Deko
-- Grenzen/Zonen
+### Etappe 3 — Welt ✅ (erste Version)
+- [x] Karte mit Sakura-Bäumen, Torii-Tor, Felsen, Blumen, Wolken
+- [ ] Mehr Zonen/Gebiete (später)
 
 ### Etappe 4 — Kampf
 - Gegner mit einfacher KI (folgen/angreifen)
