@@ -11,15 +11,27 @@ export class CameraRig {
     this._target = new THREE.Vector3();
     this._desired = new THREE.Vector3();
     this._dragging = false;
+    this._shake = 0;
+    this._moved = 0;
+    this._downTime = 0;
+    this.onTap = null; // kurzer Klick ohne Ziehen => Angriff
 
     domElement.addEventListener('contextmenu', (e) => e.preventDefault());
     domElement.addEventListener('pointerdown', (e) => {
       this._dragging = true;
+      this._moved = 0;
+      this._downTime = performance.now();
       domElement.setPointerCapture(e.pointerId);
     });
-    domElement.addEventListener('pointerup', () => (this._dragging = false));
+    domElement.addEventListener('pointerup', () => {
+      this._dragging = false;
+      if (this._moved < 6 && performance.now() - this._downTime < 350) {
+        this.onTap?.();
+      }
+    });
     domElement.addEventListener('pointermove', (e) => {
       if (!this._dragging) return;
+      this._moved += Math.abs(e.movementX) + Math.abs(e.movementY);
       this.yaw -= e.movementX * 0.005;
       this.pitch = THREE.MathUtils.clamp(this.pitch + e.movementY * 0.004, -0.1, 1.2);
     });
@@ -31,6 +43,10 @@ export class CameraRig {
       },
       { passive: false }
     );
+  }
+
+  addShake(amount) {
+    this._shake = Math.max(this._shake, amount);
   }
 
   update(dt, targetPos) {
@@ -47,6 +63,15 @@ export class CameraRig {
     // weiches Nachziehen
     const t = 1 - Math.pow(0.0001, dt);
     this.camera.position.lerp(this._desired, t);
+
+    // Kamera-Wackeln bei Treffern
+    if (this._shake > 0) {
+      this._shake = Math.max(0, this._shake - dt * 1.6);
+      const s = this._shake * 0.35;
+      this.camera.position.x += (Math.random() - 0.5) * s;
+      this.camera.position.y += (Math.random() - 0.5) * s;
+    }
+
     this.camera.lookAt(this._target);
   }
 }

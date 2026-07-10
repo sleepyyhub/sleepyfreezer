@@ -20,3 +20,8 @@ export function toon(color) {
   }
   return cache.get(color);
 }
+
+// Eigenes (nicht geteiltes) Toon-Material – z.B. für Treffer-Blitzen pro Gegner
+export function toonUnique(color) {
+  return new THREE.MeshToonMaterial({ color, gradientMap });
+}

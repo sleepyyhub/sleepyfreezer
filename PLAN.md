@@ -31,14 +31,18 @@ Ein Third-Person Action-RPG in einer kleinen 3D-Welt:
 - [x] Karte mit Sakura-Bäumen, Torii-Tor, Felsen, Blumen, Wolken
 - [ ] Mehr Zonen/Gebiete (später)
 
-### Etappe 4 — Kampf
-- Gegner mit einfacher KI (folgen/angreifen)
-- Angriff des Spielers, HP-System, Schaden
+### Etappe 4 — Kampf ✅
+- [x] Anime-Devils (2 Stufen: lila normal, rot groß) mit KI:
+      umherstreifen → verfolgen → Angriff mit Telegraph → zurück zum Revier
+- [x] Schwertangriff (Klick/Leertaste) mit Lunge, Treffer-Funken, Rückstoß
+- [x] HP-System beidseitig, Schadenszahlen, Kamera-Shake, Rot-Vignette
+- [x] Tod & Respawn (Spieler am Spawn, Gegner nach 12s im Revier)
 
 ### Etappe 5 — RPG-Systeme
-- XP, Level, steigende Werte
-- HP-Balken / UI (HUD)
-- Items aufsammeln & einfaches Inventar
+- [x] XP & Level-Ups (mehr HP & Schaden, Voll-Heilung, Gold-Ring-Effekt)
+- [x] HUD: HP-Balken, XP-Leiste, Level, Gegner-HP-Balken
+- [ ] Items aufsammeln & einfaches Inventar
+- [ ] Charakterauswahl (Kettensägen-Kämpfer, Grimoire-Magier)
 
 ### Etappe 6 — Feinschliff
 - Sound, Menü/Startbildschirm

@@ -5,6 +5,10 @@ const WALK_SPEED = 7;
 const SPRINT_SPEED = 12;
 const PLAYER_RADIUS = 0.5;
 
+// Angriff: Ausholen -> Schlag -> Ausklingen
+const ATTACK_DUR = 0.42;
+const STRIKE_T = 0.16;
+
 // kürzester Weg zwischen zwei Winkeln
 function lerpAngle(a, b, t) {
   let d = (b - a) % (Math.PI * 2);
@@ -107,6 +111,24 @@ export class Player {
     this.animTime = 0;
     this.moving = false;
 
+    // Kampf & RPG-Werte
+    this.maxHp = 100;
+    this.hp = this.maxHp;
+    this.damage = 12;
+    this.level = 1;
+    this.xp = 0;
+    this.xpNext = 40;
+    this.dead = false;
+    this.deathT = 0;
+    this.attackT = -1; // -1 = kein Angriff aktiv
+    this.didStrike = false; // genau im Frame des Treffers true
+
+    // Callbacks (werden in main.js verdrahtet)
+    this.onStatsChanged = null;
+    this.onDamaged = null;
+    this.onDeath = null;
+    this.onLevelUp = null;
+
     this.group.position.set(0, 0, 0);
     this.group.rotation.y = this.heading;
     scene.add(this.group);
@@ -116,7 +138,67 @@ export class Player {
     this._right = new THREE.Vector3();
   }
 
+  tryAttack() {
+    if (this.dead || this.attackT >= 0) return;
+    this.attackT = 0;
+  }
+
+  takeDamage(dmg, fromPos) {
+    if (this.dead) return;
+    this.hp -= dmg;
+
+    // Rückstoß vom Angreifer weg
+    const dx = this.group.position.x - fromPos.x;
+    const dz = this.group.position.z - fromPos.z;
+    const len = Math.hypot(dx, dz) || 1;
+    this.group.position.x += (dx / len) * 0.9;
+    this.group.position.z += (dz / len) * 0.9;
+
+    this.onDamaged?.(dmg);
+    this.onStatsChanged?.();
+
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.dead = true;
+      this.deathT = 0;
+      this.attackT = -1;
+      this.onDeath?.();
+    }
+  }
+
+  gainXp(amount) {
+    this.xp += amount;
+    while (this.xp >= this.xpNext) {
+      this.xp -= this.xpNext;
+      this.level++;
+      this.xpNext = Math.round(this.xpNext * 1.35);
+      this.maxHp += 15;
+      this.hp = this.maxHp; // Level-Up heilt komplett
+      this.damage += 3;
+      this.onLevelUp?.();
+    }
+    this.onStatsChanged?.();
+  }
+
   update(dt, input, cameraYaw, world) {
+    this.didStrike = false;
+
+    // Tod: umfallen, dann am Spawn wiederbeleben
+    if (this.dead) {
+      this.deathT += dt;
+      this.group.rotation.x = -Math.min(1, this.deathT / 0.35) * (Math.PI / 2) * 0.9;
+      if (this.deathT > 2.2) {
+        this.dead = false;
+        this.hp = this.maxHp;
+        this.group.position.set(0, 0, 2);
+        this.group.rotation.x = 0;
+        this.heading = Math.PI;
+        this.group.rotation.y = this.heading;
+        this.onStatsChanged?.();
+      }
+      return;
+    }
+
     const axis = input.axis;
     this.moving = axis.x !== 0 || axis.z !== 0;
 
@@ -141,6 +223,21 @@ export class Player {
       this.animTime += dt * (input.sprint ? 14 : 10);
     } else {
       this.animTime += dt * 2;
+    }
+
+    // Angriff fortschreiben; Treffer-Frame markieren
+    if (this.attackT >= 0) {
+      const prev = this.attackT;
+      this.attackT += dt;
+      if (prev < STRIKE_T && this.attackT >= STRIKE_T) this.didStrike = true;
+
+      // kleiner Lunge nach vorn während des Schlags (Treffer verbinden besser)
+      if (this.attackT > 0.08 && this.attackT < 0.26) {
+        this.group.position.x += Math.sin(this.heading) * 4.5 * dt;
+        this.group.position.z += Math.cos(this.heading) * 4.5 * dt;
+      }
+
+      if (this.attackT >= ATTACK_DUR) this.attackT = -1;
     }
 
     this._collide(world);
@@ -174,22 +271,47 @@ export class Player {
   _animate() {
     const { armL, armR, legL, legR, torso } = this.parts;
     const t = this.animTime;
+    const attacking = this.attackT >= 0;
 
     if (this.moving) {
       const swing = Math.sin(t) * 0.65;
       legL.rotation.x = swing;
       legR.rotation.x = -swing;
       armL.rotation.x = -swing * 0.8;
-      armR.rotation.x = swing * 0.8;
+      if (!attacking) armR.rotation.x = swing * 0.8;
       this.group.position.y = Math.abs(Math.sin(t)) * 0.08;
     } else {
       // Idle: sanftes Atmen, Arme locker
       legL.rotation.x = 0;
       legR.rotation.x = 0;
       armL.rotation.x = Math.sin(t) * 0.05;
-      armR.rotation.x = -Math.sin(t) * 0.05;
+      if (!attacking) armR.rotation.x = -Math.sin(t) * 0.05;
       this.group.position.y = 0;
       torso.scale.y = 1 + Math.sin(t) * 0.01;
+    }
+
+    // Schwert-Schlag: ausholen -> nach vorn schlagen -> zurück
+    if (attacking) {
+      const a = this.attackT;
+      let armX;
+      let twist;
+      if (a < 0.1) {
+        const k = a / 0.1;
+        armX = -2.5 * k; // über den Kopf ausholen
+        twist = 0.35 * k;
+      } else if (a < 0.24) {
+        const k = (a - 0.1) / 0.14;
+        armX = -2.5 + 3.4 * k; // Schlag nach vorn-unten
+        twist = 0.35 - 0.8 * k;
+      } else {
+        const k = (a - 0.24) / (ATTACK_DUR - 0.24);
+        armX = 0.9 * (1 - k); // ausklingen
+        twist = -0.45 * (1 - k);
+      }
+      armR.rotation.x = armX;
+      torso.rotation.y = twist;
+    } else {
+      torso.rotation.y = 0;
     }
   }
 }

@@ -4,6 +4,9 @@ import { createWorld } from './world.js';
 import { Player } from './player.js';
 import { CameraRig } from './cameraRig.js';
 import { Input } from './input.js';
+import { EnemyManager } from './enemy.js';
+import { Effects } from './effects.js';
+import { UI } from './ui.js';
 
 // Renderer
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -42,18 +45,57 @@ sun.shadow.camera.bottom = -70;
 sun.shadow.camera.far = 150;
 scene.add(sun);
 
-// Welt, Spieler, Steuerung
+// Welt, Spieler, Steuerung, Gegner, UI
 const world = createWorld(scene);
 const player = new Player(scene);
 const input = new Input();
 const rig = new CameraRig(camera, renderer.domElement);
+const ui = new UI();
+const effects = new Effects(scene);
+
+const enemies = new EnemyManager(scene, world, {
+  ui,
+  effects,
+  camera,
+  onKill: (enemy) => player.gainXp(enemy.xp),
+});
+
+// Klick ohne Ziehen = Angriff
+rig.onTap = () => input.queueAttack();
+
+// Spieler-Ereignisse -> HUD & Effekte
+player.onStatsChanged = () => {
+  ui.setHp(player.hp, player.maxHp);
+  ui.setXp(player.xp, player.xpNext);
+  ui.setLevel(player.level);
+};
+player.onDamaged = (dmg) => {
+  ui.flashVignette();
+  rig.addShake(0.35);
+  const pos = player.group.position.clone();
+  pos.y = 2.4;
+  ui.damageNumber(pos, camera, `-${dmg}`, 'dmg-hurt');
+};
+player.onDeath = () => ui.announce('K.O.!', 'announce-ko');
+player.onLevelUp = () => {
+  ui.announce('LEVEL UP!', 'announce-level');
+  effects.levelUpRing(player.group.position);
+};
+player.onStatsChanged();
+
+// Debug-Zugriff (Konsole/Tests)
+window.__game = { player, enemies, rig, world };
 
 // Game-Loop
 const clock = new THREE.Clock();
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
+  if (input.consumeAttack()) player.tryAttack();
   player.update(dt, input, rig.yaw, world);
+  if (player.didStrike) enemies.playerStrike(player);
+  enemies.update(dt, player);
+  effects.update(dt);
   rig.update(dt, player.group.position);
   world.update(dt);
 

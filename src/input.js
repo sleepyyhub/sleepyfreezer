@@ -2,9 +2,26 @@
 export class Input {
   constructor() {
     this.keys = new Set();
-    window.addEventListener('keydown', (e) => this.keys.add(e.code));
+    this._attackQueued = false;
+    window.addEventListener('keydown', (e) => {
+      this.keys.add(e.code);
+      if (e.code === 'Space') {
+        e.preventDefault();
+        this._attackQueued = true;
+      }
+    });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
+  }
+
+  queueAttack() {
+    this._attackQueued = true;
+  }
+
+  consumeAttack() {
+    const queued = this._attackQueued;
+    this._attackQueued = false;
+    return queued;
   }
 
   down(code) {

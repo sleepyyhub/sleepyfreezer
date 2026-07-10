@@ -11,16 +11,21 @@
 
     <!-- HUD -->
     <div class="hud hud-top-left">
-      <div class="char-name">KAITO <span class="char-level">Lv. 1</span></div>
+      <div class="char-name">KAITO <span class="char-level" id="char-level">Lv. 1</span></div>
       <div class="hp-bar"><div class="hp-fill" id="hp-fill"></div></div>
+      <div class="xp-bar"><div class="xp-fill" id="xp-fill"></div></div>
     </div>
 
-    <div class="hud hud-top-right">SLEEPY LEGENDS <span class="version">v0.1</span></div>
+    <div class="hud hud-top-right">SLEEPY LEGENDS <span class="version">v0.2</span></div>
 
     <div class="hud hud-bottom">
-      <b>WASD</b> Bewegen &nbsp;·&nbsp; <b>Maus ziehen</b> Kamera &nbsp;·&nbsp;
-      <b>Mausrad</b> Zoom &nbsp;·&nbsp; <b>Shift</b> Sprinten
+      <b>WASD</b> Bewegen &nbsp;·&nbsp; <b>Klick/Leertaste</b> Angriff &nbsp;·&nbsp;
+      <b>Maus ziehen</b> Kamera &nbsp;·&nbsp; <b>Shift</b> Sprinten
     </div>
+
+    <!-- Bildschirm-Effekte -->
+    <div id="vignette"></div>
+    <div id="announce"></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>
