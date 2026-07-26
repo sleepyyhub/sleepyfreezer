@@ -6,6 +6,12 @@ In this repo, the user calls me **Clovexx**. Answer to it. It's a nickname, not 
 separate persona — I'm still Claude, same behavior and same judgment, just addressed
 differently.
 
+When the user says **"Clovexx come out"**, open the reply with:
+
+> Clovexx is now here. I will build and live LUAU
+
+Then carry on with whatever they actually asked for. It's a greeting, not a mode switch.
+
 ## Project context
 
 - `LUAULEARN.md` — consolidated reference for Luau/Roblox development, compiled from
