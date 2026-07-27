@@ -1,12 +1,15 @@
 import * as THREE from 'three';
-import type { EnemyEntity, PlayerEntity } from '@/sim/entities';
+import type { EnemyEntity } from '@/sim/entities';
 import type { SimWorld } from '@/sim/World';
-import { MOVES, DODGE } from '@/sim/moves';
 import type { MaterialFactory } from '../materials/toon';
-import { buildEnemyRig, buildPlayerRig, type CharacterRig } from './characters';
+import { buildPlayerRig } from '../models/player';
+import { buildEnemyRig } from '../models/enemies';
+import { disposeRig, type Rig } from '../models/skeleton';
+import { EnemyAnimator, PlayerAnimator } from '../anim/CharacterAnimator';
 
 interface EnemyView {
-  rig: CharacterRig;
+  rig: Rig;
+  anim: EnemyAnimator;
   bar: THREE.Group;
   barFill: THREE.Mesh;
   telegraph: THREE.Mesh;
@@ -15,17 +18,20 @@ interface EnemyView {
   rz: number;
   ry: number;
   ryaw: number;
+  lastHp: number;
 }
 
 const TELEGRAPH_RED = 0xff3b3b;
 const TELEGRAPH_YELLOW = 0xffcc33;
 
 /**
- * Binds sim entities to scene objects. The sim is the source of truth; this
- * layer only reads it, interpolates for smoothness, and poses the rigs.
+ * Binds sim entities to animated rigs. The sim is the source of truth; this
+ * layer reads it, interpolates for smoothness, and hands state to the
+ * animators. It never poses joints directly — that is the Animator's job.
  */
 export class EntityViews {
-  private playerRig: CharacterRig;
+  private playerRig: Rig;
+  private playerAnim: PlayerAnimator;
   private enemyViews = new Map<number, EnemyView>();
   private lockOnRing: THREE.Mesh;
   private disposables: (THREE.BufferGeometry | THREE.Material)[] = [];
@@ -34,12 +40,14 @@ export class EntityViews {
   private prz = 0;
   private pry = 0;
   private pryaw = 0;
+  private playerSpeed = 0;
 
   constructor(
     private scene: THREE.Scene,
     private mats: MaterialFactory,
   ) {
     this.playerRig = buildPlayerRig(mats);
+    this.playerAnim = new PlayerAnimator(this.playerRig);
     scene.add(this.playerRig.root);
 
     const ringGeo = new THREE.RingGeometry(0.75, 0.95, 20);
@@ -62,119 +70,59 @@ export class EntityViews {
     return this.playerRig.root;
   }
 
-  /**
-   * @param alpha fraction of a sim step already elapsed, used to smooth render
-   *              position between fixed-step updates.
-   */
-  sync(world: SimWorld, dt: number, alpha: number) {
-    this.syncPlayer(world, dt, alpha);
-    this.syncEnemies(world, dt, alpha);
+  /** Total triangles across every live rig — surfaced for the perf budget. */
+  get triangleCount(): number {
+    let n = this.playerRig.triangles;
+    for (const v of this.enemyViews.values()) n += v.rig.triangles;
+    return n;
+  }
+
+  sync(world: SimWorld, dt: number) {
+    this.syncPlayer(world, dt);
+    this.syncEnemies(world, dt);
     this.syncLockOn(world);
   }
 
   // ------------------------------------------------------------- player
 
-  private syncPlayer(world: SimWorld, dt: number, _alpha: number) {
+  private syncPlayer(world: SimWorld, dt: number) {
     const p = world.player;
-    const rig = this.playerRig;
 
     // Exponential damping is frame-rate independent; a fixed lerp factor is
     // the classic source of "combat feels different on my laptop".
     const k = 1 - Math.exp(-24 * dt);
+    const prevX = this.prx;
+    const prevZ = this.prz;
     this.prx += (p.x - this.prx) * k;
     this.prz += (p.z - this.prz) * k;
     this.pry += (p.y - this.pry) * k;
     this.pryaw = dampAngle(this.pryaw, p.yaw, 18, dt);
 
-    rig.root.position.set(this.prx, this.pry, this.prz);
-    rig.root.rotation.y = this.pryaw;
-    rig.root.visible = p.action !== 'dead';
+    // Ground speed drives the locomotion blend. Measured from the rendered
+    // position so it matches what the player actually sees.
+    const moved = Math.hypot(this.prx - prevX, this.prz - prevZ);
+    const instant = dt > 0 ? moved / dt : 0;
+    this.playerSpeed += (instant - this.playerSpeed) * (1 - Math.exp(-14 * dt));
 
-    this.posePlayer(p, world.time);
-  }
+    this.playerRig.root.position.set(this.prx, this.pry, this.prz);
+    this.playerRig.root.rotation.y = this.pryaw;
+    this.playerRig.root.visible = true;
 
-  private posePlayer(p: PlayerEntity, time: number) {
-    const rig = this.playerRig;
-    const rest = () => {
-      rig.armL.rotation.set(0, 0, 0.12);
-      rig.armR.rotation.set(0, 0, -0.12);
-      rig.legL.rotation.set(0, 0, 0);
-      rig.legR.rotation.set(0, 0, 0);
-      rig.torso.rotation.set(0, 0, 0);
-      rig.torso.position.y = 0.92;
-    };
-
-    if (p.action === 'attack' && p.currentMove) {
-      const mv = MOVES[p.currentMove];
-      const total = mv.startupS + mv.activeS + mv.recoverS;
-      const t = Math.min(1, p.actionT / total);
-      const swingPoint = mv.startupS / total;
-
-      // Wind back during startup, snap through on the active frames, settle.
-      const swing =
-        t < swingPoint
-          ? -0.9 * (t / swingPoint)
-          : -0.9 + 3.2 * Math.min(1, (t - swingPoint) / 0.22);
-
-      rest();
-      if (p.currentMove === 'special') {
-        rig.armL.rotation.set(-2.2, 0, 0.5);
-        rig.armR.rotation.set(-2.2, 0, -0.5);
-        rig.torso.rotation.x = -0.2;
-      } else if (p.currentMove === 'heavy') {
-        rig.armR.rotation.set(swing * 1.2, 0, -0.3);
-        rig.armL.rotation.set(swing * 0.5, 0, 0.3);
-        rig.torso.rotation.y = -swing * 0.35;
-      } else {
-        const side = p.currentMove === 'light2' ? -1 : 1;
-        rig.armR.rotation.set(swing * side, 0, -0.2);
-        rig.armL.rotation.set(-swing * side * 0.4, 0, 0.2);
-        rig.torso.rotation.y = -swing * 0.25 * side;
+    // Head/torso turn toward the lock-on target, as an offset from facing.
+    let aimOffset = 0;
+    if (world.lockOnTarget) {
+      const t = world.enemies.find((e) => e.id === world.lockOnTarget);
+      if (t) {
+        aimOffset = shortestAngle(Math.atan2(t.x - p.x, t.z - p.z) - this.pryaw);
       }
-      return;
     }
 
-    if (p.action === 'dodge') {
-      const t = Math.min(1, p.actionT / DODGE.totalS);
-      rest();
-      rig.torso.rotation.x = -Math.sin(t * Math.PI) * 2.2;
-      rig.torso.position.y = 0.92 - Math.sin(t * Math.PI) * 0.35;
-      rig.armL.rotation.x = -1.6;
-      rig.armR.rotation.x = -1.6;
-      return;
-    }
-
-    if (p.action === 'hurt') {
-      rest();
-      rig.torso.rotation.x = 0.35;
-      rig.armL.rotation.x = 0.6;
-      rig.armR.rotation.x = 0.6;
-      return;
-    }
-
-    // Idle / locomotion: a simple counter-swinging gait.
-    const speed = Math.hypot(p.x - this.prx, p.z - this.prz);
-    const moving = speed > 0.004;
-    rest();
-    if (moving) {
-      const phase = time * 11;
-      const amp = 0.7;
-      rig.legL.rotation.x = Math.sin(phase) * amp;
-      rig.legR.rotation.x = -Math.sin(phase) * amp;
-      rig.armL.rotation.x = -Math.sin(phase) * amp * 0.8;
-      rig.armR.rotation.x = Math.sin(phase) * amp * 0.8;
-      rig.torso.position.y = 0.92 + Math.abs(Math.sin(phase)) * 0.05;
-    } else {
-      const breathe = Math.sin(time * 2.2) * 0.03;
-      rig.torso.position.y = 0.92 + breathe;
-      rig.armL.rotation.x = breathe * 0.5;
-      rig.armR.rotation.x = -breathe * 0.5;
-    }
+    this.playerAnim.update(p, this.playerSpeed, dt, aimOffset);
   }
 
   // ------------------------------------------------------------- enemies
 
-  private syncEnemies(world: SimWorld, dt: number, _alpha: number) {
+  private syncEnemies(world: SimWorld, dt: number) {
     const seen = new Set<number>();
 
     for (const e of world.enemies) {
@@ -194,7 +142,12 @@ export class EntityViews {
       view.rig.root.position.set(view.rx, view.ry, view.rz);
       view.rig.root.rotation.y = view.ryaw;
 
-      this.poseEnemy(e, view, world.time);
+      // Detect damage here rather than subscribing to the event bus, so the
+      // flinch can never fire for an entity whose view does not exist yet.
+      if (e.hp < view.lastHp) view.anim.flinch(e);
+      view.lastHp = e.hp;
+
+      view.anim.update(e, dt);
       this.updateHealthBar(e, view, world);
       this.updateTelegraph(e, view);
     }
@@ -211,12 +164,10 @@ export class EntityViews {
     rig.root.position.set(e.x, e.y, e.z);
     this.scene.add(rig.root);
 
-    // Billboarded two-quad health bar. Cheap, and far more readable in a 3D
-    // scene than a DOM element chasing a projected position.
+    // Billboarded two-quad health bar. toneMapped/fog off because this is UI
+    // that happens to live in world space — ACES and the green fog wash it
+    // into an unreadable maroon otherwise.
     const bar = new THREE.Group();
-    // toneMapped/fog off: these are UI drawn in world space. Left on, ACES
-    // and the green fog wash them into dark maroon and they stop reading as
-    // health at a glance.
     const bg = new THREE.Mesh(
       new THREE.PlaneGeometry(1.2, 0.14),
       new THREE.MeshBasicMaterial({
@@ -275,6 +226,7 @@ export class EntityViews {
 
     return {
       rig,
+      anim: new EnemyAnimator(rig, e),
       bar,
       barFill: fill,
       telegraph,
@@ -282,62 +234,27 @@ export class EntityViews {
       rz: e.z,
       ry: e.y,
       ryaw: e.yaw,
+      lastHp: e.hp,
     };
-  }
-
-  private poseEnemy(e: EnemyEntity, view: EnemyView, time: number) {
-    const rig = view.rig;
-    const halo = rig.torso.getObjectByName('halo');
-    if (halo) halo.rotation.z = time * 1.4;
-
-    if (e.state === 'dead') {
-      // Topple and sink rather than popping out of existence.
-      const t = Math.min(1, (time - e.deadAt) / 0.6);
-      rig.root.rotation.x = t * 1.5;
-      rig.root.position.y = view.ry - t * 0.9;
-      rig.root.scale.setScalar(e.def.visual.scale * (1 - t * 0.25));
-      return;
-    }
-
-    if (e.state === 'stagger') {
-      rig.torso.rotation.x = 0.5 + Math.sin(time * 30) * 0.06;
-      rig.torso.rotation.z = Math.sin(time * 22) * 0.1;
-      return;
-    }
-
-    if (e.state === 'windup' && e.currentAttack) {
-      const t = Math.min(1, e.stateT / e.currentAttack.windupS);
-      // Pull back further the longer the windup — the visual reads as loading.
-      rig.torso.rotation.x = -0.5 * t;
-      rig.torso.position.y = 0.2 + t * 0.15;
-      return;
-    }
-
-    if (e.state === 'attack') {
-      rig.torso.rotation.x = 0.6;
-      rig.torso.position.y = 0.1;
-      return;
-    }
-
-    rig.torso.rotation.set(0, 0, 0);
-    const bob = e.state === 'aggro' ? Math.abs(Math.sin(time * 8)) * 0.07 : Math.sin(time * 1.8) * 0.03;
-    rig.torso.position.y = (e.def.visual.shape === 'golem' ? 0.2 : 0.5) + bob;
   }
 
   private updateHealthBar(e: EnemyEntity, view: EnemyView, world: SimWorld) {
     // Bosses use the HUD bar; a floating bar would just be redundant clutter.
     const engaged = e.state !== 'idle' && e.state !== 'dead';
     const damaged = e.hp < e.maxHp;
-    view.bar.visible = !e.isBoss && (engaged || damaged) && e.state !== 'dead';
+    view.bar.visible =
+      !e.isBoss && (engaged || damaged) && e.state !== 'dead' && world.player.action !== 'dead';
     if (!view.bar.visible) return;
 
-    view.bar.position.set(view.rx, view.ry + view.rig.height + 0.45, view.rz);
-    const pct = Math.max(0, e.hp / e.maxHp);
-    view.barFill.scale.x = pct;
+    view.bar.position.set(view.rx, view.ry + view.rig.height + 0.4, view.rz);
+    // Scale the bar to the creature: a 1m grasshopper wearing a bar sized for
+    // a 3m warden reads as UI clutter rather than as that enemy's health.
+    const barScale = clamp(view.rig.height / 2.2, 0.55, 1.25);
+    view.bar.scale.setScalar(barScale);
+    view.barFill.scale.x = Math.max(0, e.hp / e.maxHp);
     (view.barFill.material as THREE.MeshBasicMaterial).color.setHex(
       e.state === 'stagger' ? 0xffd166 : 0xff5d5d,
     );
-    view.bar.visible = view.bar.visible && world.player.action !== 'dead';
   }
 
   private updateTelegraph(e: EnemyEntity, view: EnemyView) {
@@ -351,19 +268,15 @@ export class EntityViews {
     view.telegraph.rotation.y = -view.ryaw;
 
     // The decal fills toward the real hitbox size, so "full" == "now".
-    const scale = atk.range * (0.35 + t * 0.65);
-    view.telegraph.scale.setScalar(scale);
+    view.telegraph.scale.setScalar(atk.range * (0.35 + t * 0.65));
 
     const mat = view.telegraph.material as THREE.MeshBasicMaterial;
-    // Consistent language across the whole game: red = dodge.
     mat.color.setHex(atk.multiplier >= 1.5 ? TELEGRAPH_RED : TELEGRAPH_YELLOW);
     mat.opacity = 0.2 + t * 0.45;
   }
 
   private syncLockOn(world: SimWorld) {
-    const target = world.lockOnTarget
-      ? this.enemyViews.get(world.lockOnTarget)
-      : undefined;
+    const target = world.lockOnTarget ? this.enemyViews.get(world.lockOnTarget) : undefined;
     this.lockOnRing.visible = !!target;
     if (!target) return;
     this.lockOnRing.position.set(target.rx, target.ry + 0.08, target.rz);
@@ -378,25 +291,31 @@ export class EntityViews {
   }
 
   private destroyEnemyView(view: EnemyView) {
-    this.scene.remove(view.rig.root, view.bar, view.telegraph);
-    view.rig.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.isMesh && m.geometry) m.geometry.dispose();
-    });
+    this.scene.remove(view.bar, view.telegraph);
+    disposeRig(view.rig);
   }
 
   dispose() {
     for (const v of this.enemyViews.values()) this.destroyEnemyView(v);
     this.enemyViews.clear();
-    this.scene.remove(this.playerRig.root, this.lockOnRing);
+    this.scene.remove(this.lockOnRing);
+    disposeRig(this.playerRig);
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
   }
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
 function dampAngle(current: number, target: number, k: number, dt: number): number {
-  let diff = target - current;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  return current + diff * (1 - Math.exp(-k * dt));
+  return current + shortestAngle(target - current) * (1 - Math.exp(-k * dt));
+}
+
+function shortestAngle(diff: number): number {
+  let d = diff;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }

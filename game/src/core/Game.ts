@@ -267,8 +267,7 @@ export class Game {
     // than fast-forwarding the fight the player wasn't watching.
     if (this.acc > SIM_STEP * 6) this.acc = 0;
 
-    const alpha = this.acc / SIM_STEP;
-    this.views.sync(this.world, dt, alpha);
+    this.views.sync(this.world, dt);
     this.views.faceCamera(this.rig.camera);
 
     const lockTarget = this.world.lockOnTarget

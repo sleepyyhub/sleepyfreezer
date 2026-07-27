@@ -8,7 +8,7 @@ saving.
 ```bash
 npm install
 npm run dev          # http://localhost:5173
-npm test             # 53 unit tests, ~700ms
+npm test             # 76 unit tests, ~1.5s
 npm run build        # typecheck + production bundle
 ```
 
@@ -44,7 +44,10 @@ src/
 │   ├── loot.ts        weighted tables, pity, affixes
 │   ├── progression.ts the single gate predicate
 │   └── terrain.ts     heightfield shared by sim and renderer
-├── render/    three.js: materials, zone, rigs, camera, VFX
+├── render/
+│   ├── models/    procedural rigs: geometry primitives + skeletons
+│   ├── anim/      keyframed clips, layered blending, state mapping
+│   └── ...        materials, zone, camera, VFX
 ├── content/   All game data. Designers edit here, not code.
 ├── ui/        React HUD/panels over the canvas + zustand store
 └── net/       Save adapter (local now, Supabase-shaped interface)
@@ -73,10 +76,42 @@ shares a few shader programs.
 **HUD updates at 15 Hz, not 60.** Health numbers changing 15 times a second
 are indistinguishable to a human and cost a quarter of the React work.
 
-**Procedural placeholder art.** No GLBs yet. `buildPlayerRig` /
-`buildEnemyRig` return a `CharacterRig` — that interface is the contract the
-animator codes against, so swapping in real art replaces the factory and
-nothing else.
+**Procedurally modelled, fully rigged characters.** No GLBs — every model is
+built in code from a *profile mesh*: a lofted tube whose elliptical
+cross-section varies ring by ring, so an upper arm bulges at the deltoid and
+tapers into the elbow instead of being a box. Characters have real joint
+hierarchies (spine → chest → neck → head; shoulder → arm → forearm → hand with
+individual fingers; hip → thigh → shin → foot with a heel and toes). The
+grasshopper has six insect legs with coxa/femur/tibia/tarsus.
+
+Deliberately rigid-segment rather than skinned: at low-poly facet density,
+skinning buys smooth deformation nobody can see while costing bone weights, a
+skinned-material path, and per-vertex CPU work. Correct pivots are what the
+look actually needs.
+
+| model | triangles | joints |
+|---|---|---|
+| player | 2,122 | 21 |
+| grasshopper | 1,140 | 34 |
+| rockhide sentinel | 1,142 | 20 |
+| warden zhun | 1,552 | 27 |
+
+**Hand-authored keyframe animation.** `render/anim/` is a small animation
+system: clips are keyframed joint tracks, sampled with smootherstep easing and
+blended across two layers — locomotion underneath, actions on top. Action
+clips may declare a joint *mask*, so an upper-body attack plays while the legs
+keep running. Blending happens on pose numbers in a reusable buffer and is
+applied to the rig once per frame; writing transforms per layer would make the
+last writer win instead of blending.
+
+Attack clips are **time-scaled to the move's real duration** at play time, so
+the visual contact frame always lands on the sim's active window — retuning
+frame data can never desync the animation from the hitbox. A procedural layer
+on top handles what keyframes cannot: run lean, and head/neck turn toward the
+lock-on target.
+
+Every character has idle, walk, run, per-attack, hurt, stagger and death
+clips, plus a phase-transition roar for the boss.
 
 **World-space UI opts out of tone mapping and fog.** Health bars and
 telegraph decals are UI that happens to live in the scene; ACES and green fog
@@ -105,10 +140,14 @@ disc made the boss unreachable and nothing caught it.
 
 ## Verified
 
-- 53 unit tests pass; `tsc --noEmit` clean.
-- 194 KB gzipped total (73 KB app + 120 KB three), against a 400 KB budget.
+- 76 unit tests pass; `tsc --noEmit` clean.
+- 207 KB gzipped total (87 KB app + 120 KB three), against a 400 KB budget.
 - Headless playthrough via `node smoke.mjs` — boots, fights, kills, levels,
   drops loot, triggers the boss, dies, persists the save, zero console errors.
+- Animation review via `node animcheck.mjs` — samples every clip mid-pose and
+  screenshots it. Animation cannot be verified by assertion alone; the unit
+  tests cover what a screenshot cannot (keyed values reaching joints, masks
+  confining layers, loops closing) and this covers what they cannot.
 
 ## Known gaps
 
@@ -120,4 +159,9 @@ disc made the boss unreachable and nothing caught it.
 - **Boss is the mid-boss only.** Grand Elder Kaanu is designed, not built.
 - **No affix pool differentiation by world** — one shared pool until World 2
   exists to differentiate from.
-- **Placeholder art**, per above.
+- **No skinning**, per above — limbs are rigid segments, so there is visible
+  articulation at joints rather than smooth deformation. Intentional, but it
+  is a ceiling on fidelity if the art direction ever changes.
+- **No facial animation** beyond a fixed eye plane, and no weapon meshes in
+  hand (the player fights unarmed; weapon items change stats, not the model).
+- **Foot IK is absent**, so feet interpenetrate steep ground.
