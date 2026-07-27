@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Verdant Reach</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; }
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #e8fff0;
+      }
+      #game-canvas { display: block; width: 100vw; height: 100vh; }
+      /* The UI layer sits above the canvas and is click-through by default;
+         individual panels opt back in with pointer-events: auto. */
+      #ui-root {
+        position: fixed; inset: 0; pointer-events: none; user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    <div id="ui-root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
