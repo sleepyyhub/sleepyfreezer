@@ -1,13 +1,76 @@
-# Clovexx — a Luau obfuscator
+# Clovexx & Clovyre — Luau obfuscators
 
-A from-scratch, source-level obfuscator for Luau / Roblox scripts. It parses real
-Luau (types, string interpolation, compound assignment, generics, attributes),
-transforms the AST, and emits minified, obfuscated Luau that runs identically to
-the original.
+Two from-scratch obfuscators for Luau / Roblox scripts, sharing one front end:
 
-This is **your** obfuscator: no external service, no per-seat cost, and the output
-is not fingerprintable as any commercial product. It is a *source transformer*,
-not a bytecode virtualizer — see [Strength & limits](#strength--limits).
+- **Clovexx** — a *source-level* obfuscator. Parses real Luau, transforms the AST,
+  and emits minified, obfuscated Luau (renaming, string encryption, number
+  encoding, junk). Fast, small output.
+- **Clovyre** — a *VM / bytecode* obfuscator (the strong tier). Compiles your
+  Luau to a custom register-machine bytecode and ships an interpreter that runs
+  it. Your original control flow, names, strings and constants are **gone**,
+  replaced by an opcode array and a dispatch loop. This is the Luraph-class
+  technique, and it can layer the Clovexx passes on top of its own interpreter.
+
+Both are **yours**: no external service, no per-seat cost, and the output is not
+fingerprintable as any commercial product.
+
+---
+
+## Clovyre (VM / bytecode virtualization)
+
+Clovyre compiles each Luau function to a proto — `{ code, k, protos, ... }` — where
+`code` is a flat array of opcode integers. At runtime a small interpreter walks
+that array. The compiler reproduces Lua semantics faithfully:
+
+- **Closures & upvalues** — every local is boxed in a one-element cell, so nested
+  closures and **per-iteration loop-variable capture** are correct by construction.
+- **Multiple returns / varargs** — full Lua multi-value calling convention (the
+  `top` register discipline), including `f(g())`, `{...}`, `select("#", ...)`.
+- **Metatables** — arithmetic, comparison, concat, length and indexing use native
+  operators inside the VM, so `__index`, `__add`, `__eq`, … all just work.
+- **Generalized `for`** — iterating a table directly (`for k,v in t do`) as well as
+  iterator functions (`pairs`/`ipairs`).
+- **`if`/`while`/`repeat`-until (sees body locals)/numeric & generic `for`/`break`/
+  `continue`**, method calls with implicit `self`, `if-then-else` expressions.
+
+**Correctness guarantee:** any construct the VM can't express raises an internal
+marker and Clovyre **falls back to Clovexx** for that program — so output always
+runs. In practice the compiler virtualizes essentially the whole parseable Luau
+surface (the full test suite virtualizes with zero fallback).
+
+```lua
+local Clovyre = require(path.to.Clovyre)
+local out = Clovyre.obfuscate(source, {
+    seed = 12345,
+    protect = true,   -- also run the Clovexx passes over the emitted interpreter
+})
+```
+
+Options: `seed` (deterministic), `protect` (default false), `fallbackOnUnsupported`
+(default true).
+
+### Studio plugin
+
+`roblox/ClovyrePlugin.server.luau` adds **VM** and **VM+Protect** toolbar buttons
+that virtualize the selected script into a new ModuleScript. Put the bundled
+`dist/Clovyre.luau` inside the plugin as a child named `Clovyre`.
+
+### Trade-offs
+
+- Strong protection, but **larger and slower** output than Clovexx — the program
+  now runs through an interpreter. Best for the code you most want to protect.
+- The interpreter shape is fixed per build; run `protect = true` to rename and
+  string-encrypt it so the VM itself isn't sitting in the clear.
+- Same honest ceiling as any obfuscator: a determined reverser with a VM-lifting
+  toolkit can still make progress. This raises the cost a lot; it is not DRM.
+
+---
+
+## Clovexx (source-level)
+
+A source transformer: parses real Luau (types, string interpolation, compound
+assignment, generics, attributes), transforms the AST, and emits minified,
+obfuscated Luau that runs identically to the original.
 
 ## What it does
 
@@ -64,15 +127,20 @@ src/
   Parser.luau           recursive-descent parser; parses & discards Luau types
   Serializer.luau       AST -> minified Luau source
   NameGen.luau          deterministic opaque-identifier generator
-  Obfuscator.luau       pipeline + reserved-name collection + IIFE wrap
+  Obfuscator.luau       Clovexx pipeline + reserved-name collection + IIFE wrap
+  Clovyre.luau          Clovyre pipeline (compile -> emit VM, Clovexx fallback)
   passes/
     Rename.luau         scope-aware local renaming
     StringEncrypt.luau  encrypted string pool + injected decoder
     NumberEncode.luau   integer-literal encoding
     Junk.luau           dead-code / unused-local injection
-build.py                bundles src/ into dist/Clovexx.luau
-dist/Clovexx.luau       generated single-file ModuleScript (commit artifact)
-roblox/                 Studio plugin
+  vm/
+    Opcodes.luau        shared register-VM instruction set
+    Compiler.luau       AST -> bytecode proto (registers, upvalues, multi-value)
+    Runtime.luau        emits interpreter + serialized proto data + bootstrap
+build.py                bundles src/ into dist/Clovexx.luau and dist/Clovyre.luau
+dist/                   generated single-file ModuleScripts (commit artifacts)
+roblox/                 Studio plugins (Clovexx + Clovyre)
 tests/                  equivalence harness + sample scripts
 ```
 
@@ -88,9 +156,12 @@ The harness runs each sample through the real Luau interpreter, obfuscates it,
 runs the result, and asserts byte-identical program output.
 
 ```
-python3 tests/run.py roundtrip     # parse -> serialize equivalence
-python3 tests/run.py obfuscate     # full-pipeline equivalence (src/)
-CLOVEXX_BUNDLE=1 python3 tests/run.py obfuscate   # same, via dist/Clovexx.luau
+python3 tests/run.py roundtrip                     # parse -> serialize equivalence
+python3 tests/run.py obfuscate                     # Clovexx full-pipeline equivalence
+python3 tests/run.py clovyre                       # Clovyre VM equivalence
+CLOVEXX_BUNDLE=1 python3 tests/run.py obfuscate    # Clovexx via dist bundle
+CLOVYRE_BUNDLE=1 python3 tests/run.py clovyre      # Clovyre via dist bundle
+CLOVYRE_PROTECT=1 python3 tests/run.py clovyre     # Clovyre with protect mode
 ```
 
 Requires a `luau` binary on `PATH` or in `$LUAU`.

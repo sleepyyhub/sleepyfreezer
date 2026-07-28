@@ -45,6 +45,13 @@ local Serializer = require("../src/Serializer")
 local ast = Parser.parse(SRC)
 io_write(Serializer.serialize(ast))
 """
+    elif mode == "clovyre":
+        protect = "true" if os.environ.get("CLOVYRE_PROTECT") else "false"
+        mod = "../dist/Clovyre" if os.environ.get("CLOVYRE_BUNDLE") else "../src/Clovyre"
+        body = """
+local Clovyre = require("{mod}")
+io_write(Clovyre.obfuscate(SRC, {{ seed = {seed}, protect = {protect}, fallbackOnUnsupported = false }}))
+""".format(mod=mod, seed=seed, protect=protect)
     else:
         mod = "../dist/Clovexx" if os.environ.get("CLOVEXX_BUNDLE") else "../src/Obfuscator"
         body = """
@@ -75,7 +82,7 @@ def transform(mode, src_bytes, seed):
 def main():
     args = sys.argv[1:]
     mode = "roundtrip"
-    if args and args[0] in ("roundtrip", "obfuscate"):
+    if args and args[0] in ("roundtrip", "obfuscate", "clovyre"):
         mode = args.pop(0)
     samples = args or sorted(glob.glob(os.path.join(HERE, "samples", "*.luau")))
 
