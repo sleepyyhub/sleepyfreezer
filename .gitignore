@@ -1,0 +1,15 @@
+# local-only: contain recovered plaintext credentials
+recon.lua
+consts.json
+strings.json
+art.lua
+rest.lua
+skel*.lua
+out.lua
+t.lua
+proto.pkl
+harness/run*.lua
+harness/art_mod.lua
+harness/art_exposed.lua
+harness/recon_fns.lua
+harness/recon_stateful.lua
