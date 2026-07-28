@@ -43,6 +43,12 @@ local function transformExpr(node: any, subst: (value: string) -> any): any
 		node.rhs = transformExpr(node.rhs, subst)
 	elseif k == "Unop" then
 		node.operand = transformExpr(node.operand, subst)
+	elseif k == "IfExpr" then
+		for _, cl in node.clauses do
+			cl.cond = transformExpr(cl.cond, subst)
+			cl.value = transformExpr(cl.value, subst)
+		end
+		node.elseValue = transformExpr(node.elseValue, subst)
 	end
 	return node
 end

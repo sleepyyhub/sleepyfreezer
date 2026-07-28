@@ -48,8 +48,9 @@ local function quote(sv: string): string
 		elseif b == 10 then table.insert(out, "\\n")
 		elseif b == 13 then table.insert(out, "\\r")
 		elseif b == 9 then table.insert(out, "\\t")
-		elseif b == 0 then table.insert(out, "\\0")
-		elseif b < 32 or b >= 127 then table.insert(out, string.format("\\%d", b))
+		-- Zero-pad numeric escapes to 3 digits: an unpadded "\2" followed by
+		-- literal digits ("56") would be lexed as "\256" (an invalid byte).
+		elseif b < 32 or b >= 127 then table.insert(out, string.format("\\%03d", b))
 		else table.insert(out, c) end
 	end
 	table.insert(out, '"')
@@ -175,6 +176,15 @@ function writeExpr(w: Writer, node: any)
 		if needParen then emit(w, "(") end
 		writeExpr(w, operand)
 		if needParen then emit(w, ")") end
+	elseif k == "IfExpr" then
+		for i, cl in node.clauses do
+			emit(w, if i == 1 then "if" else "elseif")
+			writeExpr(w, cl.cond)
+			emit(w, "then")
+			writeExpr(w, cl.value)
+		end
+		emit(w, "else")
+		writeExpr(w, node.elseValue)
 	else
 		error("Serializer: unknown expr kind " .. tostring(k))
 	end

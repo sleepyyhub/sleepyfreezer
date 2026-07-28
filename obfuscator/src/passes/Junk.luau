@@ -69,6 +69,12 @@ local function processExpr(node: any, gen: any, rng: () -> number, density: numb
 		processExpr(node.rhs, gen, rng, density)
 	elseif k == "Unop" then
 		processExpr(node.operand, gen, rng, density)
+	elseif k == "IfExpr" then
+		for _, cl in node.clauses do
+			processExpr(cl.cond, gen, rng, density)
+			processExpr(cl.value, gen, rng, density)
+		end
+		processExpr(node.elseValue, gen, rng, density)
 	end
 end
 

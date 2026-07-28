@@ -57,6 +57,9 @@ local function collectReserved(block: any, reserved: { [string]: boolean })
 			end
 		elseif k == "Binop" then walkExpr(node.lhs); walkExpr(node.rhs)
 		elseif k == "Unop" then walkExpr(node.operand)
+		elseif k == "IfExpr" then
+			for _, cl in node.clauses do walkExpr(cl.cond); walkExpr(cl.value) end
+			walkExpr(node.elseValue)
 		end
 	end
 

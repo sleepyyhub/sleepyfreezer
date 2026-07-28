@@ -90,6 +90,12 @@ local function transformExpr(node: any, rng: () -> number): any
 		node.rhs = transformExpr(node.rhs, rng)
 	elseif k == "Unop" then
 		node.operand = transformExpr(node.operand, rng)
+	elseif k == "IfExpr" then
+		for _, cl in node.clauses do
+			cl.cond = transformExpr(cl.cond, rng)
+			cl.value = transformExpr(cl.value, rng)
+		end
+		node.elseValue = transformExpr(node.elseValue, rng)
 	end
 	return node
 end

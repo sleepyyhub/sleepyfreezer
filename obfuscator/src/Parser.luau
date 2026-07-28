@@ -59,6 +59,7 @@ end
 local parseExpr: (s: State) -> any
 local parseBlock: (s: State, terminators: { [string]: boolean }) -> any
 local skipType: (s: State) -> ()
+local parseIfExpr: (s: State) -> any
 
 -- ===================================================================
 -- Type stripping
@@ -372,8 +373,28 @@ local function parseSimple(s: State): any
 	elseif t.kind == "Keyword" and t.value == "function" then
 		s.pos += 1
 		return parseFunctionBody(s)
+	elseif t.kind == "Keyword" and t.value == "if" then
+		return parseIfExpr(s)
 	end
 	return parseSuffixed(s)
+end
+
+-- Luau if-then-else expression: `if c then a elseif c2 then b else e` (else required).
+function parseIfExpr(s: State): any
+	expect(s, "Keyword", "if")
+	local cond = parseExpr(s)
+	expect(s, "Keyword", "then")
+	local value = parseExpr(s)
+	local clauses = { { cond = cond, value = value } }
+	while accept(s, "Keyword", "elseif") do
+		local c = parseExpr(s)
+		expect(s, "Keyword", "then")
+		local v = parseExpr(s)
+		table.insert(clauses, { cond = c, value = v })
+	end
+	expect(s, "Keyword", "else")
+	local elseValue = parseExpr(s)
+	return { kind = "IfExpr", clauses = clauses, elseValue = elseValue }
 end
 
 local function parseSubExpr(s: State, limit: number): any

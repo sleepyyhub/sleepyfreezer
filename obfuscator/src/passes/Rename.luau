@@ -91,6 +91,12 @@ function renameExpr(ctx: Ctx, node: any)
 		renameExpr(ctx, node.rhs)
 	elseif k == "Unop" then
 		renameExpr(ctx, node.operand)
+	elseif k == "IfExpr" then
+		for _, cl in node.clauses do
+			renameExpr(ctx, cl.cond)
+			renameExpr(ctx, cl.value)
+		end
+		renameExpr(ctx, node.elseValue)
 	elseif k == "Number" or k == "String" or k == "Nil" or k == "True"
 		or k == "False" or k == "Vararg" then
 		-- literals: nothing
