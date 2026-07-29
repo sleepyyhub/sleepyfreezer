@@ -15,3 +15,17 @@ harness/recon_fns.lua
 harness/recon_stateful.lua
 __pycache__/
 *.tar.gz
+proto18.pkl
+art18.lua
+rest18.lua
+skel18.lua
+strs18*.json
+harness18/run*.lua
+harness18/rt.lua
+harness18/art_mod.lua
+harness18/dbg.lua
+harness18/drv.lua
+harness18/probe.lua
+harness18/recon_mod.lua
+build_recon18.py
+pyvm.py
