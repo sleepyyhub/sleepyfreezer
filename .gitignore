@@ -13,3 +13,5 @@ harness/art_mod.lua
 harness/art_exposed.lua
 harness/recon_fns.lua
 harness/recon_stateful.lua
+__pycache__/
+*.tar.gz

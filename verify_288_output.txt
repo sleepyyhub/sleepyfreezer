@@ -1,0 +1,301 @@
+# Differential verification: live Clovyre VM  vs  reconstructed Luau
+# 18 root-level protos x 16 input tuples = 288 cases.
+# Each case runs the SAME args through the artifact's own VM (via one-line
+# harness edit exposing run()) and through recon_redacted.lua's function,
+# comparing the full return tuple AND error status.
+#
+# 284 byte-identical.  4 "FAIL" are proto 19 = slug(x)=x:gsub("%W+","_")
+# fed a table: BOTH sides error at the same call site; only Luau's error
+# wording differs ("call a nil value" vs "call missing method 'gsub'").
+# i.e. behaviourally identical, textually different error strings.
+# Collapsing error text to a single <error> token (as REPORT.md did) => 288/288.
+# ------------------------------------------------------------------------
+[OK  ] proto 1   args=hello world                              | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=                                         | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=a b/c?d=1&e                              | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=123                                      | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=0                                        | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=-1.5                                     | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=true                                     | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=false                                    | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=                                         | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args={1,2,3,4|0}fb                           | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args={nil,nil,nil,nil|3}                      | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=xy                                      | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=xyz                                    | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args=%%weird chars!~_.-                       | vm=truenil                 rec=truenil                
+[OK  ] proto 1   args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truenil                 rec=truenil                
+[OK  ] proto 2   args=hello world                              | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=                                         | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=a b/c?d=1&e                              | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=123                                      | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=0                                        | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=-1.5                                     | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=true                                     | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=false                                    | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=                                         | vm=truenil                 rec=truenil                
+[OK  ] proto 2   args={1,2,3,4|0}fb                           | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args={nil,nil,nil,nil|3}                      | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=xy                                      | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=xyz                                    | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args=%%weird chars!~_.-                       | vm=truefalse               rec=truefalse              
+[OK  ] proto 2   args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truefalse               rec=truefalse              
+[OK  ] proto 6   args=hello world                              | vm=truehello%20world1     rec=truehello%20world1    
+[OK  ] proto 6   args=                                         | vm=true0                  rec=true0                 
+[OK  ] proto 6   args=a b/c?d=1&e                              | vm=truea%20b%2Fc%3Fd%3D1%26e5 rec=truea%20b%2Fc%3Fd%3D1%26e5
+[OK  ] proto 6   args=123                                      | vm=true1230               rec=true1230              
+[OK  ] proto 6   args=0                                        | vm=true00                 rec=true00                
+[OK  ] proto 6   args=-1.5                                     | vm=true-1.50              rec=true-1.50             
+[OK  ] proto 6   args=true                                     | vm=truetrue0              rec=truetrue0             
+[OK  ] proto 6   args=false                                    | vm=true0                  rec=true0                 
+[OK  ] proto 6   args=                                         | vm=true0                  rec=true0                 
+[OK  ] proto 6   args={1,2,3,4|0}fb                           | vm=truetable%3A%200x00005584e3c7aa702 rec=truetable%3A%200x00005584e3c7aa702
+[OK  ] proto 6   args={nil,nil,nil,nil|3}                      | vm=truetable%3A%200x00005584e3c7aa102 rec=truetable%3A%200x00005584e3c7aa102
+[OK  ] proto 6   args=xy                                      | vm=truex0                 rec=truex0                
+[OK  ] proto 6   args=xyz                                    | vm=truex0                 rec=truex0                
+[OK  ] proto 6   args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truetable%3A%200x00005584e3c7a9502 rec=truetable%3A%200x00005584e3c7a9502
+[OK  ] proto 6   args=%%weird chars!~_.-                       | vm=true%25%25weird%20chars%21~_.-4 rec=true%25%25weird%20chars%21~_.-4
+[OK  ] proto 6   args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truetable%3A%200x00005584e3c7a8602 rec=truetable%3A%200x00005584e3c7a8602
+[OK  ] proto 10  args=hello world                              | vm=true{Instance:hello world.XS,Instance:hello world.XO,Instance:hello world.YS,Instance:hello world.YO|0} rec=true{Instance:hello world.XS,Instance:hello world.XO,Instance:hello world.YS,Instance:hello world.YO|0}
+[OK  ] proto 10  args=                                         | vm=true{Instance:.XS,Instance:.XO,Instance:.YS,Instance:.YO|0} rec=true{Instance:.XS,Instance:.XO,Instance:.YS,Instance:.YO|0}
+[OK  ] proto 10  args=a b/c?d=1&e                              | vm=true{Instance:a b/c?d=1&e.XS,Instance:a b/c?d=1&e.XO,Instance:a b/c?d=1&e.YS,Instance:a b/c?d=1&e.YO|0} rec=true{Instance:a b/c?d=1&e.XS,Instance:a b/c?d=1&e.XO,Instance:a b/c?d=1&e.YS,Instance:a b/c?d=1&e.YO|0}
+[OK  ] proto 10  args=123                                      | vm=true{Instance:123.XS,Instance:123.XO,Instance:123.YS,Instance:123.YO|0} rec=true{Instance:123.XS,Instance:123.XO,Instance:123.YS,Instance:123.YO|0}
+[OK  ] proto 10  args=0                                        | vm=true{Instance:0.XS,Instance:0.XO,Instance:0.YS,Instance:0.YO|0} rec=true{Instance:0.XS,Instance:0.XO,Instance:0.YS,Instance:0.YO|0}
+[OK  ] proto 10  args=-1.5                                     | vm=true{Instance:-1.5.XS,Instance:-1.5.XO,Instance:-1.5.YS,Instance:-1.5.YO|0} rec=true{Instance:-1.5.XS,Instance:-1.5.XO,Instance:-1.5.YS,Instance:-1.5.YO|0}
+[OK  ] proto 10  args=true                                     | vm=false<error: attempt to concatenate string with boolean> rec=false<error: attempt to concatenate string with boolean>
+[OK  ] proto 10  args=false                                    | vm=false<error: attempt to concatenate string with boolean> rec=false<error: attempt to concatenate string with boolean>
+[OK  ] proto 10  args=                                         | vm=false<error: attempt to concatenate string with nil> rec=false<error: attempt to concatenate string with nil>
+[OK  ] proto 10  args={1,2,3,4|0}fb                           | vm=false<error: attempt to concatenate string with table> rec=false<error: attempt to concatenate string with table>
+[OK  ] proto 10  args={nil,nil,nil,nil|3}                      | vm=false<error: attempt to concatenate string with table> rec=false<error: attempt to concatenate string with table>
+[OK  ] proto 10  args=xy                                      | vm=false<error: invalid argument #1 to 'pairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'pairs' (table expected, got string)>
+[OK  ] proto 10  args=xyz                                    | vm=false<error: invalid argument #1 to 'pairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'pairs' (table expected, got string)>
+[OK  ] proto 10  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=false<error: attempt to concatenate string with table> rec=false<error: attempt to concatenate string with table>
+[OK  ] proto 10  args=%%weird chars!~_.-                       | vm=true{Instance:%%weird chars!~_.-.XS,Instance:%%weird chars!~_.-.XO,Instance:%%weird chars!~_.-.YS,Instance:%%weird chars!~_.-.YO|0} rec=true{Instance:%%weird chars!~_.-.XS,Instance:%%weird chars!~_.-.XO,Instance:%%weird chars!~_.-.YS,Instance:%%weird chars!~_.-.YO|0}
+[OK  ] proto 10  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=false<error: attempt to concatenate string with table> rec=false<error: attempt to concatenate string with table>
+[OK  ] proto 19  args=hello world                              | vm=truehello_world         rec=truehello_world        
+[OK  ] proto 19  args=                                         | vm=true                    rec=true                   
+[OK  ] proto 19  args=a b/c?d=1&e                              | vm=truea_b_c_d_1_e         rec=truea_b_c_d_1_e        
+[OK  ] proto 19  args=123                                      | vm=false<error: attempt to index number with 'gsub'> rec=false<error: attempt to index number with 'gsub'>
+[OK  ] proto 19  args=0                                        | vm=false<error: attempt to index number with 'gsub'> rec=false<error: attempt to index number with 'gsub'>
+[OK  ] proto 19  args=-1.5                                     | vm=false<error: attempt to index number with 'gsub'> rec=false<error: attempt to index number with 'gsub'>
+[OK  ] proto 19  args=true                                     | vm=false<error: attempt to index boolean with 'gsub'> rec=false<error: attempt to index boolean with 'gsub'>
+[OK  ] proto 19  args=false                                    | vm=false<error: attempt to index boolean with 'gsub'> rec=false<error: attempt to index boolean with 'gsub'>
+[OK  ] proto 19  args=                                         | vm=false<error: attempt to index nil with 'gsub'> rec=false<error: attempt to index nil with 'gsub'>
+[FAIL] proto 19  args={1,2,3,4|0}fb                           | vm=false<error: attempt to call a nil value> rec=false<error: attempt to call missing method 'gsub' of table>
+[FAIL] proto 19  args={nil,nil,nil,nil|3}                      | vm=false<error: attempt to call a nil value> rec=false<error: attempt to call missing method 'gsub' of table>
+[OK  ] proto 19  args=xy                                      | vm=truex                   rec=truex                  
+[OK  ] proto 19  args=xyz                                    | vm=truex                   rec=truex                  
+[FAIL] proto 19  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=false<error: attempt to call a nil value> rec=false<error: attempt to call missing method 'gsub' of table>
+[OK  ] proto 19  args=%%weird chars!~_.-                       | vm=true_weird_chars_       rec=true_weird_chars_      
+[FAIL] proto 19  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=false<error: attempt to call a nil value> rec=false<error: attempt to call missing method 'gsub' of table>
+[OK  ] proto 20  args=hello world                              | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args=                                         | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args=a b/c?d=1&e                              | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args=123                                      | vm=false<error: attempt to index number with 'X'> rec=false<error: attempt to index number with 'X'>
+[OK  ] proto 20  args=0                                        | vm=false<error: attempt to index number with 'X'> rec=false<error: attempt to index number with 'X'>
+[OK  ] proto 20  args=-1.5                                     | vm=false<error: attempt to index number with 'X'> rec=false<error: attempt to index number with 'X'>
+[OK  ] proto 20  args=true                                     | vm=false<error: attempt to index boolean with 'X'> rec=false<error: attempt to index boolean with 'X'>
+[OK  ] proto 20  args=false                                    | vm=false<error: attempt to index boolean with 'X'> rec=false<error: attempt to index boolean with 'X'>
+[OK  ] proto 20  args=                                         | vm=false<error: attempt to index nil with 'X'> rec=false<error: attempt to index nil with 'X'>
+[OK  ] proto 20  args={1,2,3,4|0}fb                           | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args={nil,nil,nil,nil|3}                      | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args=xy                                      | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args=xyz                                    | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args=%%weird chars!~_.-                       | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 20  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=false<error: attempt to index nil with 'Scale'> rec=false<error: attempt to index nil with 'Scale'>
+[OK  ] proto 21  args=hello world                              | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=                                         | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=a b/c?d=1&e                              | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=123                                      | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=0                                        | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=-1.5                                     | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=true                                     | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=false                                    | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args=                                         | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args={1,2,3,4|0}fb                           | vm=true{1,2,3,4|0}         rec=true{1,2,3,4|0}        
+[OK  ] proto 21  args={nil,nil,nil,nil|3}                      | vm=true{0,0,0,0|0}         rec=true{0,0,0,0|0}        
+[OK  ] proto 21  args=xy                                      | vm=truey                   rec=truey                  
+[OK  ] proto 21  args=xyz                                    | vm=truey                   rec=truey                  
+[OK  ] proto 21  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=true{0,0,0,0|0}         rec=true{0,0,0,0|0}        
+[OK  ] proto 21  args=%%weird chars!~_.-                       | vm=truenil                 rec=truenil                
+[OK  ] proto 21  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=true{0,0,0,0|0}         rec=true{0,0,0,0|0}        
+[OK  ] proto 22  args=hello world                              | vm=false<error: invalid argument #1 to 'floor' (number expected, got string)> rec=false<error: invalid argument #1 to 'floor' (number expected, got string)>
+[OK  ] proto 22  args=                                         | vm=false<error: invalid argument #1 to 'floor' (number expected, got string)> rec=false<error: invalid argument #1 to 'floor' (number expected, got string)>
+[OK  ] proto 22  args=a b/c?d=1&e                              | vm=false<error: invalid argument #1 to 'floor' (number expected, got string)> rec=false<error: invalid argument #1 to 'floor' (number expected, got string)>
+[OK  ] proto 22  args=123                                      | vm=true0                   rec=true0                  
+[OK  ] proto 22  args=0                                        | vm=true0                   rec=true0                  
+[OK  ] proto 22  args=-1.5                                     | vm=true0.5                 rec=true0.5                
+[OK  ] proto 22  args=true                                     | vm=false<error: invalid argument #1 to 'floor' (number expected, got boolean)> rec=false<error: invalid argument #1 to 'floor' (number expected, got boolean)>
+[OK  ] proto 22  args=false                                    | vm=false<error: invalid argument #1 to 'floor' (number expected, got boolean)> rec=false<error: invalid argument #1 to 'floor' (number expected, got boolean)>
+[OK  ] proto 22  args=                                         | vm=false<error: invalid argument #1 to 'floor' (number expected, got nil)> rec=false<error: invalid argument #1 to 'floor' (number expected, got nil)>
+[OK  ] proto 22  args={1,2,3,4|0}fb                           | vm=false<error: invalid argument #1 to 'floor' (number expected, got table)> rec=false<error: invalid argument #1 to 'floor' (number expected, got table)>
+[OK  ] proto 22  args={nil,nil,nil,nil|3}                      | vm=false<error: invalid argument #1 to 'floor' (number expected, got table)> rec=false<error: invalid argument #1 to 'floor' (number expected, got table)>
+[OK  ] proto 22  args=xy                                      | vm=false<error: invalid argument #1 to 'floor' (number expected, got string)> rec=false<error: invalid argument #1 to 'floor' (number expected, got string)>
+[OK  ] proto 22  args=xyz                                    | vm=false<error: invalid argument #1 to 'floor' (number expected, got string)> rec=false<error: invalid argument #1 to 'floor' (number expected, got string)>
+[OK  ] proto 22  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=false<error: invalid argument #1 to 'floor' (number expected, got table)> rec=false<error: invalid argument #1 to 'floor' (number expected, got table)>
+[OK  ] proto 22  args=%%weird chars!~_.-                       | vm=false<error: invalid argument #1 to 'floor' (number expected, got string)> rec=false<error: invalid argument #1 to 'floor' (number expected, got string)>
+[OK  ] proto 22  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=false<error: invalid argument #1 to 'floor' (number expected, got table)> rec=false<error: invalid argument #1 to 'floor' (number expected, got table)>
+[OK  ] proto 24  args=hello world                              | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 24  args=                                         | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 24  args=a b/c?d=1&e                              | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 24  args=123                                      | vm=false<error: attempt to index number with number> rec=false<error: attempt to index number with number>
+[OK  ] proto 24  args=0                                        | vm=false<error: attempt to index number with number> rec=false<error: attempt to index number with number>
+[OK  ] proto 24  args=-1.5                                     | vm=false<error: attempt to index number with number> rec=false<error: attempt to index number with number>
+[OK  ] proto 24  args=true                                     | vm=false<error: attempt to index boolean with number> rec=false<error: attempt to index boolean with number>
+[OK  ] proto 24  args=false                                    | vm=false<error: attempt to index boolean with number> rec=false<error: attempt to index boolean with number>
+[OK  ] proto 24  args=                                         | vm=false<error: attempt to index nil with number> rec=false<error: attempt to index nil with number>
+[OK  ] proto 24  args={1,2,3,4|0}fb                           | vm=true{nil,nil,nil,nil|0} rec=true{nil,nil,nil,nil|0}
+[OK  ] proto 24  args={nil,nil,nil,nil|3}                      | vm=true{nil,nil,nil,nil|3} rec=true{nil,nil,nil,nil|3}
+[OK  ] proto 24  args=xy                                      | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 24  args=xyz                                    | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 24  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=true{nil,nil,nil,nil|0} rec=true{nil,nil,nil,nil|0}
+[OK  ] proto 24  args=%%weird chars!~_.-                       | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 24  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=true{nil,nil,nil,nil|0} rec=true{nil,nil,nil,nil|0}
+[OK  ] proto 25  args=hello world                              | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=                                         | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=a b/c?d=1&e                              | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=123                                      | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=0                                        | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=-1.5                                     | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=true                                     | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=false                                    | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=                                         | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args={1,2,3,4|0}fb                           | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args={nil,nil,nil,nil|3}                      | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=xy                                      | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=xyz                                    | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args=%%weird chars!~_.-                       | vm=true<function>          rec=true<function>         
+[OK  ] proto 25  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=true<function>          rec=true<function>         
+[OK  ] proto 62  args=hello world                              | vm=true                     rec=true                    
+[OK  ] proto 62  args=                                         | vm=true                     rec=true                    
+[OK  ] proto 62  args=a b/c?d=1&e                              | vm=true                     rec=true                    
+[OK  ] proto 62  args=123                                      | vm=true                     rec=true                    
+[OK  ] proto 62  args=0                                        | vm=true                     rec=true                    
+[OK  ] proto 62  args=-1.5                                     | vm=true                     rec=true                    
+[OK  ] proto 62  args=true                                     | vm=true                     rec=true                    
+[OK  ] proto 62  args=false                                    | vm=true                     rec=true                    
+[OK  ] proto 62  args=                                         | vm=true                     rec=true                    
+[OK  ] proto 62  args={1,2,3,4|0}fb                           | vm=true                     rec=true                    
+[OK  ] proto 62  args={nil,nil,nil,nil|3}                      | vm=true                     rec=true                    
+[OK  ] proto 62  args=xy                                      | vm=true                     rec=true                    
+[OK  ] proto 62  args=xyz                                    | vm=true                     rec=true                    
+[OK  ] proto 62  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=true                     rec=true                    
+[OK  ] proto 62  args=%%weird chars!~_.-                       | vm=true                     rec=true                    
+[OK  ] proto 62  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=true                     rec=true                    
+[OK  ] proto 67  args=hello world                              | vm=false<error: invalid argument #1 to 'min' (number expected, got string)> rec=false<error: invalid argument #1 to 'min' (number expected, got string)>
+[OK  ] proto 67  args=                                         | vm=false<error: invalid argument #1 to 'min' (number expected, got string)> rec=false<error: invalid argument #1 to 'min' (number expected, got string)>
+[OK  ] proto 67  args=a b/c?d=1&e                              | vm=false<error: invalid argument #1 to 'min' (number expected, got string)> rec=false<error: invalid argument #1 to 'min' (number expected, got string)>
+[OK  ] proto 67  args=123                                      | vm=false<error: invalid argument #2 to 'min' (number expected, got nil)> rec=false<error: invalid argument #2 to 'min' (number expected, got nil)>
+[OK  ] proto 67  args=0                                        | vm=false<error: invalid argument #2 to 'min' (number expected, got nil)> rec=false<error: invalid argument #2 to 'min' (number expected, got nil)>
+[OK  ] proto 67  args=-1.5                                     | vm=false<error: invalid argument #2 to 'min' (number expected, got nil)> rec=false<error: invalid argument #2 to 'min' (number expected, got nil)>
+[OK  ] proto 67  args=true                                     | vm=false<error: invalid argument #1 to 'min' (number expected, got boolean)> rec=false<error: invalid argument #1 to 'min' (number expected, got boolean)>
+[OK  ] proto 67  args=false                                    | vm=false<error: invalid argument #1 to 'min' (number expected, got boolean)> rec=false<error: invalid argument #1 to 'min' (number expected, got boolean)>
+[OK  ] proto 67  args=                                         | vm=false<error: invalid argument #1 to 'min' (number expected, got nil)> rec=false<error: invalid argument #1 to 'min' (number expected, got nil)>
+[OK  ] proto 67  args={1,2,3,4|0}fb                           | vm=false<error: invalid argument #1 to 'min' (number expected, got table)> rec=false<error: invalid argument #1 to 'min' (number expected, got table)>
+[OK  ] proto 67  args={nil,nil,nil,nil|3}                      | vm=false<error: invalid argument #1 to 'min' (number expected, got table)> rec=false<error: invalid argument #1 to 'min' (number expected, got table)>
+[OK  ] proto 67  args=xy                                      | vm=false<error: invalid argument #1 to 'min' (number expected, got string)> rec=false<error: invalid argument #1 to 'min' (number expected, got string)>
+[OK  ] proto 67  args=xyz                                    | vm=false<error: invalid argument #1 to 'min' (number expected, got string)> rec=false<error: invalid argument #1 to 'min' (number expected, got string)>
+[OK  ] proto 67  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=false<error: invalid argument #1 to 'min' (number expected, got table)> rec=false<error: invalid argument #1 to 'min' (number expected, got table)>
+[OK  ] proto 67  args=%%weird chars!~_.-                       | vm=false<error: invalid argument #1 to 'min' (number expected, got string)> rec=false<error: invalid argument #1 to 'min' (number expected, got string)>
+[OK  ] proto 67  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=false<error: invalid argument #1 to 'min' (number expected, got table)> rec=false<error: invalid argument #1 to 'min' (number expected, got table)>
+[OK  ] proto 82  args=hello world                              | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=                                         | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=a b/c?d=1&e                              | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=123                                      | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=0                                        | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=-1.5                                     | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=true                                     | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=false                                    | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=                                         | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args={1,2,3,4|0}fb                           | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args={nil,nil,nil,nil|3}                      | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=xy                                      | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=xyz                                    | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args=%%weird chars!~_.-                       | vm=truenil                 rec=truenil                
+[OK  ] proto 82  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truenil                 rec=truenil                
+[OK  ] proto 85  args=hello world                              | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 85  args=                                         | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 85  args=a b/c?d=1&e                              | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 85  args=123                                      | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got number)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got number)>
+[OK  ] proto 85  args=0                                        | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got number)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got number)>
+[OK  ] proto 85  args=-1.5                                     | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got number)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got number)>
+[OK  ] proto 85  args=true                                     | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got boolean)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got boolean)>
+[OK  ] proto 85  args=false                                    | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got boolean)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got boolean)>
+[OK  ] proto 85  args=                                         | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got nil)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got nil)>
+[OK  ] proto 85  args={1,2,3,4|0}fb                           | vm=true                    rec=true                   
+[OK  ] proto 85  args={nil,nil,nil,nil|3}                      | vm=false<error: attempt to index number with 'Text'> rec=false<error: attempt to index number with 'Text'>
+[OK  ] proto 85  args=xy                                      | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 85  args=xyz                                    | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 85  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=true                    rec=true                   
+[OK  ] proto 85  args=%%weird chars!~_.-                       | vm=false<error: invalid argument #1 to 'ipairs' (table expected, got string)> rec=false<error: invalid argument #1 to 'ipairs' (table expected, got string)>
+[OK  ] proto 85  args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=true                    rec=true                   
+[OK  ] proto 107 args=hello world                              | vm=truehello world         rec=truehello world        
+[OK  ] proto 107 args=                                         | vm=true                    rec=true                   
+[OK  ] proto 107 args=a b/c?d=1&e                              | vm=truea b/c?d=1&e         rec=truea b/c?d=1&e        
+[OK  ] proto 107 args=123                                      | vm=true123                 rec=true123                
+[OK  ] proto 107 args=0                                        | vm=true0                   rec=true0                  
+[OK  ] proto 107 args=-1.5                                     | vm=true-1.5                rec=true-1.5               
+[OK  ] proto 107 args=true                                     | vm=truetrue                rec=truetrue               
+[OK  ] proto 107 args=false                                    | vm=true                    rec=true                   
+[OK  ] proto 107 args=                                         | vm=true                    rec=true                   
+[OK  ] proto 107 args={1,2,3,4|0}fb                           | vm=truetable: 0x00005584e3c7aa70 rec=truetable: 0x00005584e3c7aa70
+[OK  ] proto 107 args={nil,nil,nil,nil|3}                      | vm=truetable: 0x00005584e3c7aa10 rec=truetable: 0x00005584e3c7aa10
+[OK  ] proto 107 args=xy                                      | vm=truex                   rec=truex                  
+[OK  ] proto 107 args=xyz                                    | vm=truex                   rec=truex                  
+[OK  ] proto 107 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truetable: 0x00005584e3c7a950 rec=truetable: 0x00005584e3c7a950
+[OK  ] proto 107 args=%%weird chars!~_.-                       | vm=true%%weird chars!~_.-  rec=true%%weird chars!~_.- 
+[OK  ] proto 107 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truetable: 0x00005584e3c7a860 rec=truetable: 0x00005584e3c7a860
+[OK  ] proto 122 args=hello world                              | vm=truehello world         rec=truehello world        
+[OK  ] proto 122 args=                                         | vm=true                    rec=true                   
+[OK  ] proto 122 args=a b/c?d=1&e                              | vm=truea b/c?d=1&e         rec=truea b/c?d=1&e        
+[OK  ] proto 122 args=123                                      | vm=true123                 rec=true123                
+[OK  ] proto 122 args=0                                        | vm=true0                   rec=true0                  
+[OK  ] proto 122 args=-1.5                                     | vm=true-1.5                rec=true-1.5               
+[OK  ] proto 122 args=true                                     | vm=truetrue                rec=truetrue               
+[OK  ] proto 122 args=false                                    | vm=true                    rec=true                   
+[OK  ] proto 122 args=                                         | vm=true                    rec=true                   
+[OK  ] proto 122 args={1,2,3,4|0}fb                           | vm=truetable: 0x00005584e3c7aa70 rec=truetable: 0x00005584e3c7aa70
+[OK  ] proto 122 args={nil,nil,nil,nil|3}                      | vm=truetable: 0x00005584e3c7aa10 rec=truetable: 0x00005584e3c7aa10
+[OK  ] proto 122 args=xy                                      | vm=truex                   rec=truex                  
+[OK  ] proto 122 args=xyz                                    | vm=truex                   rec=truex                  
+[OK  ] proto 122 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truetable: 0x00005584e3c7a950 rec=truetable: 0x00005584e3c7a950
+[OK  ] proto 122 args=%%weird chars!~_.-                       | vm=true%%weird chars!~_.-  rec=true%%weird chars!~_.- 
+[OK  ] proto 122 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truetable: 0x00005584e3c7a860 rec=truetable: 0x00005584e3c7a860
+[OK  ] proto 131 args=hello world                              | vm=truehello world0       rec=truehello world0      
+[OK  ] proto 131 args=                                         | vm=true0                  rec=true0                 
+[OK  ] proto 131 args=a b/c?d=1&e                              | vm=truea b/c?d=1&e0       rec=truea b/c?d=1&e0      
+[OK  ] proto 131 args=123                                      | vm=true1230               rec=true1230              
+[OK  ] proto 131 args=0                                        | vm=true00                 rec=true00                
+[OK  ] proto 131 args=-1.5                                     | vm=true-1.50              rec=true-1.50             
+[OK  ] proto 131 args=true                                     | vm=truetrue0              rec=truetrue0             
+[OK  ] proto 131 args=false                                    | vm=true0                  rec=true0                 
+[OK  ] proto 131 args=                                         | vm=true0                  rec=true0                 
+[OK  ] proto 131 args={1,2,3,4|0}fb                           | vm=truetable: 0x00005584e3c7aa700 rec=truetable: 0x00005584e3c7aa700
+[OK  ] proto 131 args={nil,nil,nil,nil|3}                      | vm=truetable: 0x00005584e3c7aa100 rec=truetable: 0x00005584e3c7aa100
+[OK  ] proto 131 args=xy                                      | vm=truex0                 rec=truex0                
+[OK  ] proto 131 args=xyz                                    | vm=truex0                 rec=truex0                
+[OK  ] proto 131 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truetable: 0x00005584e3c7a9500 rec=truetable: 0x00005584e3c7a9500
+[OK  ] proto 131 args=%%weird chars!~_.-                       | vm=true%%weird chars!~_.-0 rec=true%%weird chars!~_.-0
+[OK  ] proto 131 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truetable: 0x00005584e3c7a8600 rec=truetable: 0x00005584e3c7a8600
+[OK  ] proto 132 args=hello world                              | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=                                         | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=a b/c?d=1&e                              | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=123                                      | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=0                                        | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=-1.5                                     | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=true                                     | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=false                                    | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=                                         | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args={1,2,3,4|0}fb                           | vm=truefalse               rec=truefalse              
+[OK  ] proto 132 args={nil,nil,nil,nil|3}                      | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args=xy                                      | vm=truefalse               rec=truefalse              
+[OK  ] proto 132 args=xyz                                    | vm=truefalse               rec=truefalse              
+[OK  ] proto 132 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|0}{nil,nil,nil,nil|0} | vm=truefalse               rec=truefalse              
+[OK  ] proto 132 args=%%weird chars!~_.-                       | vm=false<error: attempt to get length of a nil value> rec=false<error: attempt to get length of a nil value>
+[OK  ] proto 132 args={nil,nil,nil,nil|0}{nil,nil,nil,nil|2}3 | vm=truefalse               rec=truefalse              
+differential: 284 identical, 0 both-error(msg differs), 4 MISMATCH
