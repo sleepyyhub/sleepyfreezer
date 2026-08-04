@@ -13,6 +13,10 @@ model User {
   name      String?
   avatarUrl String?
 
+  // Local (email + password) sign-in. Null for accounts created via OAuth.
+  username     String? @unique
+  passwordHash String?
+
   // Preferences
   nsfwEnabled      Boolean @default(false)
   language         String  @default("auto") // "auto" = mirror whatever the user writes in

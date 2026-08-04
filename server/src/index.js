@@ -1,5 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import cookieParser from 'cookie-parser';
 import config from './config.js';
 import passport from './auth/passport.js';
@@ -11,6 +14,8 @@ import groupRoutes from './routes/groups.js';
 import settingsRoutes from './routes/settings.js';
 import cronRoutes from './routes/cron.js';
 import { brand } from '../../shared/brand.js';
+
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
@@ -35,6 +40,19 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/cron', cronRoutes);
+
+/**
+ * Serve the built frontend when it exists, so the whole app runs from one
+ * origin. That keeps the session cookie first-party and removes CORS from the
+ * picture entirely — useful in production and when exposing a dev instance
+ * through a tunnel.
+ */
+const webDist = path.resolve(dirname, '../../web/dist');
+if (existsSync(webDist)) {
+  app.use(express.static(webDist));
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+  console.log(`  web:    serving ${webDist}`);
+}
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 

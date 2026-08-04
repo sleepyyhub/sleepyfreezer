@@ -188,8 +188,39 @@ function Modal({ title, onClose, children, footer }) {
 /* ------------------------------------------------------------------ */
 
 function SignInPage() {
+  const { refresh } = useSession();
   const { data, loading } = useAsync(() => api.auth.providers(), []);
   const providers = data?.providers ?? [];
+
+  const [mode, setMode] = useState('login');
+  const [form, setForm] = useState({ identifier: '', email: '', username: '', password: '' });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      if (mode === 'login') {
+        await api.auth.login(form.identifier, form.password);
+      } else {
+        await api.auth.register({
+          email: form.email,
+          username: form.username,
+          password: form.password,
+        });
+      }
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const switchTo = (next) => { setMode(next); setError(null); };
 
   return (
     <main className="signin-page">
@@ -197,30 +228,98 @@ function SignInPage() {
       <div className="ambient ambient-two" />
       <div className="signin-card">
         <span className="brand-mark signin-mark"><Sparkles size={20} strokeWidth={2.2} /></span>
-        <h1>Welcome to Clovyre</h1>
-        <p>Conversations that feel alive. Sign in to meet your characters.</p>
+        <h1>{mode === 'login' ? 'Welcome back' : 'Welcome to Clovyre'}</h1>
+        <p>
+          {mode === 'login'
+            ? 'Sign in to pick up where you left off.'
+            : 'Conversations that feel alive. Create an account to begin.'}
+        </p>
 
-        {loading && <Spinner label="Checking sign-in options" />}
-
-        {!loading && providers.length === 0 && (
-          <div className="signin-warning">
-            <Info size={15} />
-            <p>No login provider is configured yet. Add Google or Discord credentials to the server’s <code>.env</code>.</p>
-          </div>
-        )}
-
-        <div className="signin-actions">
-          {providers.includes('google') && (
-            <a className="primary-button signin-button" href={api.auth.signInUrl('google')}>
-              Continue with Google <ArrowRight size={17} />
-            </a>
-          )}
-          {providers.includes('discord') && (
-            <a className="secondary-button signin-button" href={api.auth.signInUrl('discord')}>
-              Continue with Discord <ArrowRight size={17} />
-            </a>
-          )}
+        <div className="segmented-control signin-tabs">
+          <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => switchTo('login')}>Sign in</button>
+          <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => switchTo('register')}>Create account</button>
         </div>
+
+        <form className="signin-form" onSubmit={submit}>
+          {mode === 'login' ? (
+            <label className="form-field">
+              <span>Email or username</span>
+              <input
+                value={form.identifier}
+                onChange={set('identifier')}
+                autoComplete="username"
+                placeholder="you@example.com"
+                required
+              />
+            </label>
+          ) : (
+            <>
+              <label className="form-field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={set('email')}
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  required
+                />
+              </label>
+              <label className="form-field">
+                <span>Username</span>
+                <input
+                  value={form.username}
+                  onChange={set('username')}
+                  autoComplete="username"
+                  placeholder="letters, numbers, _ . -"
+                  minLength={3}
+                  maxLength={24}
+                  required
+                />
+              </label>
+            </>
+          )}
+
+          <label className="form-field">
+            <span>Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={set('password')}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              placeholder={mode === 'register' ? 'at least 8 characters' : ''}
+              minLength={mode === 'register' ? 8 : undefined}
+              required
+            />
+          </label>
+
+          {error && <p className="form-error">{error}</p>}
+
+          <button className="primary-button signin-button" type="submit" disabled={busy}>
+            {busy
+              ? (mode === 'login' ? 'Signing in…' : 'Creating account…')
+              : (mode === 'login' ? 'Sign in' : 'Create account')}
+            <ArrowRight size={17} />
+          </button>
+        </form>
+
+        {!loading && providers.length > 0 && (
+          <>
+            <div className="signin-divider"><span>or</span></div>
+            <div className="signin-actions">
+              {providers.includes('google') && (
+                <a className="secondary-button signin-button" href={api.auth.signInUrl('google')}>
+                  Continue with Google
+                </a>
+              )}
+              {providers.includes('discord') && (
+                <a className="secondary-button signin-button" href={api.auth.signInUrl('discord')}>
+                  Continue with Discord
+                </a>
+              )}
+            </div>
+          </>
+        )}
 
         <span className="signin-note"><Lock size={12} /> Your conversations stay private.</span>
       </div>
@@ -1439,6 +1538,11 @@ function SettingsPage({ go, notify }) {
             </div>
             <div className="account-fields">
               <Field label="Display name"><input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} /></Field>
+              {user?.username && (
+                <Field label="Username">
+                  <div className="prefix-input"><span>clovyre.ai/</span><input value={user.username} disabled /></div>
+                </Field>
+              )}
               <Field label="Email address"><input type="email" value={user?.email ?? ''} disabled /></Field>
             </div>
             <div className="section-save">

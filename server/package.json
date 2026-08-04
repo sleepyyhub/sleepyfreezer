@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Clovyre API — AI character chat backend",
+  "description": "Clovyre API \u2014 AI character chat backend",
   "main": "src/index.js",
   "scripts": {
     "dev": "node --watch src/index.js",
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

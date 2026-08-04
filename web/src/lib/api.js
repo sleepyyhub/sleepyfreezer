@@ -32,6 +32,9 @@ export const api = {
     me: () => request('/api/auth/me'),
     providers: () => request('/api/auth/providers'),
     logout: () => request('/api/auth/logout', { method: 'POST' }),
+    register: (data) => request('/api/auth/register', { method: 'POST', body: data }),
+    login: (identifier, password) =>
+      request('/api/auth/login', { method: 'POST', body: { identifier, password } }),
     signInUrl: (provider) => `${BASE}/api/auth/${provider}`,
   },
 

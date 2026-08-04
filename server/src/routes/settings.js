@@ -15,8 +15,8 @@ const settingsInput = z.object({
 });
 
 router.get('/', (req, res) => {
-  const { id, email, name, avatarUrl, nsfwEnabled, language, proactiveEnabled } = req.user;
-  res.json({ settings: { id, email, name, avatarUrl, nsfwEnabled, language, proactiveEnabled } });
+  const { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } = req.user;
+  res.json({ settings: { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } });
 });
 
 router.patch('/', async (req, res, next) => {
@@ -33,6 +33,7 @@ router.patch('/', async (req, res, next) => {
         id: true,
         email: true,
         name: true,
+        username: true,
         avatarUrl: true,
         nsfwEnabled: true,
         language: true,

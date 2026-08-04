@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import passport, { enabledProviders } from './passport.js';
+import localRoutes from './local.js';
 import { issueSession, clearSession, requireAuth } from '../middleware/auth.js';
 import { authorize, channels } from '../realtime/pusher.js';
 import prisma from '../db.js';
@@ -7,7 +8,11 @@ import config from '../config.js';
 
 const router = Router();
 
-router.get('/providers', (_req, res) => res.json({ providers: enabledProviders }));
+// Email + password sign-in, mounted alongside the OAuth strategies.
+router.use('/', localRoutes);
+
+router.get('/providers', (_req, res) =>
+  res.json({ providers: enabledProviders, passwordAuth: true }));
 
 for (const provider of enabledProviders) {
   router.get(`/${provider}`, passport.authenticate(provider, { session: false }));
@@ -27,8 +32,8 @@ for (const provider of enabledProviders) {
 
 router.get('/me', (req, res) => {
   if (!req.user) return res.json({ user: null });
-  const { id, email, name, avatarUrl, nsfwEnabled, language, proactiveEnabled } = req.user;
-  res.json({ user: { id, email, name, avatarUrl, nsfwEnabled, language, proactiveEnabled } });
+  const { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } = req.user;
+  res.json({ user: { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } });
 });
 
 router.post('/logout', (_req, res) => {

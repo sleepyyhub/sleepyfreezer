@@ -18,25 +18,37 @@ shared/   brand tokens used by both
 - An [OpenRouter](https://openrouter.ai) API key (free tier is enough)
 - Optional: Google and/or Discord OAuth credentials, and a Pusher app
 
-## Setup
+## Run it
 
 ```bash
-# 1. API
-cd server
-npm install
-cp .env.example .env          # fill in DATABASE_URL and OPENROUTER_API_KEY
-npx prisma db push
-npm run db:seed               # creates the five Nakano sisters
-npm run dev                   # http://localhost:4000
-
-# 2. Frontend
-cd ../web
-npm install
-npm run dev                   # http://localhost:5173
+cp server/.env.example server/.env   # set DATABASE_URL and OPENROUTER_API_KEY
+npm run setup                        # installs both halves, migrates, seeds
+npm start                            # http://localhost:4000
 ```
 
-The frontend talks to `http://localhost:4000` by default. Point it elsewhere with
-`VITE_API_URL` in `web/.env`.
+`npm start` builds the frontend and serves it from the API process, so the whole
+app runs on one origin at `http://localhost:4000` — no CORS, and the session
+cookie stays first-party.
+
+For frontend work with hot reload, run the two halves separately instead:
+
+```bash
+npm run dev:api    # http://localhost:4000
+npm run dev:web    # http://localhost:5173
+```
+
+In that mode the frontend talks to `http://localhost:4000` by default; override
+with `VITE_API_URL` in `web/.env`.
+
+## Accounts
+
+Email + username + password sign-in works out of the box, with no email
+confirmation — addresses are stored as given and never verified, so treat them
+as labels rather than proof of anything. Passwords are bcrypt-hashed. Sign in
+with either the email or the username.
+
+Google and Discord sign-in also work, but only once you add credentials to
+`server/.env`; the sign-in screen hides those buttons until you do.
 
 ## Models
 
@@ -96,10 +108,27 @@ app works fully without Pusher. Configuring it adds character-to-character
 messages appearing one at a time, and proactive messages arriving without a
 refresh.
 
+## Deploying
+
+The app is one Node process plus a Postgres database, so anywhere that runs both
+works. A free-tier path:
+
+1. Create a Postgres database (Neon, Supabase, and Railway all have free tiers)
+   and copy its connection string.
+2. Deploy this repo to Render, Railway, or Fly as a **web service**, with build
+   command `npm run setup` and start command `npm start`.
+3. Set `DATABASE_URL`, `OPENROUTER_API_KEY`, `JWT_SECRET`, `CRON_SECRET`, and
+   `NODE_ENV=production` in the host's environment.
+4. Point `CLIENT_URL` at the deployed URL, and add a scheduled job that POSTs to
+   `/api/cron/proactive` with the `x-cron-secret` header every 30–60 minutes.
+
+`NODE_ENV=production` matters: it switches the session cookie to `Secure` and
+stops error messages leaking internals.
+
 ## Tests
 
 ```bash
-cd server && node test/parse.test.js
+npm test                     # thought-parser suite
 ```
 
 Covers thought extraction across every response shape the free models produce,
