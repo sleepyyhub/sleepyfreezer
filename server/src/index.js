@@ -60,9 +60,10 @@ app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, _req, res, _next) => {
   console.error('[error]', err);
   const status = err.status ?? 500;
-  // A rate-limit message is useful to the person who hit it, so it is shown
-  // verbatim even in production, unlike an internal failure.
-  const safe = status < 500 || !config.isProd;
+  // Messages we wrote ourselves are useful to the person who hit them and are
+  // shown verbatim; only a genuine internal failure is hidden. 502 here means
+  // the upstream model misbehaved, which the reader can act on by retrying.
+  const safe = status < 500 || status === 502 || status === 503 || !config.isProd;
   res.status(status).json({ error: safe ? err.message : 'Something went wrong' });
 });
 

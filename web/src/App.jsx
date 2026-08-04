@@ -1392,9 +1392,23 @@ function CreatePage({ go, notify }) {
         tags: sheet.tags.join(', '),
         color: colorIndex >= 0 ? colorIndex : current.color,
       }));
-      setComposeNote(sheet.known
-        ? { kind: 'ok', text: `Drafted ${sheet.name}. Read it over and change anything that feels off.` }
-        : { kind: 'warn', text: `The model did not recognise ${sheet.name}, so this is invented rather than recalled. Worth checking closely.` });
+      if (sheet.incomplete?.length) {
+        setComposeNote({
+          kind: 'warn',
+          text: `The model ran out of room and left ${sheet.incomplete.join(' and ')} blank. `
+            + 'Fill those in, or press Draft it again for a fresh attempt.',
+        });
+      } else if (!sheet.known) {
+        setComposeNote({
+          kind: 'warn',
+          text: `The model did not recognise ${sheet.name}, so this is invented rather than recalled. Worth checking closely.`,
+        });
+      } else {
+        setComposeNote({
+          kind: 'ok',
+          text: `Drafted ${sheet.name}. Read it over and change anything that feels off.`,
+        });
+      }
     } catch (err) {
       setComposeNote({ kind: 'error', text: err.message });
     } finally {

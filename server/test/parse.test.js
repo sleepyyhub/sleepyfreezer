@@ -107,6 +107,42 @@ const real = [
   },
 ];
 
+// --- truncated JSON, the shape a reasoning model produces when the token
+// --- budget runs out partway through the object ---
+console.log('\n--- truncated json repair ---');
+const truncated = [
+  {
+    name: 'cut mid-string in the last field',
+    raw: '{"known": true, "tagline": "Loyal to a fault", "personality": "She begins cold and suspic',
+    check: (g) => g && g.known === true && g.tagline === 'Loyal to a fault',
+  },
+  {
+    name: 'cut mid-array',
+    raw: '{"tagline": "x", "tags": ["loyal", "dev',
+    check: (g) => g && g.tagline === 'x',
+  },
+  {
+    name: 'complete json is untouched',
+    raw: '{"a": 1, "b": "two"}',
+    check: (g) => g && g.a === 1 && g.b === 'two',
+  },
+  {
+    name: 'a string containing a brace does not confuse the repair',
+    raw: '{"a": "has { and } inside", "b": "cut off here',
+    check: (g) => g && g.a === 'has { and } inside',
+  },
+  {
+    name: 'nothing complete yet returns the fallback',
+    raw: '{"personality": "only this one and it is cut',
+    check: (g) => g === null,
+  },
+];
+for (const c of truncated) {
+  const got = parseJson(c.raw, null);
+  if (c.check(got)) { pass++; console.log(`  PASS  ${c.name}`); }
+  else { fail++; console.log(`  FAIL  ${c.name} -> ${JSON.stringify(got)}`); }
+}
+
 console.log('\n--- regression cases ---');
 let rp = 0, rf = 0;
 for (const c of real) {

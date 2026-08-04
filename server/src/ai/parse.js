@@ -110,13 +110,65 @@ export function parseJson(raw, fallback = null) {
   const opener = body[start];
   const closer = opener === '[' ? ']' : '}';
   const end = body.lastIndexOf(closer);
-  if (end <= start) return fallback;
 
-  try {
-    return JSON.parse(body.slice(start, end + 1));
-  } catch {
-    return fallback;
+  // A truncated reply has no closing bracket at all, so this is only worth
+  // trying when one exists — repair below handles the rest.
+  if (end > start) {
+    try {
+      return JSON.parse(body.slice(start, end + 1));
+    } catch {
+      // Fall through to repair.
+    }
   }
+
+  // A reply cut off mid-object is common when reasoning tokens eat the budget.
+  // Closing the open string and braces recovers every complete field.
+  const repaired = repairTruncatedJson(body.slice(start));
+  if (repaired) {
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
+
+/**
+ * Close an object that stops mid-value. Everything already written stays;
+ * only the incomplete tail is discarded.
+ */
+function repairTruncatedJson(text) {
+  let inString = false;
+  let escaped = false;
+  const stack = [];
+  let lastComplete = -1;
+  let closersAtCut = null;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\' && inString) { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') stack.pop();
+    else if (ch === ',' && stack.length === 1) {
+      // A comma at depth 1 ends a complete top-level field. Remember how deep
+      // we were here, not how deep the truncated tail went — closing to the
+      // wrong depth produces something like {"a": "b"]} which parses no better.
+      lastComplete = i;
+      closersAtCut = [...stack];
+    }
+  }
+
+  if (stack.length === 0) return null; // not truncated
+  if (lastComplete === -1) return null; // nothing complete to salvage
+
+  return text.slice(0, lastComplete) + closersAtCut.reverse().join('');
 }
 
 /**
