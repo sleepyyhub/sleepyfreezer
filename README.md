@@ -53,6 +53,9 @@ Google and Discord sign-in also work, but only once you add credentials to
 
 ## Models and providers
 
+Free allowances reset daily, so an exhausted provider comes back on its own —
+which is the point of the ladder: spread across several and no single one drains.
+
 Providers are OpenAI-compatible and configured in `server/src/ai/providers.js`.
 Set a provider's API key to enable it; the ladder spans providers in order, so
 when one exhausts its free allowance the next takes over rather than the app
@@ -63,11 +66,14 @@ that, every message pays the latency of walking dead rungs first.
 |---|---|---|---|---|
 | Novita | `NOVITA_API_KEY` | Ling-3.0-flash at $0/token | yes | The upstream OpenRouter resells Ling from. Returns 403 at a zero balance, so a top-up (min $10) is required even for a zero-priced model. |
 | OpenRouter | `OPENROUTER_API_KEY` | 50 req/day, or 1000 after buying 10 credits | no | The cap is per-account across all `:free` models, so listing more of them buys no headroom. 20 req/min either way. |
-| Groq | `GROQ_API_KEY` | ~14,400 req/day, 30 req/min | no | Fastest measured. The best fallback. |
+| Groq | `GROQ_API_KEY` | ~1,000 req/day per model, 30 req/min | no | Fastest measured. Judge it by the per-model daily cap, not the larger account-wide figure — a group chat spends several requests per message. |
 | Cerebras | `CEREBRAS_API_KEY` | ~1M tokens/day | no | Very fast, but the no-card tier is being retired for a credit-based one. |
 | Gemini | `GEMINI_API_KEY` | ~1,500 req/day | no | Google's terms allow free-tier prompts to be used for training — a poor fit for private conversations. |
 | Mistral | `MISTRAL_API_KEY` | modest | no | |
 | NVIDIA | `NVIDIA_API_KEY` | separate allowance | no | Least reliable measured: 503s, 529s, and >70s on larger models. Only the 8B model answered promptly. |
+| Cloudflare | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | daily allowance | no | The account id goes in the URL, so both are required or the provider is skipped. |
+| Hugging Face | `HF_TOKEN` | monthly credits | no | Routes to inference partners. |
+| GitHub Models | `GITHUB_MODELS_TOKEN` | tied to your Copilot tier | no | A GitHub personal access token. |
 | TokenRouter | `TOKENROUTER_API_KEY` | promotional free models | yes, for paid models | Its `kimi-k3-free` accepted requests and never answered when measured (150s, zero bytes), while a paid model on the same key refused in 2s with a clear quota error. Last in the order. An aggregator also sees the full text of every conversation. |
 
 Order with `AI_PROVIDERS=groq,openrouter`, and override a provider's models with

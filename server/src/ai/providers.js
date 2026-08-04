@@ -43,10 +43,10 @@ const DEFAULTS = {
   },
 
   /**
-   * The best free fallback measured here: no card required, roughly 14k
-   * requests a day, and the lowest latency of anything tried — Groq runs on
-   * its own inference hardware. Capped at 30 requests/minute, which a group
-   * chat can brush against during a bot-to-bot chain.
+   * The fastest option measured, and no card required. Watch the per-model
+   * daily cap rather than the headline account figure: llama-3.3-70b is
+   * limited to about 1,000 requests a day and 30 a minute, and a group chat
+   * spends several of those per message. Allowances reset daily.
    */
   groq: {
     baseUrl: 'https://api.groq.com/openai/v1',
@@ -92,6 +92,38 @@ const DEFAULTS = {
   },
 
   /**
+   * Routes to open-weight models on Hugging Face's inference partners. Free
+   * monthly credits with a plain HF token, no card.
+   */
+  huggingface: {
+    baseUrl: 'https://router.huggingface.co/v1',
+    envKey: 'HF_TOKEN',
+    models: ['meta-llama/Llama-3.3-70B-Instruct'],
+  },
+
+  /**
+   * Free with a GitHub account; the allowance is tied to your Copilot tier.
+   * Uses a GitHub personal access token as the key.
+   */
+  github: {
+    baseUrl: 'https://models.github.ai/inference',
+    envKey: 'GITHUB_MODELS_TOKEN',
+    models: ['openai/gpt-4.1-mini'],
+  },
+
+  /**
+   * Free daily allowance, no card. Needs the account id as well as the token,
+   * since it is part of the URL rather than a header.
+   */
+  cloudflare: {
+    baseUrl: (env) =>
+      `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID ?? ''}/ai/v1`,
+    envKey: 'CLOUDFLARE_API_TOKEN',
+    requires: ['CLOUDFLARE_ACCOUNT_ID'],
+    models: ['@cf/meta/llama-3.3-70b-instruct-fp8-fast'],
+  },
+
+  /**
    * An aggregator. Its promotional `kimi-k3-free` accepted requests and never
    * answered when measured — 150s with zero bytes — while a paid model on the
    * same endpoint refused in 2s with a clear quota error. That is why it sits
@@ -109,7 +141,8 @@ const DEFAULTS = {
 // Quality first while allowances last, then the fastest free fallbacks, with
 // the least reliable provider last.
 const DEFAULT_ORDER = [
-  'novita', 'openrouter', 'groq', 'cerebras', 'gemini', 'mistral', 'nvidia', 'tokenrouter',
+  'novita', 'openrouter', 'groq', 'cerebras', 'gemini', 'mistral',
+  'cloudflare', 'huggingface', 'github', 'nvidia', 'tokenrouter',
 ];
 
 const parseList = (raw) => {
@@ -135,12 +168,22 @@ export function resolveProviders(env = process.env) {
       const apiKey = env[spec.envKey];
       if (!apiKey) return null;
 
+      // Some providers need more than a key — Cloudflare puts the account id
+      // in the URL. Skip rather than build a request that cannot work.
+      const missing = (spec.requires ?? []).filter((v) => !env[v]);
+      if (missing.length) {
+        console.warn(`[ai] ${name} needs ${missing.join(', ')} as well as its key — skipping`);
+        return null;
+      }
+
       // Per-provider model override, e.g. NOVITA_MODELS=a,b
       const override = parseList(env[`${name.toUpperCase()}_MODELS`]);
 
       return {
         name,
-        baseUrl: env[`${name.toUpperCase()}_BASE_URL`] ?? spec.baseUrl,
+        baseUrl:
+          env[`${name.toUpperCase()}_BASE_URL`]
+          ?? (typeof spec.baseUrl === 'function' ? spec.baseUrl(env) : spec.baseUrl),
         apiKey,
         models: override ?? spec.models,
         headers: spec.headers,
