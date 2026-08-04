@@ -19,12 +19,10 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
-app.use(
-  cors({
-    origin: config.clientUrl,
-    credentials: true,
-  }),
-);
+// Harmless when the API also serves the frontend — the browser sends no
+// preflight for same-origin requests. It matters for `npm run dev:web`, where
+// Vite is on another port, and for a split deployment.
+app.use(cors({ origin: config.clientUrl, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(passport.initialize());

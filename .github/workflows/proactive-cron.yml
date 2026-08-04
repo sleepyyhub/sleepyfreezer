@@ -1,0 +1,47 @@
+# Pings the proactive endpoint so characters can message first.
+#
+# This exists because cron jobs are a paid feature on most hosts, while GitHub
+# Actions schedules are free on public repos. If your host has its own scheduler,
+# use that instead and delete this file.
+#
+# Two repository secrets are required (Settings > Secrets and variables >
+# Actions): APP_URL, e.g. https://clovyre.onrender.com — no trailing slash — and
+# CRON_SECRET, matching the value in the host's environment.
+
+name: Proactive messages
+
+on:
+  schedule:
+    # Every 30 minutes. The sweep decides internally who is actually due, so
+    # firing more often than necessary is harmless.
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # lets you trigger a run by hand to test it
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger proactive sweep
+        run: |
+          if [ -z "${{ secrets.APP_URL }}" ] || [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "APP_URL and CRON_SECRET repository secrets are not set."
+            exit 1
+          fi
+
+          # A free-tier host may be asleep; the first request wakes it, which can
+          # take up to a minute, so allow a generous timeout and one retry.
+          response=$(curl -sS --max-time 180 --retry 1 --retry-delay 30 \
+            -w '\n%{http_code}' \
+            -X POST "${{ secrets.APP_URL }}/api/cron/proactive" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
+
+          body=$(echo "$response" | sed '$d')
+          status=$(echo "$response" | tail -n1)
+
+          echo "status: $status"
+          echo "body:   $body"
+
+          if [ "$status" != "200" ]; then
+            echo "Sweep failed."
+            exit 1
+          fi

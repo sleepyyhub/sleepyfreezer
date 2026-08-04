@@ -13,7 +13,10 @@ export function issueSession(res, user) {
   res.cookie(COOKIE, token, {
     httpOnly: true,
     secure: config.isProd,
-    sameSite: config.isProd ? 'none' : 'lax',
+    // "lax" is right for the documented setup, where the API also serves the
+    // frontend and the cookie is first-party. Only a split deployment — web on
+    // one domain, API on another — needs "none", and that also requires HTTPS.
+    sameSite: config.crossSiteCookies ? 'none' : 'lax',
     maxAge: MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
     path: '/',
   });

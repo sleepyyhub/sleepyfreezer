@@ -20,6 +20,10 @@ export const config = {
   jwtSecret: required('JWT_SECRET', 'dev-only-secret'),
   cronSecret: process.env.CRON_SECRET ?? 'dev-cron-secret',
 
+  // Set only when the frontend is hosted on a different domain from the API.
+  // Requires HTTPS on both ends.
+  crossSiteCookies: process.env.CROSS_SITE_COOKIES === 'true',
+
   ai: {
     baseUrl: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
     apiKey: process.env.OPENROUTER_API_KEY ?? '',

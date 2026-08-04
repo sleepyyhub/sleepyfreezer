@@ -1,0 +1,42 @@
+# Render blueprint. From the Render dashboard: New > Blueprint, point it at this
+# repo, and it creates the database and the web service together.
+#
+# Two values are deliberately not set here and must be filled in once, in the
+# dashboard, so they never land in git: OPENROUTER_API_KEY and (optionally) the
+# Google/Discord OAuth credentials.
+
+databases:
+  - name: clovyre-db
+    databaseName: clovyre
+    plan: free
+
+services:
+  - type: web
+    name: clovyre
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: clovyre-db
+          property: connectionString
+
+      # Generated once by Render and then kept; never printed in build logs.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+
+      # Set this in the dashboard after the first deploy.
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+      # Used for OAuth redirects. Set to the service's own URL once assigned.
+      - key: CLIENT_URL
+        sync: false
