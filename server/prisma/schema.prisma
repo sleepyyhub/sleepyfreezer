@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+
+  // Preferences
+  nsfwEnabled      Boolean @default(false)
+  language         String  @default("auto") // "auto" = mirror whatever the user writes in
+  proactiveEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts      Account[]
+  characters    Character[]    @relation("CreatedCharacters")
+  conversations Conversation[]
+  groups        Group[]
+}
+
+model Account {
+  id                String @id @default(cuid())
+  userId            String
+  provider          String // "google" | "discord"
+  providerAccountId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Character {
+  id       String @id @default(cuid())
+  name     String
+  universe String
+  tagline  String @default("")
+
+  // These three feed the system prompt.
+  personality   String @db.Text
+  lore          String @db.Text
+  speakingStyle String @db.Text
+
+  tags       String[] @default([])
+  avatarUrl  String?
+  themeColor String   @default("#34d399")
+
+  nsfwAllowed Boolean @default(false)
+  isPublic    Boolean @default(true)
+  isFeatured  Boolean @default(false)
+
+  creatorId String?
+  creator   User?   @relation("CreatedCharacters", fields: [creatorId], references: [id], onDelete: SetNull)
+
+  messageCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations Conversation[]
+  groupMembers  GroupMember[]
+  messages      Message[]
+
+  @@index([isPublic, messageCount])
+  @@index([creatorId])
+}
+
+model Conversation {
+  id          String @id @default(cuid())
+  userId      String
+  characterId String
+
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@unique([userId, characterId])
+  @@index([userId, lastMessageAt])
+}
+
+model Group {
+  id     String @id @default(cuid())
+  name   String
+  userId String
+
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  members  GroupMember[]
+  messages Message[]
+
+  @@index([userId, lastMessageAt])
+}
+
+model GroupMember {
+  groupId     String
+  characterId String
+
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, characterId])
+  @@index([characterId])
+}
+
+model Message {
+  id String @id @default(cuid())
+
+  // Exactly one of these is set.
+  conversationId String?
+  groupId        String?
+
+  senderType  String  // "user" | "character"
+  characterId String? // set when senderType == "character"
+
+  content String  @db.Text
+  thought String? @db.Text // the visible roleplay inner monologue
+
+  // Set when a character is reacting to another character's message.
+  replyToId String?
+
+  // True when the character sent this unprompted (proactive cron).
+  isProactive Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  group        Group?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  character    Character?    @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([groupId, createdAt])
+}
