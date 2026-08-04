@@ -47,17 +47,29 @@ const RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000;
  */
 const TIMEOUT_COOLDOWN_MS = 5 * 60 * 1000;
 
+/**
+ * Keyed per provider *and* model, not per provider. One account can hold a
+ * capped free model and a paid one side by side — OpenRouter is exactly this —
+ * and a 429 on the free model says nothing about the paid one. Cooling the
+ * whole provider there would disable the fallback the credit was bought for.
+ * When every model of a provider is cooling, the effect is the same as a
+ * provider-wide cooldown anyway.
+ */
 const coolingUntil = new Map();
 
-const isCoolingDown = (provider) => (coolingUntil.get(provider) ?? 0) > Date.now();
+const rungKey = (provider, model) => `${provider}:${model}`;
+
+const isCoolingDown = (provider, model) =>
+  (coolingUntil.get(rungKey(provider, model)) ?? 0) > Date.now();
 
 const isTimeout = (err) =>
   /timeout/i.test(err?.name ?? '') || /timed?\s*out/i.test(err?.message ?? '');
 
-function startCooldown(provider, ms, reason) {
-  if (isCoolingDown(provider)) return;
-  coolingUntil.set(provider, Date.now() + ms);
-  console.warn(`[ai] ${provider} ${reason} — skipping it for ${ms / 60000} minutes`);
+function startCooldown(provider, model, ms, reason) {
+  const key = rungKey(provider, model);
+  if ((coolingUntil.get(key) ?? 0) > Date.now()) return;
+  coolingUntil.set(key, Date.now() + ms);
+  console.warn(`[ai] ${key} ${reason} — skipping it for ${ms / 60000} minutes`);
 }
 
 /**
@@ -95,7 +107,7 @@ export async function complete(messages, opts = {}) {
 
   // Skip providers known to be out of allowance. If that leaves nothing, try
   // everything anyway — a stale cooldown must never be the reason chat is down.
-  const live = all.filter((r) => !isCoolingDown(r.provider));
+  const live = all.filter((r) => !isCoolingDown(r.provider, r.model));
   const rungs = live.length ? live : all;
 
   let lastError;
@@ -126,7 +138,7 @@ export async function complete(messages, opts = {}) {
         // drop to the next rung rather than surfacing an empty bubble.
         if (!content.trim() && !reasoning) throw new Error('Model returned empty content');
 
-        coolingUntil.delete(provider);
+        coolingUntil.delete(rungKey(provider, model));
         return {
           content,
           reasoning,
@@ -139,9 +151,9 @@ export async function complete(messages, opts = {}) {
         const status = err.status ?? err.response?.status;
         if (status === 429) {
           sawRateLimit = true;
-          startCooldown(provider, RATE_LIMIT_COOLDOWN_MS, 'is rate-limited');
+          startCooldown(provider, model, RATE_LIMIT_COOLDOWN_MS, 'is rate-limited');
         } else if (isTimeout(err)) {
-          startCooldown(provider, TIMEOUT_COOLDOWN_MS, 'timed out');
+          startCooldown(provider, model, TIMEOUT_COOLDOWN_MS, 'timed out');
         }
 
         // A timeout has already cost the full budget; retrying the same rung

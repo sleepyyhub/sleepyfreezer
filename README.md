@@ -65,7 +65,7 @@ that, every message pays the latency of walking dead rungs first.
 | Provider | Env key | Free tier | Card? | Notes |
 |---|---|---|---|---|
 | Novita | `NOVITA_API_KEY` | Ling-3.0-flash at $0/token | yes | The upstream OpenRouter resells Ling from. Returns 403 at a zero balance, so a top-up (min $10) is required even for a zero-priced model. |
-| OpenRouter | `OPENROUTER_API_KEY` | 50 req/day, or 1000 after buying 10 credits | no | The cap is per-account across all `:free` models, so listing more of them buys no headroom. 20 req/min either way. |
+| OpenRouter | `OPENROUTER_API_KEY` | 50 req/day, or 1,000 once 10 credits have been bought | no | The cap is per-account across all `:free` models, so listing more of them buys no headroom (20 req/min either way). A paid model on the same key is outside that cap, so `inclusionai/ling-2.6-flash` sits at the end of the list as a fallback — same family as the free model, about $0.01/$0.03 per million tokens. |
 | Groq | `GROQ_API_KEY` | ~1,000 req/day per model, 30 req/min | no | Fastest measured. Judge it by the per-model daily cap, not the larger account-wide figure — a group chat spends several requests per message. |
 | Cerebras | `CEREBRAS_API_KEY` | ~1M tokens/day | no | Very fast, but the no-card tier is being retired for a credit-based one. |
 | Gemini | `GEMINI_API_KEY` | ~1,500 req/day | no | Google's terms allow free-tier prompts to be used for training — a poor fit for private conversations. |
@@ -79,9 +79,11 @@ that, every message pays the latency of walking dead rungs first.
 Order with `AI_PROVIDERS=groq,openrouter`, and override a provider's models with
 e.g. `GROQ_MODELS=`.
 
-A provider that hangs is worse than one that refuses, so a timeout also starts a
-cooldown (5 minutes, against 15 for a rate limit) and the per-request budget is
-25 seconds. Measured against a provider that never answered: the first message
+Cooldowns are per provider *and* model, not per provider: one account can hold a
+capped free model and an uncapped paid one, and a 429 on the free one says
+nothing about the paid one. A provider that hangs is worse than one that
+refuses, so a timeout also starts a cooldown (5 minutes, against 15 for a rate
+limit) and the per-request budget is 25 seconds. Measured against a provider that never answered: the first message
 cost 78s, the next two 375ms and 318ms.
 
 Ling-3.0-flash leads because it was measurably the best free option for this

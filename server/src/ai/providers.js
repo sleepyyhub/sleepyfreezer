@@ -35,6 +35,10 @@ const DEFAULTS = {
       'google/gemma-4-31b-it:free',
       'nvidia/nemotron-3-nano-30b-a3b:free',
       'openai/gpt-oss-20b:free',
+      // Paid, and last, so it is only reached once the free allowance is gone.
+      // Same family as the free model and priced at roughly $0.01/$0.03 per
+      // million tokens, so a couple of dollars covers a very long time.
+      'inclusionai/ling-2.6-flash',
     ],
     headers: (config) => ({
       'HTTP-Referer': config.clientUrl,

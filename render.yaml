@@ -40,8 +40,13 @@ services:
       - key: CRON_SECRET
         generateValue: true
 
-      # Set this in the dashboard after the first deploy.
+      # Set these in the dashboard after the first deploy. Any one provider is
+      # enough; several give the ladder somewhere to fall through to.
       - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
 
       # Used for OAuth redirects. Set to the service's own URL once assigned.
