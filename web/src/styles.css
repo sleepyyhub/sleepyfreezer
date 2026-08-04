@@ -3171,3 +3171,18 @@ select {
   color: var(--clover);
 }
 .draw-avatar:disabled { opacity: 0.6; }
+
+/* --- roleplay action --- */
+
+/* Action is narration, not speech: set back so the eye separates the two at a
+   glance, without making it hard to read. */
+.rp-action {
+  color: var(--muted);
+  font-style: italic;
+  opacity: 0.82;
+}
+.thought-bubble .rp-action {
+  /* The thought is already italic and faded; nudge rather than double up. */
+  font-style: normal;
+  opacity: 0.75;
+}

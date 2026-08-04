@@ -79,7 +79,7 @@ function startCooldown(provider, model, ms, reason) {
  */
 const MOCK_REPLIES = [
   "*Nino thinks: he noticed. Of course he noticed.*\nHah? Say that again. I wasn't — I didn't want to say anything. There's a difference.\n\n...You just stare at people too much, you know that? It's creepy.",
-  "*Nino thinks: why is he still here, and why don't I mind.*\nFine. Sit down if you're going to hover. I made too much anyway — don't read into it.",
+  "*Nino thinks: why is he still here, and why don't I mind.*\nFine. *pulls out the chair opposite with her foot* Sit down if you're going to hover. I made too much anyway — don't read into it.",
   "*Nino thinks: he's fishing for something and I'm not biting.*\nWhat? Why are you looking at me like that. Say what you actually mean or go bother one of my sisters.",
 ];
 let mockIndex = 0;

@@ -127,6 +127,12 @@ a character's `personality`, `lore`, and `speakingStyle`. Sample lines in
 `speakingStyle` do more for believability than any number of adjectives —
 `server/src/seed/characters.js` shows the shape.
 
+**Roleplay action.** Characters narrate physical action in asterisks —
+`*steps back*` — which is convention, not markup a reader should see. The
+markers are stripped and the action is styled apart from speech, on both sides
+of the conversation, since people write action too. Arithmetic like `2 * 3`
+is left alone: both ends of an action must sit against a non-space character.
+
 **Inner thoughts.** Characters are told to open every reply with
 `*Name thinks: ...*`. `server/src/ai/parse.js` splits that off from the spoken
 text, and also handles `<think>` tags, reasoning returned in a separate field,
@@ -229,8 +235,8 @@ problem for testing; pick a paid tier before real users arrive.
 ## Tests
 
 ```bash
-npm test                     # thought-parser suite
+npm test
 ```
 
-Covers thought extraction across every response shape the free models produce,
-including regressions captured from real output.
+Covers thought extraction across every response shape the free models produce —
+including regressions captured from real output — and roleplay segmentation.

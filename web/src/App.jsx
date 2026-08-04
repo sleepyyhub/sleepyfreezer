@@ -46,6 +46,7 @@ import { adaptCharacter, adaptMessage, formatRelative, initialsOf } from './lib/
 import { SessionProvider, useAsync, useDebounced, useSession } from './lib/hooks.jsx';
 import { channels, subscribe } from './lib/realtime.js';
 import { useTypewriter } from './lib/typewriter.js';
+import { splitRoleplay, stripRoleplay } from './lib/roleplay.js';
 
 /* ------------------------------------------------------------------ */
 /* routing                                                             */
@@ -852,7 +853,7 @@ function ChatSidebar({ go, active, mobileOpen, onClose, conversations, groups, o
               <Avatar character={character} size="sm" status />
               <span className="conversation-copy">
                 <span><strong>{character.name}</strong><time>{formatRelative(item.lastMessageAt)}</time></span>
-                <small>{item.lastMessage?.content?.slice(0, 42) ?? 'Say hello'}</small>
+                <small>{stripRoleplay(item.lastMessage?.content ?? '').slice(0, 42) || 'Say hello'}</small>
               </span>
               <i
                 className="row-delete"
@@ -880,7 +881,10 @@ function ChatSidebar({ go, active, mobileOpen, onClose, conversations, groups, o
           </span>
           <span>
             <strong>{group.name}</strong>
-            <small>{group.lastMessage?.content?.slice(0, 30) ?? `${group.members.length} characters`}</small>
+            <small>
+              {stripRoleplay(group.lastMessage?.content ?? '').slice(0, 30)
+                || `${group.members.length} characters`}
+            </small>
           </span>
           <time>{formatRelative(group.lastMessageAt)}</time>
         </button>
@@ -895,6 +899,20 @@ function ChatSidebar({ go, active, mobileOpen, onClose, conversations, groups, o
   );
 }
 
+/** Renders speech as-is and roleplay action in its own style, markers removed. */
+function RoleplayText({ text }) {
+  const segments = useMemo(() => splitRoleplay(text), [text]);
+  return segments.map((seg, i) => (
+    seg.type === 'action'
+      // Index keys are safe here: the list is regenerated wholesale from the
+      // text on every change and never reordered.
+      // eslint-disable-next-line react/no-array-index-key
+      ? <em className="rp-action" key={i}>{seg.value}</em>
+      // eslint-disable-next-line react/no-array-index-key
+      : <span key={i}>{seg.value}</span>
+  ));
+}
+
 function ChatMessage({ message, animate = false, onTick }) {
   // Only messages that arrive while you are watching get typed out; history
   // loaded from the server appears at once, as already-read text should.
@@ -906,7 +924,7 @@ function ChatMessage({ message, animate = false, onTick }) {
     return (
       <div className="message-row user-message">
         <div>
-          <p>{message.text}</p>
+          <p className="preserve-lines"><RoleplayText text={message.text} /></p>
           <time>{message.time}</time>
         </div>
       </div>
@@ -926,12 +944,12 @@ function ChatMessage({ message, animate = false, onTick }) {
         {message.thought && (
           <div className="thought-bubble">
             <span><Sparkles size={11} /> INNER THOUGHT</span>
-            <em>{message.thought}</em>
+            <em><RoleplayText text={message.thought} /></em>
           </div>
         )}
         <div className="message-bubble">
           <p className="preserve-lines">
-            {shown}
+            <RoleplayText text={shown} />
             {!done && <span className="type-caret" aria-hidden="true" />}
           </p>
         </div>
