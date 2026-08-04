@@ -192,9 +192,13 @@ function SignInPage() {
   const { data, loading } = useAsync(() => api.auth.providers(), []);
   const providers = data?.providers ?? [];
 
-  const [mode, setMode] = useState('login');
+  // Most people arriving here have no account yet, so opening on "Sign in"
+  // sends them into a guaranteed failure whose message reads as a rejected
+  // password. Anyone returning has a session cookie and never sees this page.
+  const [mode, setMode] = useState('register');
   const [form, setForm] = useState({ identifier: '', email: '', username: '', password: '' });
   const [error, setError] = useState(null);
+  const [offerSignUp, setOfferSignUp] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -202,6 +206,21 @@ function SignInPage() {
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
+    setOfferSignUp(false);
+
+    // Checked here rather than with the input's minLength, which makes the
+    // browser block submission with a native tooltip and no visible reason.
+    if (mode === 'register') {
+      if (form.username.trim().length < 3) {
+        setError('Username must be at least 3 characters');
+        return;
+      }
+      if (form.password.length < 8) {
+        setError('Password must be at least 8 characters');
+        return;
+      }
+    }
+
     setBusy(true);
     try {
       if (mode === 'login') {
@@ -216,11 +235,23 @@ function SignInPage() {
       await refresh();
     } catch (err) {
       setError(err.message);
+      // The API deliberately cannot say whether the account exists, so offer
+      // the other path instead of leaving a dead end.
+      setOfferSignUp(mode === 'login');
       setBusy(false);
     }
   };
 
-  const switchTo = (next) => { setMode(next); setError(null); };
+  const switchTo = (next) => {
+    setMode(next);
+    setError(null);
+    setOfferSignUp(false);
+    // Carry what they already typed across, so nothing is retyped.
+    setForm((f) => (next === 'register'
+      ? { ...f, email: f.email || (f.identifier.includes('@') ? f.identifier : ''),
+                username: f.username || (f.identifier.includes('@') ? '' : f.identifier) }
+      : { ...f, identifier: f.identifier || f.username || f.email }));
+  };
 
   return (
     <main className="signin-page">
@@ -272,7 +303,6 @@ function SignInPage() {
                   onChange={set('username')}
                   autoComplete="username"
                   placeholder="letters, numbers, _ . -"
-                  minLength={3}
                   maxLength={24}
                   required
                 />
@@ -281,19 +311,29 @@ function SignInPage() {
           )}
 
           <label className="form-field">
-            <span>Password</span>
+            <span>
+              Password
+              {mode === 'register' && <small>At least 8 characters</small>}
+            </span>
             <input
               type="password"
               value={form.password}
               onChange={set('password')}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              placeholder={mode === 'register' ? 'at least 8 characters' : ''}
-              minLength={mode === 'register' ? 8 : undefined}
               required
             />
           </label>
 
-          {error && <p className="form-error">{error}</p>}
+          {error && (
+            <div className="form-error">
+              <p>{error}</p>
+              {offerSignUp && (
+                <button type="button" className="form-error-action" onClick={() => switchTo('register')}>
+                  Create an account instead
+                </button>
+              )}
+            </div>
+          )}
 
           <button className="primary-button signin-button" type="submit" disabled={busy}>
             {busy
