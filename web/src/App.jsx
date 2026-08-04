@@ -45,6 +45,7 @@ import { api } from './lib/api.js';
 import { adaptCharacter, adaptMessage, formatRelative, initialsOf } from './lib/adapt.js';
 import { SessionProvider, useAsync, useDebounced, useSession } from './lib/hooks.jsx';
 import { channels, subscribe } from './lib/realtime.js';
+import { useTypewriter } from './lib/typewriter.js';
 
 /* ------------------------------------------------------------------ */
 /* routing                                                             */
@@ -858,7 +859,13 @@ function ChatSidebar({ go, active, mobileOpen, onClose, conversations, groups, o
   );
 }
 
-function ChatMessage({ message }) {
+function ChatMessage({ message, animate = false, onTick }) {
+  // Only messages that arrive while you are watching get typed out; history
+  // loaded from the server appears at once, as already-read text should.
+  const { shown, done } = useTypewriter(message.text, { enabled: animate });
+
+  useEffect(() => { onTick?.(); }, [shown, onTick]);
+
   if (message.speaker === 'user') {
     return (
       <div className="message-row user-message">
@@ -869,6 +876,7 @@ function ChatMessage({ message }) {
       </div>
     );
   }
+
   const character = message.character ?? {};
   return (
     <div className="message-row character-message">
@@ -885,7 +893,12 @@ function ChatMessage({ message }) {
             <em>{message.thought}</em>
           </div>
         )}
-        <div className="message-bubble"><p className="preserve-lines">{message.text}</p></div>
+        <div className="message-bubble">
+          <p className="preserve-lines">
+            {shown}
+            {!done && <span className="type-caret" aria-hidden="true" />}
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -948,6 +961,22 @@ function useChatShell() {
   };
 }
 
+/**
+ * Track which messages landed while the reader was watching. Only those get
+ * typed out — reopening a conversation should not replay it.
+ */
+function useLiveMessages() {
+  const [liveIds, setLiveIds] = useState(() => new Set());
+  const markLive = useCallback((...ids) => {
+    setLiveIds((current) => {
+      const next = new Set(current);
+      for (const id of ids.flat()) if (id) next.add(id);
+      return next;
+    });
+  }, []);
+  return { liveIds, markLive };
+}
+
 /** Merge incoming rows into state without ever duplicating an id. */
 function mergeMessages(current, rows) {
   const next = [...current];
@@ -963,6 +992,7 @@ function mergeMessages(current, rows) {
 
 function ChatPage({ id, go, nsfw, setNsfw, notify }) {
   const shell = useChatShell();
+  const { liveIds, markLive } = useLiveMessages();
   const [messages, setMessages] = useState([]);
   const [character, setCharacter] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -987,12 +1017,18 @@ function ChatPage({ id, go, nsfw, setNsfw, notify }) {
     return () => { live = false; };
   }, [id]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, typing]);
+  const scrollToEnd = useCallback(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, []);
+  useEffect(() => { scrollToEnd(); }, [messages, typing, scrollToEnd]);
 
   // Proactive messages, and anything sent from another tab, arrive here.
   useEffect(() => subscribe(channels.conversation(id), {
-    message: (row) => setMessages((current) => mergeMessages(current, [row])),
-  }), [id]);
+    message: (row) => {
+      markLive(row.id);
+      setMessages((current) => mergeMessages(current, [row]));
+    },
+  }), [id, markLive]);
 
   const send = async (text) => {
     const tempId = `tmp-${Date.now()}`;
@@ -1000,6 +1036,7 @@ function ChatPage({ id, go, nsfw, setNsfw, notify }) {
     setTyping(true);
     try {
       const { userMessage, characterMessage } = await api.conversations.send(id, text);
+      markLive(characterMessage?.id);
       setMessages((current) =>
         mergeMessages(current.filter((m) => m.id !== tempId), [userMessage, characterMessage]));
       shell.reload();
@@ -1047,7 +1084,14 @@ function ChatPage({ id, go, nsfw, setNsfw, notify }) {
                 <span><Lock size={12} /> This conversation is private</span>
               </div>
               <div className="messages-list">
-                {messages.map((message) => <ChatMessage key={message.id} message={message} />)}
+                {messages.map((message) => (
+                  <ChatMessage
+                    key={message.id}
+                    message={message}
+                    animate={liveIds.has(message.id)}
+                    onTick={scrollToEnd}
+                  />
+                ))}
                 <div ref={endRef} />
               </div>
             </>
@@ -1127,6 +1171,7 @@ function MemberPanel({ group, open, onClose, onChanged, notify }) {
 
 function GroupChatPage({ id, go, nsfw, setNsfw, notify }) {
   const shell = useChatShell();
+  const { liveIds, markLive } = useLiveMessages();
   const [group, setGroup] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1153,12 +1198,18 @@ function GroupChatPage({ id, go, nsfw, setNsfw, notify }) {
     return () => { live = false; };
   }, [id, reloadKey]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, typing]);
+  const scrollToEnd = useCallback(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, []);
+  useEffect(() => { scrollToEnd(); }, [messages, typing, scrollToEnd]);
 
   // Characters replying to one another stream in one at a time.
   useEffect(() => subscribe(channels.group(id), {
-    message: (row) => setMessages((current) => mergeMessages(current, [row])),
-  }), [id]);
+    message: (row) => {
+      markLive(row.id);
+      setMessages((current) => mergeMessages(current, [row]));
+    },
+  }), [id, markLive]);
 
   const send = async (text) => {
     const tempId = `tmp-${Date.now()}`;
@@ -1166,6 +1217,7 @@ function GroupChatPage({ id, go, nsfw, setNsfw, notify }) {
     setTyping(true);
     try {
       const { userMessage, replies } = await api.groups.send(id, text);
+      markLive(replies.map((r) => r.id));
       setMessages((current) =>
         mergeMessages(current.filter((m) => m.id !== tempId), [userMessage, ...replies]));
       shell.reload();
@@ -1221,7 +1273,14 @@ function GroupChatPage({ id, go, nsfw, setNsfw, notify }) {
                 <span><Sparkles size={12} /> They talk to each other, not just to you</span>
               </div>
               <div className="messages-list">
-                {messages.map((message) => <ChatMessage key={message.id} message={message} />)}
+                {messages.map((message) => (
+                  <ChatMessage
+                    key={message.id}
+                    message={message}
+                    animate={liveIds.has(message.id)}
+                    onTick={scrollToEnd}
+                  />
+                ))}
                 <div ref={endRef} />
               </div>
             </>

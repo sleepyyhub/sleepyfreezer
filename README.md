@@ -50,18 +50,37 @@ with either the email or the username.
 Google and Discord sign-in also work, but only once you add credentials to
 `server/.env`; the sign-in screen hides those buttons until you do.
 
-## Models
+## Models and providers
 
-All free tier, tried in order — a rate-limited model falls through to the next:
+Providers are OpenAI-compatible and configured in `server/src/ai/providers.js`.
+Set a provider's API key to enable it; the ladder spans providers in order, so
+when one exhausts its free allowance the next takes over rather than the app
+going down. A provider that returns 429 is skipped for 15 minutes — without
+that, every message pays the latency of walking dead rungs first.
 
-| Model | Role |
-|---|---|
-| `inclusionai/ling-3.0-flash:free` | primary |
-| `google/gemma-4-31b-it:free` | fallback |
-| `nvidia/nemotron-3-nano-30b-a3b:free` | fallback |
-| `openai/gpt-oss-20b:free` | last resort |
+| Provider | Env key | Notes |
+|---|---|---|
+| Novita | `NOVITA_API_KEY` | Hosts Ling-3.0-flash at $0/token, and is the upstream OpenRouter resells it from. Requires a non-zero account balance before it will serve any request, even for a zero-priced model. |
+| OpenRouter | `OPENROUTER_API_KEY` | Free models share one daily request cap per account. The cap is per-account, not per-model, so listing more `:free` models buys no headroom. |
+| NVIDIA | `NVIDIA_API_KEY` | Separate free allowance. Avoid the reasoning models — they leak planning prose into replies. |
+| Groq | `GROQ_API_KEY` | Fast, generous free tier, smaller models. |
 
-Override with `OPENROUTER_MODELS` (comma-separated) in `server/.env`.
+Order with `AI_PROVIDERS=novita,openrouter,nvidia,groq`, and override a
+provider's models with e.g. `NOVITA_MODELS=`.
+
+Ling-3.0-flash leads because it was measurably the best free option for this
+job: 2-4 second replies, it holds a character's voice and verbal tics, it
+mirrors the user's language, it gets in-world facts right, and it stays in
+character in mature mode. Temperature is 0.7 rather than the vendor default of
+1.0 — characters drift out of voice at high temperature.
+
+NVIDIA NIM's `thinkingmachines/inkling` was evaluated and rejected: on the free
+tier a single reply took over five minutes. The Nemotron reasoning models leak
+their planning prose into the response body, which is why the parser defends
+against it.
+
+`MOCK_AI=true` serves canned replies without calling any provider — useful for
+front-end work that would otherwise spend a limited daily allowance.
 
 Ling leads because it was measurably the best of the free options for this job:
 2–4 second replies, it holds a character's voice and verbal tics, it mirrors the

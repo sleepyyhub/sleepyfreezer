@@ -25,26 +25,16 @@ export const config = {
   crossSiteCookies: process.env.CROSS_SITE_COOKIES === 'true',
 
   ai: {
-    baseUrl: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
-    apiKey: process.env.OPENROUTER_API_KEY ?? '',
-
     /**
-     * Model ladder, tried in order. All free tier.
+     * Providers and their model ladders live in ai/providers.js.
      *
-     * ling-3.0-flash leads on measured results: ~2-4s replies, it holds voice
+     * ling-3.0-flash leads on measured results: 2-4s replies, it holds voice
      * and verbal tics, it mirrors the user's language, it gets in-world facts
-     * right, and it stays in character in mature mode. Everything below it is
-     * there for when the free tier rate-limits the rung above.
+     * right, and it stays in character in mature mode.
      *
      * Deliberately excluded: the Nemotron reasoning models leak their planning
      * prose into `content`, and emit <unk> garbage when reasoning is disabled.
      */
-    models: parseList(process.env.OPENROUTER_MODELS) ?? [
-      'inclusionai/ling-3.0-flash:free',
-      'google/gemma-4-31b-it:free',
-      'nvidia/nemotron-3-nano-30b-a3b:free',
-      'openai/gpt-oss-20b:free',
-    ],
 
     // Lowered from the vendor default of 1.0 — characters drift out of voice
     // at high temperature, and we want consistency over novelty.
@@ -52,6 +42,10 @@ export const config = {
     topP: 0.95,
     maxTokens: 2048,
     timeoutMs: 60_000,
+
+    // Dev only: serve canned replies instead of calling a provider, so UI work
+    // does not consume a limited daily allowance.
+    mock: process.env.MOCK_AI === 'true',
 
     // Cheaper settings for the group "director" call, which only picks names.
     directorTemperature: 0.3,

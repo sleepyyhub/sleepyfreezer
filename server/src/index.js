@@ -14,6 +14,7 @@ import groupRoutes from './routes/groups.js';
 import settingsRoutes from './routes/settings.js';
 import cronRoutes from './routes/cron.js';
 import { startScheduler } from './services/scheduler.js';
+import { configuredProviders, configuredLadder } from './ai/client.js';
 import { brand } from '../../shared/brand.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +31,7 @@ app.use(passport.initialize());
 app.use(attachUser);
 
 app.get('/api/health', (_req, res) =>
-  res.json({ ok: true, app: brand.name, models: config.ai.models }),
+  res.json({ ok: true, app: brand.name, providers: configuredProviders, ladder: configuredLadder }),
 );
 
 app.use('/api/auth', authRoutes);
@@ -67,7 +68,7 @@ app.use((err, _req, res, _next) => {
 
 app.listen(config.port, () => {
   console.log(`${brand.name} API on http://localhost:${config.port}`);
-  console.log(`  models: ${config.ai.models.join(' -> ')}`);
+  console.log(`  models: ${configuredLadder.join(' -> ') || '(none configured)'}`);
   console.log(`  temp:   ${config.ai.temperature}`);
   console.log(`  client: ${config.clientUrl}`);
   startScheduler();

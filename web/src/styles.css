@@ -2972,6 +2972,25 @@ select {
 }
 .message-content .message-bubble { animation: message-in var(--base) var(--ease) 90ms both; }
 
+/* Blinking caret while a line is being typed. */
+.type-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--clover);
+  border-radius: 1px;
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+@keyframes caret-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .type-caret { display: none; }
+}
+
 /* --- interaction --- */
 
 .character-card,
