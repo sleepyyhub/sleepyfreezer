@@ -97,6 +97,26 @@ tier a single reply took over five minutes. The Nemotron reasoning models leak
 their planning prose into the response body, which is why the parser defends
 against it.
 
+### Avatars
+
+Characters fall back to an initials tile, and a portrait can be drawn on demand
+from the character's own personality text — the button is on the character page.
+
+Image models are priced per picture rather than per token, and the gap is wide:
+one avatar from `google/gemini-3.1-flash-lite-image` costs about **$0.034**, so a
+few dollars of credit buys under a hundred. Generation is therefore an explicit
+action, never part of creating a character, and the result is stored on the
+character so it is produced exactly once. Redrawing is possible but asks again.
+
+Providers are tried free-first: Cloudflare Workers AI (`CLOUDFLARE_API_TOKEN` +
+`CLOUDFLARE_ACCOUNT_ID`, free daily allowance, no card) before OpenRouter. With
+neither configured the button is hidden rather than failing — `/api/health`
+reports `images: true|false`.
+
+Images are stored in Postgres and served from `/api/characters/:id/avatar` with
+a long cache lifetime. There is no object store to point at, and roughly 600KB
+per avatar against a hundred-odd avatars is well within a small database.
+
 `MOCK_AI=true` serves canned replies without calling any provider — useful for
 front-end work that would otherwise spend a limited daily allowance.
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { composeCharacter } from '../ai/compose.js';
+import { generateAvatar, imageGenerationEnabled } from '../ai/image.js';
 
 const router = Router();
 
@@ -19,6 +20,7 @@ const publicFields = {
   messageCount: true,
   createdAt: true,
   creatorId: true,
+  avatarMime: true, // presence of a generated avatar; the bytes are served separately
 };
 
 const SORTS = {
@@ -119,6 +121,60 @@ router.post('/compose', requireAuth, async (req, res, next) => {
 
     const draft = await composeCharacter(parsed.data);
     res.json({ draft });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/characters/:id/avatar — the generated image itself. */
+router.get('/:id/avatar', async (req, res, next) => {
+  try {
+    const row = await prisma.character.findUnique({
+      where: { id: req.params.id },
+      select: { avatarData: true, avatarMime: true, updatedAt: true },
+    });
+    if (!row?.avatarData) return res.status(404).json({ error: 'No avatar for this character' });
+
+    // Immutable in practice: regenerating writes a new updatedAt, and the URL
+    // carries it as a cache buster.
+    res.set('Content-Type', row.avatarMime ?? 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(Buffer.from(row.avatarData));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/characters/:id/avatar — generate one.
+ *
+ * Deliberately a separate, explicit action rather than part of creating a
+ * character: images cost per picture, so nobody should spend one by accident.
+ */
+router.post('/:id/avatar', requireAuth, async (req, res, next) => {
+  try {
+    const character = await prisma.character.findUnique({ where: { id: req.params.id } });
+    if (!character) return res.status(404).json({ error: 'Character not found' });
+    if (character.creatorId && character.creatorId !== req.user.id) {
+      return res.status(403).json({ error: 'Not your character' });
+    }
+    if (character.avatarData && !req.body?.regenerate) {
+      return res.status(409).json({ error: 'This character already has an avatar' });
+    }
+
+    const image = await generateAvatar(character);
+    const updated = await prisma.character.update({
+      where: { id: character.id },
+      data: { avatarData: image.data, avatarMime: image.mime },
+      select: { id: true, updatedAt: true },
+    });
+
+    res.json({
+      ok: true,
+      provider: image.provider,
+      bytes: image.data.length,
+      avatarUrl: `/api/characters/${updated.id}/avatar?v=${updated.updatedAt.getTime()}`,
+    });
   } catch (err) {
     next(err);
   }

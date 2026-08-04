@@ -28,6 +28,8 @@ async function request(path, { method = 'GET', body } = {}) {
 export const api = {
   base: BASE,
 
+  health: () => request('/api/health'),
+
   auth: {
     me: () => request('/api/auth/me'),
     providers: () => request('/api/auth/providers'),
@@ -51,6 +53,8 @@ export const api = {
       request('/api/characters/compose', { method: 'POST', body: { name, universe } }),
     update: (id, data) => request(`/api/characters/${id}`, { method: 'PATCH', body: data }),
     remove: (id) => request(`/api/characters/${id}`, { method: 'DELETE' }),
+    generateAvatar: (id, regenerate = false) =>
+      request(`/api/characters/${id}/avatar`, { method: 'POST', body: { regenerate } }),
   },
 
   conversations: {

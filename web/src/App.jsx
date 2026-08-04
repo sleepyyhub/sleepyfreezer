@@ -81,13 +81,20 @@ function Logo({ onClick, compact = false }) {
 
 function Avatar({ character, size = 'md', status = false, className = '' }) {
   const person = character ?? {};
+  const [broken, setBroken] = useState(false);
+  const showImage = Boolean(person.imageUrl) && !broken;
+
   return (
     <span
-      className={`avatar avatar-${size} ${className}`}
+      className={`avatar avatar-${size} ${showImage ? 'has-image' : ''} ${className}`}
       style={{ '--avatar-a': person.colors?.[0] || '#34d399', '--avatar-b': person.colors?.[1] || '#a3e635' }}
       aria-label={person.name}
     >
-      <span>{person.initials || initialsOf(person.name)}</span>
+      {showImage
+        // Falling back to initials on error means a missing image never leaves
+        // an empty circle.
+        ? <img src={person.imageUrl} alt="" onError={() => setBroken(true)} />
+        : <span>{person.initials || initialsOf(person.name)}</span>}
       {status && <i className={person.online ? 'online' : ''} />}
     </span>
   );
@@ -579,11 +586,33 @@ function Stat({ value, label }) {
 
 function CharacterProfile({ id, go, notify }) {
   const { data, loading, error, reload } = useAsync(() => api.characters.get(id), [id]);
+  const { data: health } = useAsync(() => api.health(), []);
+  const { user } = useSession();
   const [saved, setSaved] = useState(false);
   const [starting, setStarting] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
+  const [drawing, setDrawing] = useState(false);
 
   const character = data ? adaptCharacter(data.character) : null;
+  const canDraw = Boolean(health?.images)
+    && (!data?.character?.creatorId || data.character.creatorId === user?.id);
+
+  const drawAvatar = async () => {
+    setDrawing(true);
+    try {
+      const res = await api.characters.generateAvatar(id, Boolean(character?.imageUrl));
+      notify(
+        res.provider === 'openrouter'
+          ? 'Portrait drawn — that one used paid credit.'
+          : 'Portrait drawn.',
+      );
+      reload();
+    } catch (err) {
+      notify(err.message);
+    } finally {
+      setDrawing(false);
+    }
+  };
 
   const startChat = async () => {
     setStarting(true);
@@ -607,6 +636,13 @@ function CharacterProfile({ id, go, notify }) {
         <div className="profile-avatar-wrap">
           <Avatar character={character} size="xl" status />
           <span className="profile-availability">Available</span>
+          {canDraw && (
+            <button className="draw-avatar" onClick={drawAvatar} disabled={drawing}>
+              {drawing
+                ? <><Loader2 size={13} className="spin" /> Drawing…</>
+                : <><ImageIcon size={13} /> {character.imageUrl ? 'Redraw' : 'Draw portrait'}</>}
+            </button>
+          )}
         </div>
         <div className="profile-main-info">
           <div className="profile-name-line">

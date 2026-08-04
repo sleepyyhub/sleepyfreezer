@@ -15,6 +15,7 @@ import settingsRoutes from './routes/settings.js';
 import cronRoutes from './routes/cron.js';
 import { startScheduler } from './services/scheduler.js';
 import { configuredProviders, configuredLadder } from './ai/client.js';
+import { imageGenerationEnabled } from './ai/image.js';
 import { brand } from '../../shared/brand.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,7 +32,13 @@ app.use(passport.initialize());
 app.use(attachUser);
 
 app.get('/api/health', (_req, res) =>
-  res.json({ ok: true, app: brand.name, providers: configuredProviders, ladder: configuredLadder }),
+  res.json({
+    ok: true,
+    app: brand.name,
+    providers: configuredProviders,
+    ladder: configuredLadder,
+    images: imageGenerationEnabled(),
+  }),
 );
 
 app.use('/api/auth', authRoutes);

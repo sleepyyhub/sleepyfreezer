@@ -1,3 +1,7 @@
+import { api } from './api.js';
+
+const API_BASE = api.base;
+
 /**
  * The API and the UI describe a character slightly differently — the UI was
  * built against mock data with a two-colour gradient and formatted counts.
@@ -63,6 +67,9 @@ export function adaptCharacter(c) {
   return {
     id: c.id,
     name: c.name,
+    // Served from the API when one has been generated; the initials tile is
+    // the fallback, so a character always renders.
+    imageUrl: c.avatarMime ? `${API_BASE}/api/characters/${c.id}/avatar` : (c.avatarUrl ?? null),
     initials: initialsOf(c.name),
     role: c.universe || 'Original character',
     description: c.tagline || c.personality?.slice(0, 160) || '',

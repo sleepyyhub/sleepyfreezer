@@ -58,6 +58,11 @@ model Character {
   avatarUrl  String?
   themeColor String   @default("#34d399")
 
+  // A generated avatar, stored inline. There is no object store configured,
+  // and these are produced once and then read many times.
+  avatarData Bytes?
+  avatarMime String?
+
   nsfwAllowed Boolean @default(false)
   isPublic    Boolean @default(true)
   isFeatured  Boolean @default(false)
