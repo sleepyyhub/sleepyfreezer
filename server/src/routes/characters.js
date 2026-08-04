@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { composeCharacter } from '../ai/compose.js';
 
 const router = Router();
 
@@ -92,6 +93,32 @@ router.get('/:id', async (req, res, next) => {
     }
 
     res.json({ character });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const composeInput = z.object({
+  name: z.string().trim().min(1, 'Enter a character name').max(60),
+  universe: z.string().trim().max(80).default(''),
+});
+
+/**
+ * POST /api/characters/compose
+ *
+ * Drafts a full character sheet from a name and a universe. Deliberately does
+ * not save anything — the draft lands in the create form so it can be read and
+ * edited before it becomes a character.
+ */
+router.post('/compose', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = composeInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
+    }
+
+    const draft = await composeCharacter(parsed.data);
+    res.json({ draft });
   } catch (err) {
     next(err);
   }

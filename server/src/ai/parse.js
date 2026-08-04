@@ -119,6 +119,52 @@ export function parseJson(raw, fallback = null) {
   }
 }
 
+/**
+ * Does this read as the model narrating its task instead of playing the part?
+ *
+ * A character never refers to "the user", never plans a reply out loud, and
+ * never describes itself in the third person. Any one of these is conclusive,
+ * so a single hit is enough — the cost of a false positive is one regenerated
+ * message, while a miss puts raw chain-of-thought in front of a reader.
+ */
+const META_SIGNALS = [
+  /\brole:\s*(user|assistant|system)\b/i,
+  /\bthe user\b/i,
+  /\bLet me (craft|draft|write|re-?read|think|analyz|consider|check|look)/i,
+  /\bI (should|need to|will|must) (respond|reply|answer|say|write|keep|stay|start|begin)/i,
+  /\bin character as\b|\bstay in character\b/i,
+  /\bsystem prompt\b|\binner monologue line\b|\bthought line\b/i,
+  /\bmy (previous )?(response|reply|answer)\b/i,
+  /\b(she|he|they)'?s (laid-back|blunt|shy|energetic|serious|supposed to)\b/i,
+  /^\s*[-*]\s+(She|He|They)'?(s| is| should| would)\b/m,
+  /\bconversation (flow|history|so far)\b/i,
+  /\bTurn \d+\s*:/i,
+];
+
+export function looksLikeMetaReasoning(text) {
+  if (!text) return false;
+  return META_SIGNALS.some((re) => re.test(text));
+}
+
+/**
+ * When the model narrates first and then writes the line anyway, the real reply
+ * follows a drafting marker. Recover it rather than paying for another call.
+ */
+const DRAFT_MARKER =
+  /(?:let me (?:craft|draft|write)[^:\n]*:|^\s*(?:draft|response|reply|my reply)\s*:)\s*/gim;
+
+export function salvageAfterDraft(text) {
+  if (!text) return '';
+  let last = null;
+  let match;
+  DRAFT_MARKER.lastIndex = 0;
+  while ((match = DRAFT_MARKER.exec(text)) !== null) last = match;
+  if (!last) return '';
+  const tail = text.slice(last.index + last[0].length).trim();
+  // A salvaged tail that still narrates is no better than what we started with.
+  return tail && !looksLikeMetaReasoning(tail) ? tail : '';
+}
+
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

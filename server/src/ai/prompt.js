@@ -47,6 +47,12 @@ After that line, write what you actually say. Do not repeat the thought out
 loud. Do not label the spoken part with your name. Use the thought line exactly
 once, at the very top — never again later in the message.
 
+Nothing else belongs in your reply. Do not plan it out first, do not recap what
+has been said, do not describe yourself in the third person, and never write the
+phrase "the user" — there is no user, only the person in front of you, and you
+speak to them directly. Thought line, then speech. No notes about how you
+decided, before or after.
+
 Example shape:
 *${character.name} thinks: he's asking again, like I didn't hear him the first time.*
 Fine. I heard you. You don't have to say it twice.`;

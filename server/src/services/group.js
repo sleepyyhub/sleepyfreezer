@@ -1,8 +1,9 @@
 import prisma from '../db.js';
 import config from '../config.js';
 import { complete } from '../ai/client.js';
+import { generateInCharacter } from '../ai/generate.js';
 import { buildSystemPrompt, buildHistory } from '../ai/prompt.js';
-import { parseReply, parseJson } from '../ai/parse.js';
+import { parseJson } from '../ai/parse.js';
 import { emit, channels } from '../realtime/pusher.js';
 
 const HISTORY_LIMIT = 120;
@@ -102,9 +103,7 @@ async function speak({ character, cast, user, group, replyToId = null }) {
     ...buildHistory(history, { selfId: character.id, isGroup: true }),
   ];
 
-  const raw = await complete(messages);
-  const { thought, content } = parseReply(raw.content, {
-    reasoning: raw.reasoning,
+  const { thought, content } = await generateInCharacter(messages, {
     name: character.name,
   });
 

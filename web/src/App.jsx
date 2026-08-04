@@ -1308,9 +1308,40 @@ function CreatePage({ go, notify }) {
     color: 0,
   });
   const [saving, setSaving] = useState(false);
+  const [seed, setSeed] = useState({ name: '', universe: '' });
+  const [composing, setComposing] = useState(false);
+  const [composeNote, setComposeNote] = useState(null);
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
 
   const tags = draft.tags.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10);
+
+  const compose = async () => {
+    if (!seed.name.trim()) { notify('Enter a character name first'); return; }
+    setComposing(true);
+    setComposeNote(null);
+    try {
+      const { draft: sheet } = await api.characters.compose(seed.name, seed.universe);
+      const colorIndex = COLOR_OPTIONS.indexOf(sheet.themeColor);
+      setDraft((current) => ({
+        ...current,
+        name: sheet.name,
+        universe: sheet.universe,
+        tagline: sheet.tagline,
+        personality: sheet.personality,
+        lore: sheet.lore,
+        speakingStyle: sheet.speakingStyle,
+        tags: sheet.tags.join(', '),
+        color: colorIndex >= 0 ? colorIndex : current.color,
+      }));
+      setComposeNote(sheet.known
+        ? { kind: 'ok', text: `Drafted ${sheet.name}. Read it over and change anything that feels off.` }
+        : { kind: 'warn', text: `The model did not recognise ${sheet.name}, so this is invented rather than recalled. Worth checking closely.` });
+    } catch (err) {
+      setComposeNote({ kind: 'error', text: err.message });
+    } finally {
+      setComposing(false);
+    }
+  };
 
   const previewCharacter = {
     id: 'preview',
@@ -1372,6 +1403,43 @@ function CreatePage({ go, notify }) {
       </div>
       <div className="create-grid">
         <div className="create-form">
+          <section className="form-section compose-section">
+            <div className="form-section-title">
+              <span className="compose-badge"><Sparkles size={15} /></span>
+              <div>
+                <h2>Start from a name</h2>
+                <p>Name a character and where they are from, and the rest of this form gets filled in for you.</p>
+              </div>
+            </div>
+            <div className="compose-row">
+              <input
+                value={seed.name}
+                onChange={(e) => setSeed((s) => ({ ...s, name: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && !composing && compose()}
+                placeholder="Character name, e.g. Miku Nakano"
+                maxLength={60}
+                aria-label="Character name"
+              />
+              <input
+                value={seed.universe}
+                onChange={(e) => setSeed((s) => ({ ...s, universe: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && !composing && compose()}
+                placeholder="Anime or universe (optional)"
+                maxLength={80}
+                aria-label="Universe"
+              />
+              <button className="primary-button compose-button" onClick={compose} disabled={composing}>
+                {composing ? <><Loader2 size={16} className="spin" /> Writing…</> : <><WandSparkles size={16} /> Draft it</>}
+              </button>
+            </div>
+            {composeNote && (
+              <p className={`compose-note compose-note-${composeNote.kind}`}>
+                {composeNote.kind === 'warn' ? <Info size={14} /> : <Sparkles size={14} />}
+                {composeNote.text}
+              </p>
+            )}
+          </section>
+
           <section className="form-section">
             <div className="form-section-title"><span>01</span><div><h2>Identity</h2><p>The essentials people see first.</p></div></div>
             <div className="form-fields">

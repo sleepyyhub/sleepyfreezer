@@ -62,6 +62,19 @@ export async function complete(messages, opts = {}) {
     console.warn(`[ai] ${model} unavailable (${lastError?.message}) — trying next`);
   }
 
+  // Every free model shares one daily allowance, so exhausting it takes the
+  // whole ladder down at once. Say so plainly — "all models failed" sends
+  // people looking for a bug that is not there.
+  const status = lastError?.status ?? lastError?.response?.status;
+  if (status === 429) {
+    const err = new Error(
+      'Daily free-model limit reached. It resets at 00:00 UTC — or add credits ' +
+      'on OpenRouter to raise the allowance.',
+    );
+    err.status = 429;
+    throw err;
+  }
+
   throw new Error(`All models failed. Last error: ${lastError?.message ?? 'unknown'}`);
 }
 

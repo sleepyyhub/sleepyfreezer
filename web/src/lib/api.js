@@ -47,6 +47,8 @@ export const api = {
     },
     get: (id) => request(`/api/characters/${id}`),
     create: (data) => request('/api/characters', { method: 'POST', body: data }),
+    compose: (name, universe) =>
+      request('/api/characters/compose', { method: 'POST', body: { name, universe } }),
     update: (id, data) => request(`/api/characters/${id}`, { method: 'PATCH', body: data }),
     remove: (id) => request(`/api/characters/${id}`, { method: 'DELETE' }),
   },

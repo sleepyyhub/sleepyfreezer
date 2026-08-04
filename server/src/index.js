@@ -58,9 +58,11 @@ app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
   console.error('[error]', err);
-  res.status(err.status ?? 500).json({
-    error: config.isProd ? 'Something went wrong' : err.message,
-  });
+  const status = err.status ?? 500;
+  // A rate-limit message is useful to the person who hit it, so it is shown
+  // verbatim even in production, unlike an internal failure.
+  const safe = status < 500 || !config.isProd;
+  res.status(status).json({ error: safe ? err.message : 'Something went wrong' });
 });
 
 app.listen(config.port, () => {

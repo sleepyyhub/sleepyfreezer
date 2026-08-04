@@ -1,7 +1,6 @@
 import prisma from '../db.js';
-import { complete } from '../ai/client.js';
+import { generateInCharacter } from '../ai/generate.js';
 import { buildSystemPrompt, buildHistory } from '../ai/prompt.js';
-import { parseReply } from '../ai/parse.js';
 import { emit, channels } from '../realtime/pusher.js';
 
 // Inkling holds 256k tokens, so history is generous — this cap exists to keep
@@ -53,9 +52,7 @@ export async function sendMessage({ user, conversation, content }) {
     ...buildHistory(history, { selfId: character.id }),
   ];
 
-  const raw = await complete(messages);
-  const { thought, content: reply } = parseReply(raw.content, {
-    reasoning: raw.reasoning,
+  const { thought, content: reply } = await generateInCharacter(messages, {
     name: character.name,
   });
 

@@ -1,8 +1,7 @@
 import prisma from '../db.js';
 import config from '../config.js';
-import { complete } from '../ai/client.js';
+import { generateInCharacter } from '../ai/generate.js';
 import { buildSystemPrompt, buildHistory } from '../ai/prompt.js';
-import { parseReply } from '../ai/parse.js';
 import { emit, channels } from '../realtime/pusher.js';
 import { nudgeGroup } from './group.js';
 
@@ -48,17 +47,11 @@ async function nudgeConversation({ user, conversation }) {
     },
   ];
 
-  // Occasionally a model returns only the thought line and no spoken text.
-  // One retry costs a second and turns most of those into a real message.
-  let thought = null;
-  let content = '';
-  for (let attempt = 0; attempt < 2 && !content; attempt += 1) {
-    const raw = await complete(messages);
-    ({ thought, content } = parseReply(raw.content, {
-      reasoning: raw.reasoning,
-      name: character.name,
-    }));
-  }
+  // generateInCharacter already retries on narration; it can still come back
+  // empty when the model returns nothing but a thought line.
+  const { thought, content } = await generateInCharacter(messages, {
+    name: character.name,
+  });
 
   if (!content) {
     console.warn(`[proactive] ${character.name} produced no message for user ${user.id} — skipping`);
