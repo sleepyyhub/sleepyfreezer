@@ -41,7 +41,9 @@ export const config = {
     temperature: 0.7,
     topP: 0.95,
     maxTokens: 2048,
-    timeoutMs: 60_000,
+    // Every healthy provider measured answers in under 10s. A long budget only
+    // buys latency when one is hanging.
+    timeoutMs: 25_000,
 
     // Dev only: serve canned replies instead of calling a provider, so UI work
     // does not consume a limited daily allowance.

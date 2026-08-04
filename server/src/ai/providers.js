@@ -90,11 +90,27 @@ const DEFAULTS = {
     envKey: 'MISTRAL_API_KEY',
     models: ['mistral-small-latest'],
   },
+
+  /**
+   * An aggregator. Its promotional `kimi-k3-free` accepted requests and never
+   * answered when measured — 150s with zero bytes — while a paid model on the
+   * same endpoint refused in 2s with a clear quota error. That is why it sits
+   * last, and why the client now cools a provider down after a timeout.
+   *
+   * Note that an aggregator sees the full text of every conversation.
+   */
+  tokenrouter: {
+    baseUrl: 'https://api.tokenrouter.com/v1',
+    envKey: 'TOKENROUTER_API_KEY',
+    models: ['moonshotai/kimi-k3-free'],
+  },
 };
 
 // Quality first while allowances last, then the fastest free fallbacks, with
 // the least reliable provider last.
-const DEFAULT_ORDER = ['novita', 'openrouter', 'groq', 'cerebras', 'gemini', 'mistral', 'nvidia'];
+const DEFAULT_ORDER = [
+  'novita', 'openrouter', 'groq', 'cerebras', 'gemini', 'mistral', 'nvidia', 'tokenrouter',
+];
 
 const parseList = (raw) => {
   const items = (raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);

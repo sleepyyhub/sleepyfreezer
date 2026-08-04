@@ -37,24 +37,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * message. Without this, a exhausted primary added ~35s to each reply while the
  * request walked dead rungs before reaching a working provider.
  */
-const COOLDOWN_MS = 15 * 60 * 1000;
+const RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000;
+
+/**
+ * A provider that accepts a request and never answers is worse than one that
+ * refuses: every message pays the full timeout before falling through. Benched
+ * shorter than the rate-limit cooldown because a hang is more often transient
+ * load than an exhausted allowance.
+ */
+const TIMEOUT_COOLDOWN_MS = 5 * 60 * 1000;
+
 const coolingUntil = new Map();
 
 const isCoolingDown = (provider) => (coolingUntil.get(provider) ?? 0) > Date.now();
 
-function startCooldown(provider) {
+const isTimeout = (err) =>
+  /timeout/i.test(err?.name ?? '') || /timed?\s*out/i.test(err?.message ?? '');
+
+function startCooldown(provider, ms, reason) {
   if (isCoolingDown(provider)) return;
-  coolingUntil.set(provider, Date.now() + COOLDOWN_MS);
-  console.warn(`[ai] ${provider} is rate-limited — skipping it for ${COOLDOWN_MS / 60000} minutes`);
+  coolingUntil.set(provider, Date.now() + ms);
+  console.warn(`[ai] ${provider} ${reason} — skipping it for ${ms / 60000} minutes`);
 }
 
-/**
- * Call the model, walking the ladder when a rung is unavailable.
- *
- * Free allowances are per-account, so a 429 means this provider is done for
- * now — not that the request is bad. Dropping straight to the next provider is
- * both faster and more likely to succeed than backing off here.
- */
 /**
  * Canned replies for MOCK_AI=true. Front-end work — animation, layout, scroll
  * behaviour — needs a steady stream of messages, and spending a limited daily
@@ -67,6 +72,13 @@ const MOCK_REPLIES = [
 ];
 let mockIndex = 0;
 
+/**
+ * Call the model, walking the ladder when a rung is unavailable.
+ *
+ * Free allowances are per-account, so a 429 means this provider is done for
+ * now — not that the request is bad. Dropping straight to the next provider is
+ * both faster and more likely to succeed than backing off here.
+ */
 export async function complete(messages, opts = {}) {
   if (config.ai.mock) {
     await sleep(400);
@@ -127,10 +139,14 @@ export async function complete(messages, opts = {}) {
         const status = err.status ?? err.response?.status;
         if (status === 429) {
           sawRateLimit = true;
-          startCooldown(provider);
+          startCooldown(provider, RATE_LIMIT_COOLDOWN_MS, 'is rate-limited');
+        } else if (isTimeout(err)) {
+          startCooldown(provider, TIMEOUT_COOLDOWN_MS, 'timed out');
         }
 
-        if (status === 429 || !RETRYABLE.has(status)) break; // next rung
+        // A timeout has already cost the full budget; retrying the same rung
+        // would just spend it again.
+        if (status === 429 || isTimeout(err) || !RETRYABLE.has(status)) break;
         await sleep(400 * (attempt + 1));
       }
     }

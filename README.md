@@ -15,13 +15,14 @@ shared/   brand tokens used by both
 
 - Node 18+
 - PostgreSQL 14+
-- An [OpenRouter](https://openrouter.ai) API key (free tier is enough)
+- An API key from at least one provider — [Groq](https://console.groq.com) is
+  the most generous free option and needs no card
 - Optional: Google and/or Discord OAuth credentials, and a Pusher app
 
 ## Run it
 
 ```bash
-cp server/.env.example server/.env   # set DATABASE_URL and OPENROUTER_API_KEY
+cp server/.env.example server/.env   # set DATABASE_URL and one provider key
 npm run setup                        # installs both halves, migrates, seeds
 npm start                            # http://localhost:4000
 ```
@@ -67,9 +68,15 @@ that, every message pays the latency of walking dead rungs first.
 | Gemini | `GEMINI_API_KEY` | ~1,500 req/day | no | Google's terms allow free-tier prompts to be used for training — a poor fit for private conversations. |
 | Mistral | `MISTRAL_API_KEY` | modest | no | |
 | NVIDIA | `NVIDIA_API_KEY` | separate allowance | no | Least reliable measured: 503s, 529s, and >70s on larger models. Only the 8B model answered promptly. |
+| TokenRouter | `TOKENROUTER_API_KEY` | promotional free models | yes, for paid models | Its `kimi-k3-free` accepted requests and never answered when measured (150s, zero bytes), while a paid model on the same key refused in 2s with a clear quota error. Last in the order. An aggregator also sees the full text of every conversation. |
 
-Order with `AI_PROVIDERS=novita,openrouter,nvidia,groq`, and override a
-provider's models with e.g. `NOVITA_MODELS=`.
+Order with `AI_PROVIDERS=groq,openrouter`, and override a provider's models with
+e.g. `GROQ_MODELS=`.
+
+A provider that hangs is worse than one that refuses, so a timeout also starts a
+cooldown (5 minutes, against 15 for a rate limit) and the per-request budget is
+25 seconds. Measured against a provider that never answered: the first message
+cost 78s, the next two 375ms and 318ms.
 
 Ling-3.0-flash leads because it was measurably the best free option for this
 job: 2-4 second replies, it holds a character's voice and verbal tics, it
@@ -84,17 +91,6 @@ against it.
 
 `MOCK_AI=true` serves canned replies without calling any provider — useful for
 front-end work that would otherwise spend a limited daily allowance.
-
-Ling leads because it was measurably the best of the free options for this job:
-2–4 second replies, it holds a character's voice and verbal tics, it mirrors the
-user's language, it gets in-world facts right, and it stays in character in
-mature mode. Temperature is 0.7 rather than the vendor default of 1.0 —
-characters drift out of voice at high temperature.
-
-NVIDIA NIM's `thinkingmachines/inkling` was evaluated and rejected: on the free
-tier a single reply took over five minutes. The Nemotron reasoning models leak
-their planning prose into the response body, which is why the parser defends
-against it.
 
 ## How it works
 
@@ -197,9 +193,10 @@ Render's free web services sleep after 15 minutes of inactivity and take roughly
 a minute to wake, and a sleeping process runs no timers. Any uptime pinger
 hitting the app URL keeps it awake and the internal scheduler then runs normally
 — a plain GET on `/` every 10 minutes is enough, no secret or POST involved.
-Without one, proactive messages only go out while somebody is using the app. Railway does not sleep, but bills against a
-monthly credit instead. Neither is a problem for testing; pick a paid tier before
-real users arrive.
+Without one, proactive messages only go out while somebody is using the app.
+
+Railway does not sleep, but bills against a monthly credit instead. Neither is a
+problem for testing; pick a paid tier before real users arrive.
 
 ## Tests
 
