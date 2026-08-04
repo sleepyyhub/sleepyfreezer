@@ -42,23 +42,59 @@ const DEFAULTS = {
     }),
   },
 
-  /** Separate free allowance again. Avoid the reasoning models here — they
-   *  leak planning prose into the reply and are slow on the free tier. */
-  nvidia: {
-    baseUrl: 'https://integrate.api.nvidia.com/v1',
-    envKey: 'NVIDIA_API_KEY',
-    models: ['meta/llama-3.3-70b-instruct', 'mistralai/mistral-medium-3.5-128b'],
-  },
-
-  /** Fast, generous free tier, but smaller models. */
+  /**
+   * The best free fallback measured here: no card required, roughly 14k
+   * requests a day, and the lowest latency of anything tried — Groq runs on
+   * its own inference hardware. Capped at 30 requests/minute, which a group
+   * chat can brush against during a bot-to-bot chain.
+   */
   groq: {
     baseUrl: 'https://api.groq.com/openai/v1',
     envKey: 'GROQ_API_KEY',
-    models: ['llama-3.3-70b-versatile'],
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+  },
+
+  /**
+   * Around 1,500 requests a day, no card. Note that Google's terms allow
+   * free-tier prompts to be used for training, which is a poor fit for private
+   * conversations — reach for this after the others.
+   */
+  gemini: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    envKey: 'GEMINI_API_KEY',
+    // Model names move fast here; check the provider's list if one 404s.
+    models: ['gemini-flash-latest', 'gemini-2.5-flash'],
+  },
+
+  /** Very fast, ~1M tokens/day. The no-card free tier is being retired in
+   *  favour of a credit-based one, so treat it as temporary. */
+  cerebras: {
+    baseUrl: 'https://api.cerebras.ai/v1',
+    envKey: 'CEREBRAS_API_KEY',
+    models: ['llama-3.3-70b'],
+  },
+
+  /**
+   * A separate free allowance, but measured here as the least reliable of the
+   * set: 503s, 529s and requests exceeding 70s on the larger models. The 8B
+   * model answers in under a second and is the only one worth keeping.
+   */
+  nvidia: {
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    envKey: 'NVIDIA_API_KEY',
+    models: ['meta/llama-3.1-8b-instruct'],
+  },
+
+  mistral: {
+    baseUrl: 'https://api.mistral.ai/v1',
+    envKey: 'MISTRAL_API_KEY',
+    models: ['mistral-small-latest'],
   },
 };
 
-const DEFAULT_ORDER = ['novita', 'openrouter', 'nvidia', 'groq'];
+// Quality first while allowances last, then the fastest free fallbacks, with
+// the least reliable provider last.
+const DEFAULT_ORDER = ['novita', 'openrouter', 'groq', 'cerebras', 'gemini', 'mistral', 'nvidia'];
 
 const parseList = (raw) => {
   const items = (raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);

@@ -58,12 +58,15 @@ when one exhausts its free allowance the next takes over rather than the app
 going down. A provider that returns 429 is skipped for 15 minutes — without
 that, every message pays the latency of walking dead rungs first.
 
-| Provider | Env key | Notes |
-|---|---|---|
-| Novita | `NOVITA_API_KEY` | Hosts Ling-3.0-flash at $0/token, and is the upstream OpenRouter resells it from. Requires a non-zero account balance before it will serve any request, even for a zero-priced model. |
-| OpenRouter | `OPENROUTER_API_KEY` | Free models share one daily request cap per account. The cap is per-account, not per-model, so listing more `:free` models buys no headroom. |
-| NVIDIA | `NVIDIA_API_KEY` | Separate free allowance. Avoid the reasoning models — they leak planning prose into replies. |
-| Groq | `GROQ_API_KEY` | Fast, generous free tier, smaller models. |
+| Provider | Env key | Free tier | Card? | Notes |
+|---|---|---|---|---|
+| Novita | `NOVITA_API_KEY` | Ling-3.0-flash at $0/token | yes | The upstream OpenRouter resells Ling from. Returns 403 at a zero balance, so a top-up (min $10) is required even for a zero-priced model. |
+| OpenRouter | `OPENROUTER_API_KEY` | 50 req/day, or 1000 after buying 10 credits | no | The cap is per-account across all `:free` models, so listing more of them buys no headroom. 20 req/min either way. |
+| Groq | `GROQ_API_KEY` | ~14,400 req/day, 30 req/min | no | Fastest measured. The best fallback. |
+| Cerebras | `CEREBRAS_API_KEY` | ~1M tokens/day | no | Very fast, but the no-card tier is being retired for a credit-based one. |
+| Gemini | `GEMINI_API_KEY` | ~1,500 req/day | no | Google's terms allow free-tier prompts to be used for training — a poor fit for private conversations. |
+| Mistral | `MISTRAL_API_KEY` | modest | no | |
+| NVIDIA | `NVIDIA_API_KEY` | separate allowance | no | Least reliable measured: 503s, 529s, and >70s on larger models. Only the 8B model answered promptly. |
 
 Order with `AI_PROVIDERS=novita,openrouter,nvidia,groq`, and override a
 provider's models with e.g. `NOVITA_MODELS=`.
