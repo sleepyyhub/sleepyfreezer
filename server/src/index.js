@@ -13,6 +13,7 @@ import conversationRoutes from './routes/conversations.js';
 import groupRoutes from './routes/groups.js';
 import settingsRoutes from './routes/settings.js';
 import cronRoutes from './routes/cron.js';
+import { startScheduler } from './services/scheduler.js';
 import { brand } from '../../shared/brand.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,6 +68,7 @@ app.listen(config.port, () => {
   console.log(`  models: ${config.ai.models.join(' -> ')}`);
   console.log(`  temp:   ${config.ai.temperature}`);
   console.log(`  client: ${config.clientUrl}`);
+  startScheduler();
 });
 
 export default app;

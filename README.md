@@ -152,38 +152,30 @@ Railway has no blueprint here, so wire it up by hand:
 5. **Settings** > **Networking** > **Generate Domain**, then set `CLIENT_URL` to
    that domain and redeploy.
 
-### The scheduled ping
+### Proactive messages
 
-Characters only message first if something calls the sweep:
+The API sweeps for characters who should reach out **every 30 minutes by
+itself** — `PROACTIVE_INTERVAL_MINUTES` controls it, and it also sweeps 30
+seconds after boot so a host waking from sleep delivers whatever came due while
+it was down. Nothing external is required.
 
-```
-POST https://<your-app>/api/cron/proactive
-Header: x-cron-secret: <your CRON_SECRET>
-```
+`POST /api/cron/proactive` still exists, guarded by `CRON_SECRET`, and is worth
+using in two cases: to trigger a sweep by hand while testing, or if you ever run
+more than one instance — the internal timer fires per process, so two instances
+would sweep twice. Set `PROACTIVE_INTERVAL_MINUTES=0` to disable the timer and
+drive sweeps only from the endpoint.
 
-**Every 30 minutes.** The endpoint is cheap and idempotent — it checks who is
-actually due and usually does nothing, so calling it often is fine, and calling
-it rarely just means characters reach out late. Anything from 15 to 60 minutes is
-reasonable; below 15 is wasted work, above 60 makes the 2–6 hour quiet window
-inaccurate.
-
-Three ways to schedule it, cheapest first:
-
-- **GitHub Actions** — `.github/workflows/proactive-cron.yml` is already in this
-  repo. Add two repository secrets under Settings > Secrets and variables >
-  Actions: `APP_URL` (no trailing slash) and `CRON_SECRET`. Free on public repos.
-  Use the workflow's **Run workflow** button once to check it works.
-- **cron-job.org** — free, no account tie-in. Add the URL, method POST, the
-  custom header, and a 30-minute interval.
-- **The host's own scheduler** — Render Cron Jobs and Railway cron are both paid
-  features, so only worth it if you are already on a paid plan.
+`.github/workflows/proactive-cron.yml` calls that endpoint on a schedule if you
+prefer to drive it externally; it needs `APP_URL` and `CRON_SECRET` as repository
+secrets. It is not needed with the default setup.
 
 ### Free-tier caveat
 
 Render's free web services sleep after 15 minutes of inactivity and take roughly
-a minute to wake. The scheduled ping wakes the app, runs the sweep, and lets it
-sleep again, so proactive messages still work — but a visitor hitting a sleeping
-app waits for that cold start. Railway does not sleep, but bills against a
+a minute to wake, and a sleeping process runs no timers. Any uptime pinger
+hitting the app URL keeps it awake and the internal scheduler then runs normally
+— a plain GET on `/` every 10 minutes is enough, no secret or POST involved.
+Without one, proactive messages only go out while somebody is using the app. Railway does not sleep, but bills against a
 monthly credit instead. Neither is a problem for testing; pick a paid tier before
 real users arrive.
 

@@ -91,6 +91,10 @@ export const config = {
     maxHoursBetween: 6,
     // Skip users who have not opened the app in this long.
     inactiveAfterDays: 14,
+
+    // How often the in-process scheduler sweeps. 0 disables it, leaving the
+    // POST /api/cron/proactive endpoint as the only trigger.
+    intervalMinutes: Number(process.env.PROACTIVE_INTERVAL_MINUTES ?? 30),
   },
 };
 
