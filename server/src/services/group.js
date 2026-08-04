@@ -3,8 +3,10 @@ import config from '../config.js';
 import { complete } from '../ai/client.js';
 import { generateInCharacter } from '../ai/generate.js';
 import { buildSystemPrompt, buildHistory } from '../ai/prompt.js';
+import { loadMemories, maybeExtractMemories } from './memory.js';
 import { parseJson } from '../ai/parse.js';
 import { emit, channels } from '../realtime/pusher.js';
+import { MESSAGE_FIELDS } from './chat.js';
 
 const HISTORY_LIMIT = 120;
 
@@ -20,7 +22,7 @@ export async function loadHistory(groupId, limit = HISTORY_LIMIT) {
     where: { groupId },
     orderBy: { createdAt: 'desc' },
     take: limit,
-    include: { character: { select: { id: true, name: true } } },
+    select: MESSAGE_FIELDS,
   });
   return rows.reverse();
 }
@@ -95,11 +97,14 @@ function escapeRegex(s) {
 
 /** Generate and store one character's turn in a group. */
 async function speak({ character, cast, user, group, replyToId = null }) {
-  const history = await loadHistory(group.id);
+  const [history, memories] = await Promise.all([
+    loadHistory(group.id),
+    loadMemories({ groupId: group.id }),
+  ]);
   const others = cast.filter((c) => c.id !== character.id);
 
   const messages = [
-    { role: 'system', content: buildSystemPrompt(character, user, { others }) },
+    { role: 'system', content: buildSystemPrompt(character, user, { others, memories }) },
     ...buildHistory(history, { selfId: character.id, isGroup: true }),
   ];
 
@@ -116,7 +121,7 @@ async function speak({ character, cast, user, group, replyToId = null }) {
       thought,
       replyToId,
     },
-    include: { character: { select: { id: true, name: true, avatarUrl: true, themeColor: true } } },
+    select: MESSAGE_FIELDS,
   });
 
   await prisma.character.update({
@@ -172,6 +177,11 @@ export async function sendGroupMessage({ user, group, content }) {
     where: { id: group.id },
     data: { lastMessageAt: new Date() },
   });
+
+  // One extraction for the thread, attributed to whoever spoke last.
+  const speaker = cast.find((c) => c.id === replies[replies.length - 1]?.characterId) ?? cast[0];
+  maybeExtractMemories({ scope: { groupId: group.id }, character: speaker, user })
+    .catch((err) => console.warn('[memory]', err.message));
 
   return { userMessage, replies };
 }

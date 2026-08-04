@@ -21,6 +21,8 @@ const PROVIDERS = [
     requires: ['CLOUDFLARE_ACCOUNT_ID'],
     free: true,
     async generate({ prompt, env }) {
+      // No reference-image support on this endpoint; scenes fall back to
+      // description alone, which is why it is only used when it is all we have.
       const model = env.CLOUDFLARE_IMAGE_MODEL ?? '@cf/black-forest-labs/flux-1-schnell';
       const res = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`,
@@ -46,8 +48,18 @@ const PROVIDERS = [
     name: 'openrouter',
     envKey: 'OPENROUTER_API_KEY',
     free: false,
-    async generate({ prompt, env }) {
+    async generate({ prompt, env, reference }) {
       const model = env.OPENROUTER_IMAGE_MODEL ?? 'google/gemini-3.1-flash-lite-image';
+
+      // Passing the character's own portrait keeps a scene recognisably them
+      // rather than a fresh stranger who happens to match the description.
+      const content = reference
+        ? [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: reference } },
+        ]
+        : prompt;
+
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -58,7 +70,7 @@ const PROVIDERS = [
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: 'user', content }],
           modalities: ['image', 'text'],
         }),
       });
@@ -106,10 +118,47 @@ export function buildAvatarPrompt(character) {
 }
 
 /**
- * Generate one avatar, walking the providers in order. Free ones first, so the
- * paid rung is only reached when nothing free is configured or working.
+ * A scene the character asked to show, drawn to look like them.
+ *
+ * `reference` is the character's stored avatar as a data URL, when there is
+ * one — without it the same description produces a different person each time.
  */
+export function buildScenePrompt(character, description, { hasReference = false } = {}) {
+  return [
+    'Anime-style illustration of a scene.',
+    `Subject: ${character.name}.`,
+    `Scene: ${description}`,
+    hasReference
+      ? 'Match the appearance of the reference portrait exactly — same face, hair and colouring.'
+      // Without a portrait to match, the character sheet is all there is to
+      // keep them looking like themselves.
+      : `Appearance: ${(character.personality ?? '').slice(0, 240)}`,
+    'Expressive, cinematic framing, no text, no watermark.',
+  ].filter(Boolean).join(' ');
+}
+
+export async function generateScene(character, description, { env = process.env } = {}) {
+  const reference = character.avatarData
+    ? `data:${character.avatarMime ?? 'image/jpeg'};base64,${Buffer.from(character.avatarData).toString('base64')}`
+    : null;
+
+  return runProviders({
+    env,
+    prompt: buildScenePrompt(character, description, { hasReference: Boolean(reference) }),
+    reference,
+    label: `${character.name} scene`,
+  });
+}
+
 export async function generateAvatar(character, { env = process.env } = {}) {
+  return runProviders({
+    env,
+    prompt: buildAvatarPrompt(character),
+    label: character.name,
+  });
+}
+
+async function runProviders({ env, prompt, reference = null, label }) {
   const providers = availableImageProviders(env);
   if (providers.length === 0) {
     throw Object.assign(
@@ -121,15 +170,14 @@ export async function generateAvatar(character, { env = process.env } = {}) {
     );
   }
 
-  const prompt = buildAvatarPrompt(character);
   let lastError;
 
   for (const provider of providers) {
     try {
       const started = Date.now();
-      const result = await provider.generate({ prompt, env });
+      const result = await provider.generate({ prompt, env, reference });
       console.log(
-        `[image] ${character.name} via ${provider.name}`
+        `[image] ${label} via ${provider.name}`
         + ` — ${(result.data.length / 1024).toFixed(0)}KB in ${Date.now() - started}ms`
         + (result.cost ? `, cost $${result.cost.toFixed(4)}` : ' (free)'),
       );
@@ -141,7 +189,7 @@ export async function generateAvatar(character, { env = process.env } = {}) {
   }
 
   throw Object.assign(
-    new Error(`Could not generate an avatar. ${lastError?.message ?? ''}`.trim()),
+    new Error(`Could not generate an image. ${lastError?.message ?? ''}`.trim()),
     { status: 502 },
   );
 }

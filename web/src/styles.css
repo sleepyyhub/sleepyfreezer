@@ -3186,3 +3186,26 @@ select {
   font-style: normal;
   opacity: 0.75;
 }
+
+/* --- scene illustrations --- */
+
+.scene {
+  margin: 10px 0 0;
+  max-width: 380px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.scene img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.scene-in { animation: scene-reveal var(--slow) var(--ease) both; }
+.scene-pending { opacity: 0; }
+
+@keyframes scene-reveal {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}

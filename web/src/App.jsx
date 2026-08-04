@@ -947,12 +947,21 @@ function ChatMessage({ message, animate = false, onTick }) {
             <em><RoleplayText text={message.thought} /></em>
           </div>
         )}
-        <div className="message-bubble">
-          <p className="preserve-lines">
-            <RoleplayText text={shown} />
-            {!done && <span className="type-caret" aria-hidden="true" />}
-          </p>
-        </div>
+        {(shown || !message.sceneUrl) && (
+          <div className="message-bubble">
+            <p className="preserve-lines">
+              <RoleplayText text={shown} />
+              {!done && <span className="type-caret" aria-hidden="true" />}
+            </p>
+          </div>
+        )}
+        {message.sceneUrl && (
+          // Held back until the line has finished typing, so the picture lands
+          // as a reveal rather than spoiling what is still being said.
+          <figure className={`scene ${done ? 'scene-in' : 'scene-pending'}`}>
+            <img src={message.sceneUrl} alt={message.sceneCaption ?? 'Scene'} loading="lazy" />
+          </figure>
+        )}
       </div>
     </div>
   );
@@ -1839,6 +1848,17 @@ function SettingsPage({ go, notify }) {
                 checked={Boolean(user?.proactiveEnabled)}
                 onChange={(v) => save({ proactiveEnabled: v }, v ? 'Characters can reach out' : 'Characters will stay quiet')}
                 label="Proactive messages"
+              />
+            </SettingsRow>
+            <SettingsRow
+              icon={ImageIcon}
+              title="Let characters illustrate scenes"
+              description="Occasionally a character draws the moment. Each picture costs a real image generation, so this is off by default and limited to one every 20 messages."
+            >
+              <Toggle
+                checked={Boolean(user?.sceneImagesEnabled)}
+                onChange={(v) => save({ sceneImagesEnabled: v }, v ? 'Characters can illustrate scenes' : 'Scene images off')}
+                label="Scene images"
               />
             </SettingsRow>
             <SettingsRow icon={Mail} title="Email notifications" description="Product updates and account alerts.">

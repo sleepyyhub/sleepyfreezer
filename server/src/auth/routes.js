@@ -32,8 +32,16 @@ for (const provider of enabledProviders) {
 
 router.get('/me', (req, res) => {
   if (!req.user) return res.json({ user: null });
-  const { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } = req.user;
-  res.json({ user: { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } });
+  const {
+    id, email, name, username, avatarUrl,
+    nsfwEnabled, language, proactiveEnabled, sceneImagesEnabled,
+  } = req.user;
+  res.json({
+    user: {
+      id, email, name, username, avatarUrl,
+      nsfwEnabled, language, proactiveEnabled, sceneImagesEnabled,
+    },
+  });
 });
 
 router.post('/logout', (_req, res) => {

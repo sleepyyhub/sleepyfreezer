@@ -12,11 +12,17 @@ const settingsInput = z.object({
   // "auto" mirrors whatever the user writes in; anything else pins the reply language.
   language: z.string().min(2).max(40).optional(),
   proactiveEnabled: z.boolean().optional(),
+  sceneImagesEnabled: z.boolean().optional(),
 });
 
 router.get('/', (req, res) => {
-  const { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } = req.user;
-  res.json({ settings: { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled } });
+  const { id, email, name, username, avatarUrl, nsfwEnabled, language, proactiveEnabled, sceneImagesEnabled } = req.user;
+  res.json({
+    settings: {
+      id, email, name, username, avatarUrl,
+      nsfwEnabled, language, proactiveEnabled, sceneImagesEnabled,
+    },
+  });
 });
 
 router.patch('/', async (req, res, next) => {
@@ -38,6 +44,7 @@ router.patch('/', async (req, res, next) => {
         nsfwEnabled: true,
         language: true,
         proactiveEnabled: true,
+        sceneImagesEnabled: true,
       },
     });
 

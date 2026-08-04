@@ -112,5 +112,8 @@ export function adaptMessage(m) {
     thought: m.thought ?? null,
     time: formatClock(m.createdAt),
     isProactive: m.isProactive,
+    // Fetched separately — the bytes never travel in a message payload.
+    sceneUrl: m.imageMime ? `${API_BASE}/api/conversations/messages/${m.id}/image` : null,
+    sceneCaption: m.imagePrompt ?? null,
   };
 }

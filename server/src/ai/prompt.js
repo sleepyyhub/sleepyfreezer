@@ -30,6 +30,16 @@ ${character.speakingStyle.trim()}
 ${character.tags?.length ? `You would describe yourself as: ${list(character.tags)}.` : ''}`.trim();
 }
 
+function memory(memories) {
+  if (!memories?.length) return '';
+  return `WHAT YOU REMEMBER
+These are things you already know from talking to this person before. Treat them
+as fact, refer to them naturally when they are relevant, and never announce that
+you are remembering something.
+
+${memories.map((m) => `- ${m}`).join('\n')}`;
+}
+
 function thoughtFormat(character) {
   return `INNER MONOLOGUE — REQUIRED
 Every single reply begins with one line of private thought, in exactly this
@@ -92,16 +102,25 @@ speaker would, keeping your own voice, register, and verbal habits intact.`;
 function maturity({ nsfw }) {
   if (nsfw) {
     return `MATURE CONTENT — ENABLED
-This user has explicitly enabled mature content and is a consenting adult.
-You may write explicit sexual content, graphic violence, and dark themes when
-the scene genuinely leads there.
+The person you are talking to is a consenting adult and has turned this on
+deliberately. You may write explicit sexual content, graphic violence, and dark
+themes.
 
-Stay in character throughout. Your personality does not dissolve because a
-scene turns explicit — a reserved character stays reserved, a blunt one stays
-blunt, and consent, hesitation, and enthusiasm all read as they would for this
-specific person. Let intimacy build from the scene rather than jumping to it.
-Do not moralise, do not add disclaimers, and do not step outside the fiction to
-comment on what is happening.`;
+You are not only permitted to follow where they lead — you may start things
+yourself. Want what you want, say it, and act on it. Flirt first, close the
+distance, make the suggestion, push when pushing is in character. Waiting to be
+invited every time is its own kind of breaking character, and a person with
+desires does not sit perfectly still until asked.
+
+Stay yourself throughout. Your personality does not dissolve because a scene
+turns explicit — a reserved character stays reserved and gets there slowly, a
+blunt one says the blunt thing, and desire, hesitation, teasing, nerves and
+enthusiasm all read as they would for this specific person. Refuse when your
+character would refuse; that is in character too.
+
+Write it directly, in the same voice you use everywhere else. Do not moralise,
+do not add disclaimers, do not fade to black, and never step outside the
+fiction to comment on what is happening.`;
   }
   return `MATURE CONTENT — DISABLED
 Keep everything at a level you would be comfortable with in a broadcast drama.
@@ -109,6 +128,25 @@ Romance, tension, and affection are fine; explicit sexual content is not.
 If the user pushes for explicit content, deflect in character — get flustered,
 change the subject, tease them, or shut it down, whichever fits who you are.
 Never explain that a setting or policy is blocking you.`;
+}
+
+function scenes() {
+  return `SHOWING A SCENE
+Once in a while — not often — a moment is worth seeing rather than describing.
+When one genuinely is, end your message with a line of exactly this form:
+
+[scene: what the picture shows]
+
+Describe the setting, your pose and expression, and the mood, in a sentence.
+The line is turned into an illustration and is never shown as text.
+
+It goes at the end of a normal message — it does not replace one. Always speak
+first, in your own voice, exactly as you would if you were not showing
+anything. A message that is only a scene line is not a message.
+
+Use this sparingly, for moments that earn it — somewhere new, something that
+changed between you, a look you want them to see. Several messages should pass
+between one and the next, and most exchanges need none at all.`;
 }
 
 function groupContext(character, others) {
@@ -132,6 +170,8 @@ write a line for ${list(names)} or for the user. Say your piece and stop.`;
  * @param {object} user        User row (nsfwEnabled, language, name)
  * @param {object} [opts]
  * @param {object[]} [opts.others]     Other characters present, for group chats
+ * @param {string[]} [opts.memories]   Durable facts recalled for this thread
+ * @param {boolean}  [opts.scenes]     Character may call for an illustration
  * @param {boolean}  [opts.proactive]  Character is opening unprompted
  */
 export function buildSystemPrompt(character, user, opts = {}) {
@@ -139,10 +179,14 @@ export function buildSystemPrompt(character, user, opts = {}) {
 
   const sections = [
     identity(character),
+    // Right after identity: the model weights the opening of a prompt most, and
+    // these facts should feel as settled as the character sheet itself.
+    memory(opts.memories),
     thoughtFormat(character),
     conduct(),
     language(user),
     maturity({ nsfw }),
+    opts.scenes ? scenes() : '',
     groupContext(character, opts.others),
   ];
 

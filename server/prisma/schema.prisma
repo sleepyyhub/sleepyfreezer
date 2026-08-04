@@ -22,6 +22,9 @@ model User {
   language         String  @default("auto") // "auto" = mirror whatever the user writes in
   proactiveEnabled Boolean @default(true)
 
+  // Off by default: every scene costs a real image generation.
+  sceneImagesEnabled Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -91,9 +94,13 @@ model Conversation {
   lastMessageAt DateTime @default(now())
   createdAt     DateTime @default(now())
 
+  // How many messages have already been examined for durable facts.
+  memoryCursor Int @default(0)
+
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
   messages  Message[]
+  memories  Memory[]
 
   @@unique([userId, characterId])
   @@index([userId, lastMessageAt])
@@ -107,9 +114,12 @@ model Group {
   lastMessageAt DateTime @default(now())
   createdAt     DateTime @default(now())
 
+  memoryCursor Int @default(0)
+
   user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   members  GroupMember[]
   messages Message[]
+  memories Memory[]
 
   @@index([userId, lastMessageAt])
 }
@@ -123,6 +133,24 @@ model GroupMember {
 
   @@id([groupId, characterId])
   @@index([characterId])
+}
+
+// A fact a character keeps about a thread — pinned into the prompt so it stays
+// salient long after it has scrolled out of the message window.
+model Memory {
+  id String @id @default(cuid())
+
+  conversationId String?
+  groupId        String?
+
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  group        Group?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([groupId, createdAt])
 }
 
 model Message {
@@ -143,6 +171,11 @@ model Message {
 
   // True when the character sent this unprompted (proactive cron).
   isProactive Boolean @default(false)
+
+  // An illustration the character called for. Stored inline like avatars.
+  imageData   Bytes?
+  imageMime   String?
+  imagePrompt String?
 
   createdAt DateTime @default(now())
 

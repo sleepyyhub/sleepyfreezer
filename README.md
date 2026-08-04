@@ -133,6 +133,22 @@ markers are stripped and the action is styled apart from speech, on both sides
 of the conversation, since people write action too. Arithmetic like `2 * 3`
 is left alone: both ends of an action must sit against a non-space character.
 
+**Memory.** Characters already receive the last 120 messages, so context was
+never the missing piece — salience was. A detail from forty messages ago is
+technically present and practically invisible, and past the window it is gone.
+So every 14 messages a background pass extracts durable facts — where someone
+lives, what they do, promises made — and pins them near the top of the system
+prompt, written from the character's own point of view. Extraction runs after
+the reply is already on its way, and claims its window with a conditional
+cursor update so two messages in quick succession cannot extract the same facts
+twice.
+
+**Scene illustrations.** A character may end a message with `[scene: ...]`, which
+becomes a picture. Off by default (`sceneImagesEnabled`), limited to one every 20
+messages, and drawn from the character's stored portrait when they have one so
+the scene looks like them. The marker is always stripped from the text whether
+or not an image results.
+
 **Inner thoughts.** Characters are told to open every reply with
 `*Name thinks: ...*`. `server/src/ai/parse.js` splits that off from the spoken
 text, and also handles `<think>` tags, reasoning returned in a separate field,

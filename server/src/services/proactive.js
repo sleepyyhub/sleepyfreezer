@@ -2,6 +2,8 @@ import prisma from '../db.js';
 import config from '../config.js';
 import { generateInCharacter } from '../ai/generate.js';
 import { buildSystemPrompt, buildHistory } from '../ai/prompt.js';
+import { loadMemories } from './memory.js';
+import { MESSAGE_FIELDS } from './chat.js';
 import { emit, channels } from '../realtime/pusher.js';
 import { nudgeGroup } from './group.js';
 
@@ -33,11 +35,13 @@ async function nudgeConversation({ user, conversation }) {
     where: { conversationId: conversation.id },
     orderBy: { createdAt: 'desc' },
     take: 40,
-    include: { character: { select: { id: true, name: true } } },
+    select: MESSAGE_FIELDS,
   });
 
+  const memories = await loadMemories({ conversationId: conversation.id });
+
   const messages = [
-    { role: 'system', content: buildSystemPrompt(character, user, { proactive: true }) },
+    { role: 'system', content: buildSystemPrompt(character, user, { proactive: true, memories }) },
     ...buildHistory(history.reverse(), { selfId: character.id }),
     {
       role: 'user',
@@ -67,7 +71,7 @@ async function nudgeConversation({ user, conversation }) {
       thought,
       isProactive: true,
     },
-    include: { character: { select: { id: true, name: true, avatarUrl: true, themeColor: true } } },
+    select: MESSAGE_FIELDS,
   });
 
   await prisma.conversation.update({

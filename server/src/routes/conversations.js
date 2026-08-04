@@ -7,6 +7,31 @@ import { sendMessage, getOrCreateConversation, loadHistory } from '../services/c
 const router = Router();
 router.use(requireAuth);
 
+/** GET /api/conversations/messages/:id/image — an illustration on a message. */
+router.get('/messages/:id/image', async (req, res, next) => {
+  try {
+    const message = await prisma.message.findUnique({
+      where: { id: req.params.id },
+      select: {
+        imageData: true,
+        imageMime: true,
+        conversation: { select: { userId: true } },
+        group: { select: { userId: true } },
+      },
+    });
+    if (!message?.imageData) return res.status(404).json({ error: 'No image on that message' });
+
+    const owner = message.conversation?.userId ?? message.group?.userId;
+    if (owner !== req.user.id) return res.status(403).json({ error: 'Not your conversation' });
+
+    res.set('Content-Type', message.imageMime ?? 'image/jpeg');
+    res.set('Cache-Control', 'private, max-age=31536000, immutable');
+    res.send(Buffer.from(message.imageData));
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** GET /api/conversations — the DM sidebar */
 router.get('/', async (req, res, next) => {
   try {

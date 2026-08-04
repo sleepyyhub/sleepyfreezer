@@ -193,6 +193,23 @@ const META_SIGNALS = [
   /\bTurn \d+\s*:/i,
 ];
 
+// A character asking for an illustration: [scene: ...] on its own.
+const SCENE_MARKER = /\[\s*scene\s*:\s*([^\]]+)\]/i;
+
+/**
+ * Split off a scene request. The marker is an instruction to the app, never
+ * something the reader should see, so it always comes out of the text whether
+ * or not an image ends up being drawn.
+ */
+export function extractScene(text) {
+  const match = (text ?? '').match(SCENE_MARKER);
+  if (!match) return { content: text ?? '', scene: null };
+  return {
+    content: (text ?? '').replace(SCENE_MARKER, '').replace(/\n{3,}/g, '\n\n').trim(),
+    scene: match[1].trim().slice(0, 400),
+  };
+}
+
 export function looksLikeMetaReasoning(text) {
   if (!text) return false;
   return META_SIGNALS.some((re) => re.test(text));
