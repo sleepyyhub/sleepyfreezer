@@ -26,18 +26,19 @@ import {
   Plus,
   Search,
   Send,
+  PenLine,
   Settings as SettingsIcon,
   Share2,
   Shield,
   SlidersHorizontal,
   Smartphone,
-  Sparkles,
+  Tag,
   Trash2,
   User,
   UserPlus,
   Users,
   Volume2,
-  WandSparkles,
+  Feather,
   X,
 } from 'lucide-react';
 
@@ -47,6 +48,7 @@ import { SessionProvider, useAsync, useDebounced, useSession } from './lib/hooks
 import { channels, subscribe } from './lib/realtime.js';
 import { useTypewriter } from './lib/typewriter.js';
 import { splitRoleplay, stripRoleplay } from './lib/roleplay.js';
+import { CloverMark } from './lib/Mark.jsx';
 
 /* ------------------------------------------------------------------ */
 /* routing                                                             */
@@ -74,7 +76,7 @@ function useRoute() {
 function Logo({ onClick, compact = false }) {
   return (
     <button className={`brand ${compact ? 'brand-compact' : ''}`} onClick={onClick} aria-label="Clovyre home">
-      <span className="brand-mark"><Sparkles size={15} strokeWidth={2.2} /></span>
+      <span className="brand-mark"><CloverMark size={15} /></span>
       {!compact && <span className="brand-word">clovyre</span>}
     </button>
   );
@@ -267,7 +269,7 @@ function SignInPage() {
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
       <div className="signin-card">
-        <span className="brand-mark signin-mark"><Sparkles size={20} strokeWidth={2.2} /></span>
+        <span className="brand-mark signin-mark"><CloverMark size={22} /></span>
         <h1>{mode === 'login' ? 'Welcome back' : 'Welcome to Clovyre'}</h1>
         <p>
           {mode === 'login'
@@ -496,9 +498,9 @@ function HomePage({ go, notify }) {
       <section className="home-hero page-shell">
         <div className="ambient ambient-one" />
         <div className="ambient ambient-two" />
-        <div className="eyebrow"><Sparkles size={13} /> Conversations, reimagined</div>
-        <h1>Find someone worth<br className="desktop-break" /> talking to.</h1>
-        <p>Step into stories, build connections, and meet characters who remember you.</p>
+        <h1>Talk to anyone.<br className="desktop-break" /> They remember.</h1>
+        <p>Characters with their own voice, their own opinions, and a memory of
+          everything you have told them.</p>
         <div className="hero-search">
           <Search size={20} />
           <input
@@ -522,7 +524,7 @@ function HomePage({ go, notify }) {
         <div className="section-heading">
           <div>
             <p className="section-kicker">Discover</p>
-            <h2>Characters for every mood</h2>
+            <h2>Who do you want to talk to?</h2>
           </div>
           <button className="secondary-button compact" onClick={() => go('create')}><Plus size={16} /> New character</button>
         </div>
@@ -569,7 +571,7 @@ function HomePage({ go, notify }) {
 
       <footer className="site-footer page-shell">
         <Logo onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
-        <p>Stories that stay with you.</p>
+        <p>Built for conversations worth keeping.</p>
         <div><button>Safety</button><button>Guidelines</button><button>Privacy</button></div>
         <span>© 2026 Clovyre</span>
       </footer>
@@ -703,7 +705,7 @@ function CharacterProfile({ id, go, notify }) {
             </div>
           )}
           <div className="content-block detail-list">
-            <div><span><Sparkles size={16} /> Traits</span><p>{character.tags.join(' · ') || 'Not set'}</p></div>
+            <div><span><Tag size={16} /> Traits</span><p>{character.tags.join(' · ') || 'Not set'}</p></div>
             <div><span><Globe2 size={16} /> Universe</span><p>{character.role}</p></div>
             <div><span><Languages size={16} /> Speaks</span><p>Any language you write in</p></div>
           </div>
@@ -943,7 +945,7 @@ function ChatMessage({ message, animate = false, onTick }) {
         </span>
         {message.thought && (
           <div className="thought-bubble">
-            <span><Sparkles size={11} /> INNER THOUGHT</span>
+            <span>INNER THOUGHT</span>
             <em><RoleplayText text={message.thought} /></em>
           </div>
         )}
@@ -1333,7 +1335,7 @@ function GroupChatPage({ id, go, nsfw, setNsfw, notify }) {
                 </span>
                 <h2>{group?.name}</h2>
                 <p>{members.map((m) => m.name).join(', ')}, and you</p>
-                <span><Sparkles size={12} /> They talk to each other, not just to you</span>
+                <span><Users size={12} /> They talk to each other, not just to you</span>
               </div>
               <div className="messages-list">
                 {messages.map((message) => (
@@ -1533,7 +1535,7 @@ function CreatePage({ go, notify }) {
         </div>
         <div className="create-top-actions">
           <button className="primary-button" onClick={submit} disabled={saving || !canSubmit}>
-            <Sparkles size={17} /> {saving ? 'Creating…' : 'Create character'}
+            <Check size={17} /> {saving ? 'Creating…' : 'Create character'}
           </button>
         </div>
       </div>
@@ -1541,7 +1543,7 @@ function CreatePage({ go, notify }) {
         <div className="create-form">
           <section className="form-section compose-section">
             <div className="form-section-title">
-              <span className="compose-badge"><Sparkles size={15} /></span>
+              <span className="compose-badge"><PenLine size={15} /></span>
               <div>
                 <h2>Start from a name</h2>
                 <p>Name a character and where they are from, and the rest of this form gets filled in for you.</p>
@@ -1565,12 +1567,12 @@ function CreatePage({ go, notify }) {
                 aria-label="Universe"
               />
               <button className="primary-button compose-button" onClick={compose} disabled={composing}>
-                {composing ? <><Loader2 size={16} className="spin" /> Writing…</> : <><WandSparkles size={16} /> Draft it</>}
+                {composing ? <><Loader2 size={16} className="spin" /> Writing…</> : <><Feather size={16} /> Draft it</>}
               </button>
             </div>
             {composeNote && (
               <p className={`compose-note compose-note-${composeNote.kind}`}>
-                {composeNote.kind === 'warn' ? <Info size={14} /> : <Sparkles size={14} />}
+                {composeNote.kind === 'warn' ? <Info size={14} /> : <Check size={14} />}
                 {composeNote.text}
               </p>
             )}
@@ -1630,7 +1632,7 @@ function CreatePage({ go, notify }) {
                   update('speakingStyle', `${draft.speakingStyle}\n\nSample lines:\n"..."\n"..."`.trim());
                   notify('Sample-line template added');
                 }}
-              ><WandSparkles size={16} /> Add sample-line template</button>
+              ><Plus size={16} /> Add sample-line template</button>
             </div>
           </section>
 
@@ -1674,7 +1676,7 @@ function CreatePage({ go, notify }) {
           </section>
           <div className="mobile-create-actions">
             <button className="primary-button" onClick={submit} disabled={saving || !canSubmit}>
-              <Sparkles size={17} /> {saving ? 'Creating…' : 'Create character'}
+              <Check size={17} /> {saving ? 'Creating…' : 'Create character'}
             </button>
           </div>
         </div>
@@ -1840,7 +1842,7 @@ function SettingsPage({ go, notify }) {
           <section className="settings-section" id="notifications">
             <div className="settings-section-head"><div><h2>Notifications</h2><p>Choose what you want to hear about.</p></div></div>
             <SettingsRow
-              icon={Sparkles}
+              icon={MessageCircle}
               title="Let characters message me first"
               description="Characters may reach out on their own when a conversation has gone quiet."
             >

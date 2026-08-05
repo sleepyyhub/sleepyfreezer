@@ -465,23 +465,32 @@ select {
   position: absolute;
   pointer-events: none;
   border-radius: 50%;
-  filter: blur(2px);
 }
 
 .ambient-one {
-  top: 5%;
-  left: 30%;
-  width: 420px;
-  height: 350px;
-  background: radial-gradient(circle, rgba(144, 80, 213, 0.095), transparent 68%);
+  top: -18%;
+  left: 50%;
+  width: min(900px, 90vw);
+  height: 520px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(52, 211, 153, 0.055),
+    transparent 62%
+  );
 }
 
+/* A fine dot grid rather than a second blob. Reads as considered rather
+   than as a gradient someone left switched on. */
 .ambient-two {
-  top: 18%;
-  right: 26%;
-  width: 330px;
-  height: 310px;
-  background: radial-gradient(circle, rgba(163, 230, 53, 0.055), transparent 69%);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse at 50% 20%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 20%, #000 0%, transparent 72%);
 }
 
 .home-hero > *:not(.ambient) {
@@ -3208,4 +3217,105 @@ select {
 @keyframes scene-reveal {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to   { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* type                                                                */
+/* ------------------------------------------------------------------ */
+
+/* A real scale rather than one size per element. Headings tighten as they
+   grow, which is how type is actually set; body text stays comfortable. */
+h1, h2, h3 { font-feature-settings: "ss01", "cv01"; }
+
+.section-heading h2,
+.settings-section-head h2,
+.content-block h2 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.home-hero > p {
+  max-width: 34ch;
+  margin-left: auto;
+  margin-right: auto;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  text-wrap: balance;
+}
+
+.home-hero h1 { text-wrap: balance; }
+
+/* Kickers were shouting at the same weight as content. */
+.section-kicker {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  color: var(--muted-2);
+}
+
+/* Message text wants slightly more air than UI text. */
+.message-bubble p,
+.user-message p {
+  font-size: 14.5px;
+  line-height: 1.62;
+}
+
+.thought-bubble em {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* The label above a thought no longer carries an icon, so it has to hold the
+   line on its own. */
+.thought-bubble > span {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+/* Numerals in counts and timestamps should not jitter as they change. */
+time, .card-footer span, .profile-stat strong, .result-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* hero rhythm                                                         */
+/* ------------------------------------------------------------------ */
+
+/* The hero was carrying a 520px floor plus 78px of padding on top of its own
+   content, which left the fold mostly empty and pushed the characters — the
+   actual point of the page — below it. Let the content set the height. */
+.home-hero {
+  min-height: 0;
+  padding: 64px 0 52px;
+}
+
+/* Three short lines read as a broken paragraph. Wide enough for two. */
+.home-hero > p {
+  max-width: 46ch;
+  margin-top: 14px;
+}
+
+.hero-search { margin-top: 34px; }
+.hero-suggestions { margin-top: 16px; }
+
+.discover-section { padding-top: 8px; }
+
+/* "Featured" on every card says nothing. Quieter, so it reads as a note rather
+   than a claim, and the character's name stays the loudest thing on the card. */
+.small-badge {
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.small-badge.nsfw-badge {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+@media (max-width: 760px) {
+  .home-hero { padding: 44px 0 36px; }
 }
