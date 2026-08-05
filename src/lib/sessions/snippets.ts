@@ -20,7 +20,14 @@ export function buildLoadstring(baseUrl: string, sessionId: string, robloxToken:
 
 export interface McpConfigSnippets {
   readonly url: string;
+  /**
+   * Same endpoint with the credential in the path, for connector UIs that accept
+   * only a URL and cannot attach an Authorization header.
+   */
+  readonly connectorUrl: string;
   readonly authorizationHeader: string;
+  /** Ready-to-paste Claude Code CLI command. */
+  readonly claudeCodeCommand: string;
   /** Config for clients that accept a remote URL plus headers. */
   readonly remoteJson: string;
   /** Config for desktop clients that proxy a remote server through a local stdio bridge. */
@@ -33,6 +40,7 @@ export function buildMcpConfigSnippets(
   mcpToken: string,
 ): McpConfigSnippets {
   const url = `${baseUrl}/api/mcp/${sessionId}`;
+  const connectorUrl = `${url}/${mcpToken}`;
 
   const remoteJson = JSON.stringify(
     {
@@ -63,7 +71,9 @@ export function buildMcpConfigSnippets(
 
   return {
     url,
+    connectorUrl,
     authorizationHeader: `Bearer ${mcpToken}`,
+    claudeCodeCommand: `claude mcp add --transport http clovyre ${url} --header "Authorization: Bearer ${mcpToken}"`,
     remoteJson,
     proxyJson,
   };

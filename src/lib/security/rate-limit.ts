@@ -1,3 +1,5 @@
+import { getConfig } from '../config';
+
 /**
  * Fixed-window rate limiting.
  *
@@ -80,7 +82,7 @@ export class RateLimiter {
 }
 
 export const RATE_LIMIT_RULES = {
-  /** Session creation, keyed by client IP. */
+  /** Session creation, keyed by client IP. Overridden from config at build time. */
   session_create: { limit: 12, windowMs: 60_000 },
   /** Roblox gateway handshake attempts, keyed by IP. */
   ws_handshake: { limit: 30, windowMs: 60_000 },
@@ -101,7 +103,16 @@ type LimiterGlobal = typeof globalThis & { __clovyreRateLimiter?: RateLimiter };
 export function getRateLimiter(): RateLimiter {
   const store = globalThis as LimiterGlobal;
   if (!store.__clovyreRateLimiter) {
-    store.__clovyreRateLimiter = new RateLimiter(RATE_LIMIT_RULES);
+    // Session creation is the one rule an operator realistically needs to tune:
+    // a shared egress IP (or a browser test suite) legitimately creates far more
+    // sessions per minute than a single person would.
+    store.__clovyreRateLimiter = new RateLimiter({
+      ...RATE_LIMIT_RULES,
+      session_create: {
+        limit: getConfig().sessionCreatePerMinute,
+        windowMs: RATE_LIMIT_RULES.session_create.windowMs,
+      },
+    });
   }
   return store.__clovyreRateLimiter;
 }

@@ -17,9 +17,11 @@ export interface StoredSecrets {
   mcpToken: string;
   loadstring: string;
   mcpUrl: string;
+  mcpConnectorUrl: string;
   mcpRemoteJson: string;
   mcpProxyJson: string;
   authorizationHeader: string;
+  claudeCodeCommand: string;
 }
 
 export function CreateSessionButton({ className = 'cl-btn-primary' }: { className?: string }) {
@@ -50,9 +52,11 @@ export function CreateSessionButton({ className = 'cl-btn-primary' }: { classNam
         mcpToken: payload.secrets.mcpToken,
         loadstring: payload.loadstring,
         mcpUrl: payload.mcpConfig.url,
+        mcpConnectorUrl: payload.mcpConfig.connectorUrl,
         mcpRemoteJson: payload.mcpConfig.remoteJson,
         mcpProxyJson: payload.mcpConfig.proxyJson,
         authorizationHeader: payload.mcpConfig.authorizationHeader,
+        claudeCodeCommand: payload.mcpConfig.claudeCodeCommand,
       };
 
       try {

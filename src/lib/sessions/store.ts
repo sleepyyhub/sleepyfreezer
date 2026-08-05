@@ -184,6 +184,45 @@ export class SessionStore {
     return true;
   }
 
+  /**
+   * Mints a fresh credential for one role and returns the plaintext once.
+   *
+   * This is what lets the dashboard regenerate a loadstring after a reload:
+   * only digests are stored, so the previous token genuinely cannot be shown
+   * again — a new one has to be issued. The old token stops authenticating
+   * immediately, but an already-authenticated live connection is left alone, so
+   * regenerating a script never knocks a working bridge offline.
+   */
+  rotateCredential(
+    session: SessionRecord,
+    role: CredentialRole,
+    actor: 'owner' | 'system',
+  ): string {
+    const token = generateToken(role);
+    const previous = session.credentials[role];
+
+    session.credentials[role] = {
+      hash: hashToken(token),
+      createdAt: Date.now(),
+      fingerprint: fingerprint(token),
+      revokedAt: null,
+      lastUsedAt: null,
+      useCount: 0,
+    };
+
+    session.audit.record({
+      kind: 'credential_rotated',
+      actor,
+      severity: 'warn',
+      message: `The ${role} credential was regenerated. The previous one no longer authenticates.`,
+      detail: {
+        previousCredential: previous.fingerprint,
+        newCredential: session.credentials[role].fingerprint,
+      },
+    });
+    return token;
+  }
+
   terminate(session: SessionRecord, reason: string, actor: 'owner' | 'system'): void {
     if (session.terminatedAt !== null) return;
     session.terminatedAt = Date.now();

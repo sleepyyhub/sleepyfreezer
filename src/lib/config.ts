@@ -40,6 +40,8 @@ const envSchema = z.object({
   ENABLE_MUTATION_TOOLS_FEATURE: boolFromEnv(true),
   PRIVILEGE_TTL_MINUTES: intFromEnv(15, 1, 120),
   MAX_SESSIONS: intFromEnv(500, 1, 100_000),
+  /** Sessions one address may create per minute. Raised only for test runs. */
+  SESSION_CREATE_PER_MINUTE: intFromEnv(12, 1, 10_000),
 });
 
 export interface ClovyreConfig {
@@ -57,6 +59,7 @@ export interface ClovyreConfig {
   readonly mutationToolsFeatureEnabled: boolean;
   readonly privilegeTtlMs: number;
   readonly maxSessions: number;
+  readonly sessionCreatePerMinute: number;
   /** True when secrets were generated at boot instead of supplied by the environment. */
   readonly usingEphemeralSecrets: boolean;
   readonly version: string;
@@ -100,6 +103,7 @@ function build(): ClovyreConfig {
     mutationToolsFeatureEnabled: env.ENABLE_MUTATION_TOOLS_FEATURE,
     privilegeTtlMs: env.PRIVILEGE_TTL_MINUTES * 60_000,
     maxSessions: env.MAX_SESSIONS,
+    sessionCreatePerMinute: env.SESSION_CREATE_PER_MINUTE,
     usingEphemeralSecrets,
     version: APP_VERSION,
   });

@@ -390,6 +390,45 @@ describe('session lifecycle over the wire', () => {
     if (!outcome.ok) expect(outcome.code).toBe('SESSION_EXPIRED');
   });
 
+  it('accepts a regenerated Roblox credential and refuses the old one', async () => {
+    const { session, secrets } = newSession();
+    const replacement = getSessionStore().rotateCredential(session, 'roblox', 'owner');
+
+    const stale = track(
+      new MockRobloxClient({ url: wsUrl, sessionId: session.id, token: secrets.robloxToken }),
+    );
+    await expect(stale.connect()).rejects.toThrow(/not valid/i);
+
+    const fresh = track(
+      new MockRobloxClient({ url: wsUrl, sessionId: session.id, token: replacement }),
+    );
+    const ack = await fresh.connect();
+    expect(ack.type).toBe('hello_ack');
+  });
+
+  it('leaves a live bridge connected when its credential is regenerated', async () => {
+    const { session, secrets } = newSession();
+    const client = track(
+      new MockRobloxClient({
+        url: wsUrl,
+        sessionId: session.id,
+        token: secrets.robloxToken,
+        respond: () => ({ kind: 'ok', result: { still: 'here' } }),
+      }),
+    );
+    await client.connect();
+
+    getSessionStore().rotateCredential(session, 'roblox', 'owner');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Regenerating a credential must not knock a working bridge offline.
+    expect(getSessionBroker().isConnected(session.id)).toBe(true);
+    expect(client.isOpen).toBe(true);
+
+    const outcome = await invokeTool(session, 'clovyre_ping', {}, 'mcp');
+    expect(outcome.ok).toBe(true);
+  });
+
   it('records an audited command history with redacted previews', async () => {
     const { session, secrets } = newSession();
     const client = track(

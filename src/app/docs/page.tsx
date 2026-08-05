@@ -41,6 +41,7 @@ const environmentVariables = [
   ['ENABLE_EXECUTE_LUAU_FEATURE', 'Deployment kill switch for Luau execution. Default true.'],
   ['ENABLE_MUTATION_TOOLS_FEATURE', 'Deployment kill switch for mutation tools. Default true.'],
   ['MAX_SESSIONS', 'Concurrent session ceiling. Default 500.'],
+  ['SESSION_CREATE_PER_MINUTE', 'Sessions one client address may create per minute. Default 12.'],
 ];
 
 const apiRoutes = [
@@ -64,10 +65,20 @@ const apiRoutes = [
   ['POST', '/api/sessions/{id}/credentials', 'Revokes one credential by role. Owner only.'],
   [
     'POST',
+    '/api/sessions/{id}/credentials/rotate',
+    'Issues a fresh Roblox or MCP credential and returns it once. Owner only.',
+  ],
+  [
+    'POST',
     '/api/sessions/{id}/tools',
     'Runs a Clovyre tool as the owner. Same path MCP clients use.',
   ],
   ['POST', '/api/mcp/{id}', 'Remote MCP endpoint. Bearer token authentication.'],
+  [
+    'POST',
+    '/api/mcp/{id}/{token}',
+    'Same endpoint, credential in the path, for connector UIs that cannot send headers.',
+  ],
   ['GET', '/client.lua', 'The Roblox bridge script. Public and credential-free.'],
   ['—', '/ws/roblox', 'WebSocket gateway. Authenticated by the hello frame, not by headers.'],
 ];
@@ -133,6 +144,7 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
             items={[
               'Open the Clovyre home page and tap Create session.',
               'The dashboard opens with a generated loadstring. Copy it with the copy button.',
+              'Lost it? Reload — the dashboard generates a fresh script automatically, because Clovyre stores only credential digests and cannot redisplay the original.',
               'Paste and run the loadstring in your executor while your Roblox experience is open.',
               'The dashboard flips to "Roblox connected" within a second or two, and the capability list fills in.',
               'Copy the MCP endpoint and bearer token into your agent, then start calling tools.',
@@ -157,13 +169,29 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
           </P>
           <Ol
             items={[
-              'Copy the endpoint URL from the session dashboard: https://<deployment>/api/mcp/<sessionId>.',
-              'Copy the Authorization header value, which looks like "Bearer cmc_…".',
-              'In Claude, add a custom connector using that URL and supply the bearer token as the authorization header.',
-              'Claude sends initialize, then tools/list. The available tools appear immediately.',
-              'Start with clovyre_session_info to confirm the Roblox client is live.',
+              'In the Claude app, open Settings, then Connectors, then "Add custom connector".',
+              'Paste the connector URL from your session dashboard. It looks like https://<deployment>/api/mcp/<sessionId>/<token> and needs no other fields.',
+              'Save. Claude sends initialize, then tools/list, and the available tools appear.',
+              'Ask Claude to run clovyre_session_info to confirm the Roblox client is live.',
             ]}
           />
+          <Callout tone="alert" title="Why the connector URL carries the credential">
+            <P>
+              Claude&apos;s custom connector screen accepts a URL and provides no field for an
+              authorization header, so Clovyre publishes the endpoint with the token as the final
+              path segment. A credential in a URL is visible to proxy and platform access logs, and
+              anyone holding that URL can drive the session. It is scoped to one session, expires
+              with it, and can be regenerated or revoked from the dashboard at any time. Clients
+              that can send headers should use the bearer form instead.
+            </P>
+          </Callout>
+          <P>
+            For Claude Code, use the header form instead, which keeps the credential out of the URL:{' '}
+            <Code>
+              claude mcp add --transport http clovyre &lt;endpoint&gt; --header &quot;Authorization:
+              Bearer &lt;token&gt;&quot;
+            </Code>
+          </P>
           <P>
             For desktop clients that only speak stdio, the dashboard also generates a configuration
             that proxies the same endpoint through <Code>mcp-remote</Code>. The remote HTTP form is

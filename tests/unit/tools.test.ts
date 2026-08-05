@@ -152,6 +152,30 @@ describe('tool availability', () => {
   });
 });
 
+describe('connection snippets', () => {
+  it('offers a URL that carries its own credential for header-less clients', async () => {
+    const { buildMcpConfigSnippets } = await import('../../src/lib/sessions/snippets');
+    const snippets = buildMcpConfigSnippets('https://example.test', 'cs_ABC', 'cmc_secret');
+
+    expect(snippets.url).toBe('https://example.test/api/mcp/cs_ABC');
+    expect(snippets.connectorUrl).toBe('https://example.test/api/mcp/cs_ABC/cmc_secret');
+    expect(snippets.claudeCodeCommand).toContain('--transport http');
+    expect(snippets.claudeCodeCommand).toContain('Authorization: Bearer cmc_secret');
+    // The header form must never smuggle the token into the URL.
+    expect(snippets.url).not.toContain('cmc_secret');
+  });
+
+  it('builds a loadstring that carries the session and token', async () => {
+    const { buildLoadstring } = await import('../../src/lib/sessions/snippets');
+    const loadstring = buildLoadstring('https://example.test', 'cs_ABC', 'crx_secret');
+
+    expect(loadstring).toContain('getgenv().ClovyreConfig');
+    expect(loadstring).toContain('SessionId = "cs_ABC"');
+    expect(loadstring).toContain('RobloxToken = "crx_secret"');
+    expect(loadstring).toContain('https://example.test/client.lua');
+  });
+});
+
 describe('MCP JSON-RPC surface', () => {
   it('answers initialize with a negotiated protocol version and server info', async () => {
     const session = freshSession();
