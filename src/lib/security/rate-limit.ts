@@ -94,6 +94,8 @@ export const RATE_LIMIT_RULES = {
   execute_luau: { limit: 12, windowMs: 60_000 },
   /** Owner-authenticated dashboard mutations, keyed by session. */
   owner_action: { limit: 60, windowMs: 60_000 },
+  /** Operator console sign-in attempts, keyed by address. Deliberately tight. */
+  admin_login: { limit: 8, windowMs: 15 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitRuleName = keyof typeof RATE_LIMIT_RULES;

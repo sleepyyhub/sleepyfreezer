@@ -64,6 +64,21 @@ export default function PrivacyPage() {
           </P>
         </Block>
 
+        <Block title="What the service operator can see">
+          <P>
+            Whoever runs this deployment can view a console listing currently connected sessions. It
+            shows the Roblox account each session reported — username, display name and user id —
+            the executor name, the place, and which AI agent is connected, along with connection
+            times. This is connection metadata the service already receives in order to function.
+          </P>
+          <P>
+            That console deliberately cannot show anything else. It has no access to credentials, no
+            access to the contents of tool calls, and no way to see what any agent read from your
+            game. It also provides no ability to act on your session. If you would rather an
+            operator not see that you are connected, do not connect.
+          </P>
+        </Block>
+
         <Block title="Your responsibility">
           <P>
             Clovyre can read what your Roblox client can read. If you connect it to an experience,
