@@ -8,14 +8,16 @@ services:
   - type: web
     name: clovyre-mcp
     runtime: node
-    plan: starter
+    # The live deployment runs on the free instance type. Free instances spin
+    # down after ~15 minutes without traffic and every session dies with the
+    # process; move to a paid instance type for anything beyond evaluation.
+    plan: free
     region: oregon
-    branch: main
-    autoDeploy: false
+    branch: claude/clovyre-mcp-full-stack-b3nw61
+    autoDeploy: true
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
-    numInstances: 1
     envVars:
       - key: NODE_ENV
         value: production
