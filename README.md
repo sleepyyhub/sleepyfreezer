@@ -1,0 +1,283 @@
+# Clovyre MCP
+
+A cloud bridge between a **live Roblox client** and a **remote MCP agent** (Claude, Claude Code,
+Codex, or any Streamable HTTP MCP client).
+
+Everything runs in the browser and the cloud. No Roblox Studio, no local server, no Node.js on your
+machine, no terminal. It works from an iPad.
+
+---
+
+## What it does
+
+You create a temporary session on the Clovyre web app. It hands you two things:
+
+1. A **loadstring** to paste into your executor, which connects your live Roblox client out over a
+   secure WebSocket.
+2. A **remote MCP endpoint** plus a bearer token, which you give to your AI agent.
+
+Your agent can then explore the replicated instance tree, read safe properties and attributes,
+inspect replicated scripts, and query runtime state — everything your client can already see.
+
+## Architecture
+
+```
+                   Live Roblox client
+                (executor runs client.lua)
+                            |
+                            |  wss://<deployment>/ws/roblox
+                            |  auth: hello frame carries the Roblox token
+                            v
+        +-----------------------------------------------+
+        |            Clovyre backend (Node)             |
+        |                                               |
+        |  Next.js dashboard + session API              |
+        |  Roblox WebSocket gateway                     |
+        |  Session broker + pending-command registry    |
+        |  Tool registry + capability registry          |
+        |  Audit log · rate limiter · credential store  |
+        |  Remote MCP server (Streamable HTTP)          |
+        +-----------------------------------------------+
+                            ^
+                            |  https://<deployment>/api/mcp/<sessionId>
+                            |  auth: Authorization: Bearer <MCP token>
+                            |
+              Claude · Claude Code · Codex · other MCP client
+```
+
+One Node process serves all of it. The Next.js app and the WebSocket gateway share a single HTTP
+server, which is why Clovyre needs a long-lived container rather than serverless functions.
+
+## Features
+
+- **Session model with four independent credentials** — Roblox, MCP, browser owner, CSRF. Each is
+  256 bits of entropy; only HMAC digests are retained; each can be revoked on its own.
+- **Replicated instance explorer** — lazy children, depth-limited trees, name search, class filters,
+  attributes, CollectionService tags, and a curated safe-property registry.
+- **Script inspection** — LocalScripts and replicated ModuleScripts, each labelled honestly as
+  `source`, `decompiled`, `bytecode` or `unavailable`.
+- **Runtime tools** — players, local player, character, camera, workspace summary, captured logs.
+- **Capability-aware tool surface** — decompile, `getgc`, `getsenv`, `getconnections` and
+  `getloadedmodules` tools appear only when the executor genuinely provides them.
+- **Privileged tools off by default** — Luau execution and mutation tools require an explicit,
+  auto-expiring grant made by the session owner in the browser.
+- **Full audit trail** — every command, duration, outcome and connection event, with secrets
+  redacted before storage.
+- **Live dashboard** — connection status, capability matrix, tool availability, activity feed,
+  credential management and one-tap termination. Built for iPad first.
+
+## Limitations
+
+These are properties of the design, not bugs:
+
+- **Only replicated, client-visible state is reachable.** `ServerScriptService`, `ServerStorage`,
+  server `Script`s and server memory are not replicated to a client and are therefore unreachable.
+- **Decompilation is best effort.** Output labelled `decompiled` is not guaranteed to match the
+  original source and may be wrong. Clovyre never presents it as original source.
+- **Executor APIs vary.** Tools depending on optional executor functions are disabled when those
+  functions are absent. That is reported, not hidden.
+- **`clovyre_execute_luau` is dangerous and disabled by default.** It is not sandboxed. The
+  "executor globals" toggle is a convenience filter, not a security boundary.
+- **Local mutations do not change server-authoritative state.** The Roblox server will typically
+  ignore or overwrite them.
+- **Ownership verification is not implemented.** Clovyre does not check that you own or are
+  authorised to test the experience you connect it to. The architecture has a hook for it; the check
+  is not enabled.
+- **Sessions are temporary and in-memory.** They expire on a timer and do not survive a restart or
+  redeploy. Treat every session as disposable.
+
+## Quick start (as a user)
+
+1. Open the deployment and tap **Create session**.
+2. Copy the generated loadstring.
+3. Run it in your executor with your experience open.
+4. Watch the dashboard flip to **Roblox connected**.
+5. Copy the MCP endpoint and bearer token into your agent.
+
+The loadstring looks like this (tokens are session-specific and shown once):
+
+```lua
+getgenv().ClovyreConfig = {
+    BaseUrl = "https://<deployment>",
+    SessionId = "cs_XXXXXXXXXXXXXXXXXXXX",
+    RobloxToken = "crx_..."
+}
+loadstring(game:HttpGet("https://<deployment>/client.lua"))()
+```
+
+Running it twice cleans up the previous connection instead of creating a duplicate. Call
+`getgenv().ClovyreDisconnect()` to stop the bridge.
+
+## Connecting an MCP client
+
+Clovyre speaks MCP over **Streamable HTTP**. One endpoint per session, authenticated by a bearer
+token bound to that session:
+
+```
+POST https://<deployment>/api/mcp/<sessionId>
+Authorization: Bearer <session MCP token>
+Content-Type: application/json
+```
+
+For clients that accept a remote HTTP MCP server:
+
+```json
+{
+  "mcpServers": {
+    "clovyre": {
+      "type": "http",
+      "url": "https://<deployment>/api/mcp/<sessionId>",
+      "headers": { "Authorization": "Bearer <session MCP token>" }
+    }
+  }
+}
+```
+
+For desktop clients that only speak stdio, the dashboard also generates an `mcp-remote` proxy
+configuration. The remote HTTP form is preferred — it needs no local process, which is the point.
+
+In Claude, add a custom connector with the endpoint URL and supply the bearer token as the
+authorization header. Start with `clovyre_session_info` to confirm the bridge is live.
+
+## Tools
+
+**Session** — `clovyre_session_info`, `clovyre_list_capabilities`, `clovyre_ping`
+
+**Discovery** — `clovyre_get_services`, `clovyre_get_children`, `clovyre_get_descendants`,
+`clovyre_find_instances`, `clovyre_inspect_instance`, `clovyre_get_attributes`, `clovyre_get_tags`,
+`clovyre_get_property`, `clovyre_get_instance_tree`
+
+**Scripts** — `clovyre_list_scripts`, `clovyre_inspect_script`, `clovyre_search_scripts`,
+`clovyre_get_script_dependencies`, `clovyre_get_loaded_modules`
+
+**Runtime** — `clovyre_get_players`, `clovyre_get_local_player`, `clovyre_get_character`,
+`clovyre_get_camera`, `clovyre_get_workspace_summary`, `clovyre_get_logs`,
+`clovyre_get_connections`, `clovyre_get_gc_summary`, `clovyre_inspect_environment`
+
+**Activity** — `clovyre_get_recent_activity`, `clovyre_get_recent_errors`,
+`clovyre_cancel_command`
+
+**Privileged (owner grant required)** — `clovyre_execute_luau`, `clovyre_set_property`,
+`clovyre_set_attribute`, `clovyre_create_instance`, `clovyre_destroy_instance`,
+`clovyre_reparent_instance`
+
+Privileged tools are hidden from `tools/list` until the session owner grants them in the browser, so
+an agent cannot even attempt to call them.
+
+## Security considerations
+
+- HTTPS and WSS only in production; secure, `httpOnly`, `SameSite=Lax` owner cookies.
+- The public session id is an **address**, never an authenticator.
+- Credentials are checked only against the session named in the request, which makes cross-session
+  command routing structurally impossible.
+- Owner mutations require a same-origin request plus a double-submit CSRF token.
+- Every WebSocket frame is Zod-validated; unknown types, oversized payloads and binary frames are
+  rejected.
+- Per-session and per-address rate limits, command timeouts, concurrency caps and payload ceilings.
+- Redaction layer scrubs credential-shaped values and sensitive header names before anything is
+  logged, audited or displayed.
+- CSP and secure headers on every response. No `NEXT_PUBLIC_*` variables exist — no secret can reach
+  the browser bundle.
+
+See [SECURITY.md](./SECURITY.md) for the reporting process and the full threat model.
+
+## Development
+
+Requires Node 20+.
+
+```bash
+npm ci
+cp .env.example .env.local     # fill in SESSION_SECRET and TOKEN_HASH_SECRET
+npm run dev                    # http://localhost:3000
+```
+
+| Script              | What it does                                                 |
+| ------------------- | ------------------------------------------------------------ |
+| `npm run dev`       | Development server with the WebSocket gateway attached       |
+| `npm run build`     | Next.js production build plus the compiled TypeScript server |
+| `npm start`         | Runs the compiled server; binds to `process.env.PORT`        |
+| `npm run lint`      | ESLint                                                       |
+| `npm run typecheck` | `tsc --noEmit` for both the app and the server               |
+| `npm test`          | Vitest unit and integration suites                           |
+| `npm run test:e2e`  | Playwright smoke tests on desktop and iPad viewports         |
+| `npm run format`    | Prettier                                                     |
+
+### Testing
+
+- **Unit** — credentials, session lifecycle, expiry, privilege grants, protocol parsing, structured
+  paths, serializer limits and cycles, redaction, rate limiting, safe-property registry, tool
+  schemas and the MCP JSON-RPC surface.
+- **Integration** — a real HTTP server, a real WebSocket upgrade, the real broker, and a **mock
+  Roblox client** (`tests/helpers/mock-roblox-client.ts`) that can connect, advertise capabilities,
+  answer commands, stall to force a timeout, emit malformed frames and disconnect. Roblox itself
+  cannot run in CI, so this is where command routing, timeouts, cross-session isolation and
+  disconnect handling are proven.
+- **E2E** — landing page, session creation, loadstring visibility, copy feedback, disconnected
+  status, owner isolation, health, `/client.lua`, MCP authentication and security headers.
+
+## Deployment (Render)
+
+Clovyre deploys as a single Render web service. `render.yaml` is a working blueprint.
+
+- Build: `npm ci && npm run build`
+- Start: `npm start`
+- Health check: `/api/health`
+- Instances: **1** — session state is in-process, so a second instance would not see the first
+  instance's sessions. Scaling out requires a shared broker (Redis or equivalent).
+
+After the first deploy, set `PUBLIC_BASE_URL` to the service URL so generated loadstrings and MCP
+endpoints use the canonical origin.
+
+`SESSION_SECRET` and `TOKEN_HASH_SECRET` should be generated by Render (`generateValue: true`) and
+never committed. No deployment credential — Render API key, GitHub token — is ever read by the
+application, written into source, or logged.
+
+### Environment variables
+
+See [.env.example](./.env.example) for the full annotated list. Every variable there is actually
+read by the application; there are no unused placeholders and no database or Redis URL, because this
+configuration needs neither.
+
+## Production limitations
+
+- Single instance only. A redeploy or restart ends every live session.
+- No durable storage; nothing survives a restart by design.
+- No ownership verification.
+- Rate limits and session state are per-process, so they reset with the process.
+
+## Repository layout
+
+```
+server/                  Node entry point and the Roblox WebSocket gateway
+src/app/                 Next.js routes: dashboard, docs, API, /client.lua
+src/components/          Interface primitives and session screens
+src/lib/
+  api/                   HTTP helpers, owner auth, CSRF, origin checks
+  audit/                 Bounded per-session audit log
+  mcp/                   MCP JSON-RPC server, availability, local tools
+  protocol/              Versioned wire schemas and structured paths
+  security/              Credentials, hashing, redaction, rate limiting
+  serialization/         Roblox value normalisation and display
+  sessions/              Session store, broker, view model, snippets
+  tools/                 Tool registry, invocation path, safe properties
+roblox/client.lua        The Roblox bridge served at /client.lua
+tests/                   Unit, integration (with mock client) and E2E suites
+docs/                    Architecture and protocol references
+```
+
+## Documentation
+
+- [`docs/architecture.md`](./docs/architecture.md) — components, data flow, lifecycle
+- [`docs/protocol.md`](./docs/protocol.md) — WebSocket and MCP wire formats
+- [`SECURITY.md`](./SECURITY.md) — threat model and reporting
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — development workflow
+- `/docs` on the deployment itself — the same material, rendered
+
+## Licence
+
+MIT. See [LICENSE](./LICENSE).
+
+## Use responsibly
+
+Clovyre reaches only what your own Roblox client already receives. Use it exclusively in experiences
+you own or are explicitly authorised to test, and only connect agents you trust.
