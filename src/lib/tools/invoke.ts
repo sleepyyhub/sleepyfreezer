@@ -3,7 +3,10 @@ import { ErrorCodes } from '../protocol/messages';
 import { evaluateTool } from '../mcp/tool-availability';
 import {
   cancelCommand,
+  getRemoteCalls,
+  getWatchEvents,
   listCapabilities,
+  listWatches,
   recentActivity,
   recentErrors,
   sessionInfo,
@@ -169,6 +172,23 @@ function runLocalTool(
       return recentActivity(session, typeof args.limit === 'number' ? args.limit : 50);
     case 'clovyre_get_recent_errors':
       return recentErrors(session, typeof args.limit === 'number' ? args.limit : 50);
+    case 'clovyre_list_watches':
+      return listWatches(session);
+    case 'clovyre_get_watch_events':
+      return getWatchEvents(session, {
+        limit: typeof args.limit === 'number' ? args.limit : 50,
+        watchId: typeof args.watchId === 'string' ? args.watchId : undefined,
+        since: typeof args.since === 'number' ? args.since : undefined,
+        clear: args.clear === true,
+      });
+    case 'clovyre_get_remote_calls':
+      return getRemoteCalls(session, {
+        limit: typeof args.limit === 'number' ? args.limit : 50,
+        remoteName: typeof args.remoteName === 'string' ? args.remoteName : undefined,
+        method: typeof args.method === 'string' ? args.method : undefined,
+        since: typeof args.since === 'number' ? args.since : undefined,
+        clear: args.clear === true,
+      });
     case 'clovyre_cancel_command':
       return cancelCommand(session, String(args.commandId));
     default:

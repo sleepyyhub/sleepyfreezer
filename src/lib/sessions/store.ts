@@ -10,6 +10,7 @@ import {
   verifyToken,
 } from '../security/tokens';
 import {
+  createObservations,
   isPrivilegeActive,
   sessionStatus,
   type CredentialRole,
@@ -86,7 +87,7 @@ export class SessionStore {
     const session: SessionRecord = {
       id: generateSessionId(),
       createdAt: now,
-      expiresAt: now + config.sessionTtlMs,
+      expiresAt: config.sessionTtlMs === null ? null : now + config.sessionTtlMs,
       terminatedAt: null,
       terminationReason: null,
       credentials: {
@@ -99,6 +100,7 @@ export class SessionStore {
         execute_luau: { enabled: false, expiresAt: null, enabledAt: null },
         executor_globals: { enabled: false, expiresAt: null, enabledAt: null },
         mutations: { enabled: false, expiresAt: null, enabledAt: null },
+        remote_spy: { enabled: false, expiresAt: null, enabledAt: null },
       },
       roblox: null,
       mcpConnections: new Map(),
@@ -107,13 +109,17 @@ export class SessionStore {
       commands: new Map(),
       commandOrder: [],
       audit: new AuditLog(),
+      observations: createObservations(),
       creatorAddressHash: hashAddress(options.creatorAddress),
     };
 
     session.audit.record({
       kind: 'session_created',
       actor: 'owner',
-      message: `Session created with a ${Math.round(config.sessionTtlMs / 60_000)} minute lifetime.`,
+      message:
+        config.sessionTtlMs === null
+          ? 'Session created; it runs until it is terminated.'
+          : `Session created with a ${Math.round(config.sessionTtlMs / 60_000)} minute lifetime.`,
       detail: {
         robloxCredential: session.credentials.roblox.fingerprint,
         mcpCredential: session.credentials.mcp.fingerprint,
@@ -309,7 +315,7 @@ export class SessionStore {
     for (const [id, session] of this.sessions) {
       const status = sessionStatus(session, now);
       if (status === 'active') continue;
-      const endedAt = session.terminatedAt ?? session.expiresAt;
+      const endedAt = session.terminatedAt ?? session.expiresAt ?? now;
       if (now - endedAt > graceMs) {
         this.sessions.delete(id);
         removed += 1;

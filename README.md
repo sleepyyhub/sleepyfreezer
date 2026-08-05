@@ -61,6 +61,13 @@ server, which is why Clovyre needs a long-lived container rather than serverless
   `getloadedmodules` tools appear only when the executor genuinely provides them.
 - **Privileged tools off by default** — Luau execution and mutation tools require an explicit,
   auto-expiring grant made by the session owner in the browser.
+- **Live observation** — install watchers on properties, attributes and children and poll the
+  changes they record, instead of re-reading the same instance and missing what happened in between.
+- **Remote spy** — record the RemoteEvent and RemoteFunction calls the client sends, with serialized
+  arguments. Observation only: Clovyre has no tool that fires a remote.
+- **GUI inspection** — the on-screen hierarchy with text, visibility and absolute geometry resolved.
+- **MCP resources** — attach `clovyre://session`, `clovyre://services`, `clovyre://tree` and
+  `clovyre://scripts` directly to a conversation instead of spending a tool call.
 - **Full audit trail** — every command, duration, outcome and connection event, with secrets
   redacted before storage.
 - **Live dashboard** — connection status, capability matrix, tool availability, activity feed,
@@ -83,8 +90,8 @@ These are properties of the design, not bugs:
 - **Ownership verification is not implemented.** Clovyre does not check that you own or are
   authorised to test the experience you connect it to. The architecture has a hook for it; the check
   is not enabled.
-- **Sessions are temporary and in-memory.** They expire on a timer and do not survive a restart or
-  redeploy. Treat every session as disposable.
+- **Sessions are in-memory.** With `SESSION_TTL_MINUTES=0` they have no timed expiry, but they still
+  do not survive a restart or redeploy. Treat every session as disposable regardless.
 
 ## Live deployment
 
@@ -196,7 +203,7 @@ something is currently connected with it.
 
 **Discovery** — `clovyre_get_services`, `clovyre_get_children`, `clovyre_get_descendants`,
 `clovyre_find_instances`, `clovyre_inspect_instance`, `clovyre_get_attributes`, `clovyre_get_tags`,
-`clovyre_get_property`, `clovyre_get_instance_tree`
+`clovyre_get_property`, `clovyre_get_instance_tree`, `clovyre_get_gui_tree`
 
 **Scripts** — `clovyre_list_scripts`, `clovyre_inspect_script`, `clovyre_search_scripts`,
 `clovyre_get_script_dependencies`, `clovyre_get_loaded_modules`
@@ -205,10 +212,15 @@ something is currently connected with it.
 `clovyre_get_camera`, `clovyre_get_workspace_summary`, `clovyre_get_logs`,
 `clovyre_get_connections`, `clovyre_get_gc_summary`, `clovyre_inspect_environment`
 
+**Observation** — `clovyre_watch_start`, `clovyre_watch_stop`, `clovyre_list_watches`,
+`clovyre_get_watch_events`, `clovyre_remote_spy_start`, `clovyre_remote_spy_stop`,
+`clovyre_get_remote_calls`
+
 **Activity** — `clovyre_get_recent_activity`, `clovyre_get_recent_errors`,
 `clovyre_cancel_command`
 
-**Privileged (owner grant required)** — `clovyre_execute_luau`, `clovyre_set_property`,
+**Privileged (owner grant required)** — `clovyre_execute_luau`, `clovyre_remote_spy_start`,
+`clovyre_set_property`,
 `clovyre_set_attribute`, `clovyre_create_instance`, `clovyre_destroy_instance`,
 `clovyre_reparent_instance`
 

@@ -70,11 +70,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       },
       loadstring: buildLoadstring(baseUrl, session.id, secrets.robloxToken),
       mcpConfig: buildMcpConfigSnippets(baseUrl, session.id, secrets.mcpToken),
-      ttlMinutes: Math.round(config.sessionTtlMs / 60_000),
+      ttlMinutes: config.sessionTtlMs === null ? null : Math.round(config.sessionTtlMs / 60_000),
     },
     { status: 201 },
   );
 
-  setOwnerCookies(response, session.id, secrets.ownerToken, secrets.csrfToken, config.sessionTtlMs);
+  // Never-expiring sessions still get a bounded cookie lifetime; 30 days is the
+  // practical ceiling for a browser credential.
+  const cookieTtlMs = config.sessionTtlMs ?? 30 * 24 * 60 * 60_000;
+  setOwnerCookies(response, session.id, secrets.ownerToken, secrets.csrfToken, cookieTtlMs);
   return response;
 }

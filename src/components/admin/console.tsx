@@ -90,9 +90,11 @@ export function AdminConsole({ bootstrapToken }: { bootstrapToken?: string }) {
           </div>
 
           <p className="mt-3 text-[11.5px] text-ink-faint">
-            Every figure above is counted from live state. Sessions last{' '}
-            {overview.service.sessionTtlMinutes} minutes and vanish on restart, so these are current
-            occupancy, not totals over time.
+            Every figure above is counted from live state.{' '}
+            {overview.service.sessionTtlMinutes === null
+              ? 'Sessions run until they are terminated'
+              : `Sessions last ${overview.service.sessionTtlMinutes} minutes`}{' '}
+            and vanish on restart, so these are current occupancy, not totals over time.
           </p>
 
           <div className="mt-8">
@@ -194,7 +196,11 @@ function SessionCard({ row }: { row: ConnectedSessionRow }) {
 
         <div className="text-right text-[11.5px] text-ink-faint">
           <div>started {relativeTime(row.startedAt)}</div>
-          <div>expires in {formatDuration(row.expiresInSeconds)}</div>
+          <div>
+            {row.expiresInSeconds === null
+              ? 'no timed expiry'
+              : `expires in ${formatDuration(row.expiresInSeconds)}`}
+          </div>
         </div>
       </div>
 

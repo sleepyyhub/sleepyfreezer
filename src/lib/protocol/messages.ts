@@ -26,6 +26,8 @@ export const CAPABILITY_NAMES = [
   'loadstring',
   'setclipboard',
   'gethui',
+  'hookmetamethod',
+  'getnamecallmethod',
 ] as const;
 
 export type CapabilityName = (typeof CAPABILITY_NAMES)[number];
@@ -147,7 +149,8 @@ export interface HelloAckMessage {
   sessionId: string;
   heartbeatIntervalMs: number;
   maxPayloadBytes: number;
-  expiresAt: number;
+  /** Null when the session has no timed expiry. */
+  expiresAt: number | null;
   serverTime: number;
 }
 
@@ -175,7 +178,7 @@ export interface SessionRevokedMessage {
 export interface SessionExpiredMessage {
   protocolVersion: typeof PROTOCOL_VERSION;
   type: 'session_expired';
-  expiredAt: number;
+  expiredAt: number | null;
 }
 
 export interface HeartbeatAckMessage {

@@ -168,6 +168,10 @@ local API = {
     setclipboard = globalFn('setclipboard') or globalFn('toclipboard'),
     gethui = globalFn('gethui'),
     loadstring = (type(loadstring) == 'function') and loadstring or globalFn('loadstring'),
+    hookmetamethod = globalFn('hookmetamethod'),
+    getnamecallmethod = globalFn('getnamecallmethod'),
+    checkcaller = globalFn('checkcaller'),
+    getcallingscript = globalFn('getcallingscript'),
 }
 
 local function buildCapabilities()
@@ -185,6 +189,8 @@ local function buildCapabilities()
         loadstring = API.loadstring ~= nil,
         setclipboard = API.setclipboard ~= nil,
         gethui = API.gethui ~= nil,
+        hookmetamethod = API.hookmetamethod ~= nil and API.getnamecallmethod ~= nil,
+        getnamecallmethod = API.getnamecallmethod ~= nil,
     }
 end
 
@@ -764,6 +770,11 @@ end
 --------------------------------------------------------------------------------
 -- Tool handlers
 --------------------------------------------------------------------------------
+
+-- Forward declaration: handlers below push events through this, and it is
+-- assigned once the connection section runs. Declaring it here means those
+-- closures capture the local rather than a nil global.
+local sendRaw
 
 local handlers = {}
 
@@ -1704,6 +1715,414 @@ handlers.inspect_environment = function(args)
     }
 end
 
+handlers.get_gui_tree = function(args)
+    local root
+    if args.root ~= nil then
+        local resolved, err = resolveTarget(args.root)
+        if resolved == nil then
+            return nil, { code = 'INSTANCE_NOT_FOUND', message = err }
+        end
+        root = resolved
+    else
+        local player = Players.LocalPlayer
+        local okGui, playerGui = pcall(function()
+            return player and player:FindFirstChildOfClass('PlayerGui') or nil
+        end)
+        root = okGui and playerGui or nil
+        if root == nil then
+            return fail('INSTANCE_NOT_FOUND', 'There is no PlayerGui on this client.')
+        end
+    end
+
+    local maxDepth = math.min(math.max(tonumber(args.maxDepth) or 6, 1), 12)
+    local maxNodes = math.min(math.max(tonumber(args.maxNodes) or 250, 1), 800)
+    local visibleOnly = args.visibleOnly == true
+    local includeText = args.includeText ~= false
+
+    local nodes = 0
+    local truncated = false
+
+    -- Reads only the handful of GUI properties that answer layout questions,
+    -- so a deep interface stays inside the payload limit.
+    local function describe(instance)
+        local node = {
+            ref = refFor(instance),
+            name = (pcall(function() return instance.Name end) and instance.Name) or '?',
+            className = (pcall(function() return instance.ClassName end) and instance.ClassName) or '?',
+        }
+
+        pcall(function()
+            if instance:IsA('GuiObject') then
+                node.visible = instance.Visible
+                node.zIndex = instance.ZIndex
+                node.absolutePosition = { instance.AbsolutePosition.X, instance.AbsolutePosition.Y }
+                node.absoluteSize = { instance.AbsoluteSize.X, instance.AbsoluteSize.Y }
+                node.backgroundTransparency = instance.BackgroundTransparency
+            elseif instance:IsA('ScreenGui') or instance:IsA('BillboardGui') or instance:IsA('SurfaceGui') then
+                node.enabled = instance.Enabled
+            end
+        end)
+
+        if includeText then
+            pcall(function()
+                if instance:IsA('TextLabel') or instance:IsA('TextButton') or instance:IsA('TextBox') then
+                    node.text = truncateString(instance.Text)
+                    node.textVisible = instance.TextTransparency < 1
+                end
+            end)
+            pcall(function()
+                if instance:IsA('ImageLabel') or instance:IsA('ImageButton') then
+                    node.image = instance.Image
+                end
+            end)
+        end
+
+        return node
+    end
+
+    local function isHidden(instance)
+        local okVisible, hidden = pcall(function()
+            if instance:IsA('GuiObject') then return instance.Visible == false end
+            if instance:IsA('ScreenGui') then return instance.Enabled == false end
+            return false
+        end)
+        return okVisible and hidden or false
+    end
+
+    local function build(instance, depth)
+        nodes = nodes + 1
+        if nodes > maxNodes then
+            truncated = true
+            return nil
+        end
+
+        local node = describe(instance)
+        if depth < maxDepth then
+            local okChildren, children = pcall(function() return instance:GetChildren() end)
+            if okChildren then
+                local built = {}
+                for _, child in ipairs(children) do
+                    if not (visibleOnly and isHidden(child)) then
+                        local childNode = build(child, depth + 1)
+                        if childNode == nil then break end
+                        table.insert(built, childNode)
+                    end
+                end
+                if #built > 0 then
+                    node.children = built
+                end
+            end
+        end
+        return node
+    end
+
+    local roots = {}
+    if args.root == nil and args.includeCoreGui == true and API.gethui then
+        local okHui, hui = pcall(API.gethui)
+        if okHui and hui then
+            table.insert(roots, hui)
+        end
+    end
+    table.insert(roots, root)
+
+    local trees = {}
+    for _, entry in ipairs(roots) do
+        local tree = build(entry, 0)
+        if tree then table.insert(trees, tree) end
+    end
+
+    return {
+        roots = trees,
+        nodeCount = nodes,
+        truncated = truncated,
+        visibleOnly = visibleOnly,
+        note = 'Only GUI replicated to this client is visible. CoreGui is excluded unless requested and supported.',
+    }
+end
+
+--------------------------------------------------------------------------------
+-- Watchers
+--------------------------------------------------------------------------------
+
+local watches = {}
+local watchCounter = 0
+
+local function pushEvent(eventName, data)
+    sendRaw({ protocolVersion = PROTOCOL_VERSION, type = 'event', event = eventName, data = data })
+end
+
+local function reportWatchState()
+    local list = {}
+    for watchId, watch in pairs(watches) do
+        table.insert(list, { watchId = watchId, target = watch.target, kinds = watch.kinds })
+    end
+    pushEvent('watch_state', { watches = list })
+end
+
+local function stopWatch(watchId)
+    local watch = watches[watchId]
+    if not watch then return false end
+    for _, connection in ipairs(watch.connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    watches[watchId] = nil
+    return true
+end
+
+handlers.watch_start = function(args)
+    local instance, err = requireTarget(args)
+    if not instance then return nil, err end
+
+    local count = 0
+    for _ in pairs(watches) do count = count + 1 end
+    if count >= 32 then
+        return fail('RATE_LIMITED', 'At most 32 watchers may be active at once. Stop one first.')
+    end
+
+    local kinds = args.kinds
+    if type(kinds) ~= 'table' or #kinds == 0 then kinds = { 'property' } end
+
+    local property = args.property
+    local attribute = args.attribute
+    local _, displayPath = pathOf(instance)
+
+    watchCounter = watchCounter + 1
+    local watchId = 'w' .. tostring(watchCounter)
+    local connections = {}
+
+    for _, kind in ipairs(kinds) do
+        if kind == 'property' then
+            if type(property) ~= 'string' or property == '' then
+                return fail('INVALID_ARGUMENTS', 'Watching a property requires a "property" name.')
+            end
+            if not isSafeProperty(instance, property) then
+                return fail(
+                    'PROPERTY_NOT_ALLOWED',
+                    'Property "' .. property .. '" is not in the Clovyre safe-property registry for this class.'
+                )
+            end
+            local okSignal, signal = pcall(function()
+                return instance:GetPropertyChangedSignal(property)
+            end)
+            if okSignal and signal then
+                table.insert(connections, signal:Connect(function()
+                    local okValue, value = pcall(function() return instance[property] end)
+                    pushEvent('watch', {
+                        watchId = watchId,
+                        kind = 'property',
+                        target = displayPath,
+                        at = os.time(),
+                        detail = { property = property, value = okValue and serialize(value) or nil },
+                    })
+                end))
+            end
+        elseif kind == 'attribute' then
+            local okSignal, signal = pcall(function()
+                if type(attribute) == 'string' and attribute ~= '' then
+                    return instance:GetAttributeChangedSignal(attribute)
+                end
+                return instance.AttributeChanged
+            end)
+            if okSignal and signal then
+                table.insert(connections, signal:Connect(function(changedName)
+                    local key = changedName or attribute
+                    local okValue, value = pcall(function() return instance:GetAttribute(key) end)
+                    pushEvent('watch', {
+                        watchId = watchId,
+                        kind = 'attribute',
+                        target = displayPath,
+                        at = os.time(),
+                        detail = { attribute = key, value = okValue and serialize(value) or nil },
+                    })
+                end))
+            end
+        elseif kind == 'childAdded' then
+            table.insert(connections, instance.ChildAdded:Connect(function(child)
+                pushEvent('watch', {
+                    watchId = watchId,
+                    kind = 'childAdded',
+                    target = displayPath,
+                    at = os.time(),
+                    detail = { child = summarize(child) },
+                })
+            end))
+        elseif kind == 'childRemoved' then
+            table.insert(connections, instance.ChildRemoved:Connect(function(child)
+                local okName, name = pcall(function() return child.Name end)
+                pushEvent('watch', {
+                    watchId = watchId,
+                    kind = 'childRemoved',
+                    target = displayPath,
+                    at = os.time(),
+                    detail = { name = okName and name or '?' },
+                })
+            end))
+        end
+    end
+
+    if #connections == 0 then
+        return fail('INVALID_ARGUMENTS', 'None of the requested watch kinds could be connected on this instance.')
+    end
+
+    watches[watchId] = {
+        target = displayPath,
+        kinds = kinds,
+        connections = connections,
+        label = args.label,
+    }
+    reportWatchState()
+
+    return {
+        watchId = watchId,
+        target = displayPath,
+        kinds = kinds,
+        connected = #connections,
+        note = 'Changes are buffered on the Clovyre server. Poll clovyre_get_watch_events to read them.',
+    }
+end
+
+handlers.watch_stop = function(args)
+    if args.all == true then
+        local stopped = 0
+        for watchId in pairs(watches) do
+            if stopWatch(watchId) then stopped = stopped + 1 end
+        end
+        reportWatchState()
+        return { stopped = stopped, all = true }
+    end
+
+    local watchId = tostring(args.watchId or '')
+    local stopped = stopWatch(watchId)
+    reportWatchState()
+    if not stopped then
+        return fail('INVALID_ARGUMENTS', 'No watcher with id "' .. watchId .. '" is active.')
+    end
+    return { stopped = 1, watchId = watchId }
+end
+
+--------------------------------------------------------------------------------
+-- Remote spy
+--------------------------------------------------------------------------------
+-- Observation only. There is deliberately no handler that FIRES a remote: this
+-- reports what the client already sends, and adds no capability to send more.
+
+local remoteSpy = {
+    active = false,
+    original = nil,
+    nameFilter = nil,
+    includeArguments = true,
+    maxArgumentBytes = 2000,
+}
+
+handlers.remote_spy_start = function(args)
+    if not (API.hookmetamethod and API.getnamecallmethod) then
+        return fail(
+            'CAPABILITY_UNAVAILABLE',
+            'This executor does not expose hookmetamethod and getnamecallmethod, which the remote spy needs.'
+        )
+    end
+    if remoteSpy.active then
+        return { active = true, alreadyRunning = true, note = 'The remote spy is already running.' }
+    end
+
+    remoteSpy.includeArguments = args.includeArguments ~= false
+    remoteSpy.nameFilter = (type(args.nameFilter) == 'string' and args.nameFilter ~= '')
+        and string.lower(args.nameFilter) or nil
+    remoteSpy.maxArgumentBytes = math.min(math.max(tonumber(args.maxArgumentBytes) or 2000, 64), 20000)
+
+    local okHook, hookError = pcall(function()
+        remoteSpy.original = API.hookmetamethod(game, '__namecall', function(self, ...)
+            local method = API.getnamecallmethod()
+
+            if remoteSpy.active and (method == 'FireServer' or method == 'InvokeServer') then
+                local okClass, className = pcall(function() return self.ClassName end)
+                if okClass and (className == 'RemoteEvent' or className == 'RemoteFunction'
+                    or className == 'UnreliableRemoteEvent') then
+                    local _, display = pathOf(self)
+                    local include = true
+                    if remoteSpy.nameFilter then
+                        include = string.find(string.lower(display), remoteSpy.nameFilter, 1, true) ~= nil
+                    end
+
+                    if include then
+                        local packed = table.pack(...)
+                        local serializedArgs = nil
+                        local truncated = false
+
+                        if remoteSpy.includeArguments then
+                            local list = {}
+                            for index = 1, packed.n do
+                                table.insert(list, serialize(packed[index]))
+                            end
+                            local okEncode, encoded = pcall(function()
+                                return HttpService:JSONEncode(list)
+                            end)
+                            if okEncode and #encoded > remoteSpy.maxArgumentBytes then
+                                truncated = true
+                                list = { { __t = 'Truncated', reason = 'argument-size', bytes = #encoded } }
+                            end
+                            serializedArgs = list
+                        end
+
+                        local callerScript = nil
+                        if API.getcallingscript then
+                            local okCaller, caller = pcall(API.getcallingscript)
+                            if okCaller and caller then
+                                local _, callerPath = pathOf(caller)
+                                callerScript = callerPath
+                            end
+                        end
+
+                        -- Never block or alter the call being observed.
+                        task.spawn(function()
+                            pushEvent('remote_call', {
+                                remote = display,
+                                className = className,
+                                method = method,
+                                args = serializedArgs,
+                                argCount = packed.n,
+                                callerScript = callerScript,
+                                truncated = truncated,
+                                at = os.time(),
+                            })
+                        end)
+                    end
+                end
+            end
+
+            return remoteSpy.original(self, ...)
+        end)
+    end)
+
+    if not okHook then
+        return fail('INTERNAL_ERROR', 'The remote spy hook could not be installed: ' .. tostring(hookError))
+    end
+
+    remoteSpy.active = true
+    pushEvent('remote_spy_state', { active = true })
+
+    return {
+        active = true,
+        includeArguments = remoteSpy.includeArguments,
+        nameFilter = args.nameFilter,
+        note = 'Observing outgoing FireServer and InvokeServer calls. Clovyre cannot fire remotes.',
+    }
+end
+
+handlers.remote_spy_stop = function()
+    if not remoteSpy.active then
+        return { active = false, note = 'The remote spy was not running.' }
+    end
+    -- The hook stays installed (unhooking a metamethod is not reliably supported
+    -- across executors) but it stops recording and simply forwards every call.
+    remoteSpy.active = false
+    pushEvent('remote_spy_state', { active = false })
+    return {
+        active = false,
+        note = 'Recording stopped. Buffered calls remain readable with clovyre_get_remote_calls.',
+    }
+end
+
 --------------------------------------------------------------------------------
 -- Privileged handlers
 --------------------------------------------------------------------------------
@@ -1965,7 +2384,7 @@ local function isCurrentGeneration()
     return genv.__ClovyreGeneration == bridge.generation and not bridge.stopped
 end
 
-local function sendRaw(payload)
+sendRaw = function(payload)
     if not bridge.connected or bridge.socket == nil then
         return false
     end
@@ -2183,6 +2602,13 @@ end
 genv.ClovyreDisconnect = function()
     bridge.stopped = true
     bridge.connected = false
+
+    -- Drop every watcher; leaving connections behind would keep firing into a
+    -- socket that is about to close.
+    for watchId in pairs(watches) do
+        stopWatch(watchId)
+    end
+    remoteSpy.active = false
     if bridge.socket then
         pcall(function()
             bridge.socket:Send(HttpService:JSONEncode({

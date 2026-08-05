@@ -40,6 +40,16 @@ const PRIVILEGE_COPY: Record<
       'executed code as fully privileged either way.',
     confirm: 'Expose executor globals',
   },
+  remote_spy: {
+    title: 'Remote spy',
+    summary:
+      'Lets an agent record the RemoteEvent and RemoteFunction calls your client sends to the server, with their arguments.',
+    warning:
+      'This installs a metatable hook into the running client to observe calls as they happen. That is intrusive: a ' +
+      'faulty hook can break or crash the game, and the arguments recorded may include anything your client sends, ' +
+      'including chat text or inputs. It observes only — Clovyre has no tool that fires a remote.',
+    confirm: 'Enable the remote spy',
+  },
   mutations: {
     title: 'Mutation tools',
     summary:

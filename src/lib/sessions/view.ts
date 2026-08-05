@@ -74,8 +74,9 @@ export interface SessionView {
   readonly id: string;
   readonly status: SessionStatus;
   readonly createdAt: string;
-  readonly expiresAt: string;
-  readonly expiresInSeconds: number;
+  /** Null when the session has no timed expiry. */
+  readonly expiresAt: string | null;
+  readonly expiresInSeconds: number | null;
   readonly ageSeconds: number;
   readonly terminationReason: string | null;
   readonly protocolVersion: number;
@@ -168,8 +169,9 @@ export function buildSessionView(session: SessionRecord, now = Date.now()): Sess
     id: session.id,
     status: sessionStatus(session, now),
     createdAt: new Date(session.createdAt).toISOString(),
-    expiresAt: new Date(session.expiresAt).toISOString(),
-    expiresInSeconds: Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
+    expiresAt: session.expiresAt === null ? null : new Date(session.expiresAt).toISOString(),
+    expiresInSeconds:
+      session.expiresAt === null ? null : Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
     ageSeconds: Math.floor((now - session.createdAt) / 1000),
     terminationReason: session.terminationReason,
     protocolVersion: PROTOCOL_VERSION,
@@ -198,7 +200,12 @@ export function buildSessionView(session: SessionRecord, now = Date.now()): Sess
     },
 
     credentials: [credential('roblox'), credential('mcp'), credential('owner')],
-    privileges: [privilege('execute_luau'), privilege('executor_globals'), privilege('mutations')],
+    privileges: [
+      privilege('execute_luau'),
+      privilege('executor_globals'),
+      privilege('mutations'),
+      privilege('remote_spy'),
+    ],
     commands,
     events: session.audit.list({ limit: 120 }).map((event) => ({
       id: event.id,
