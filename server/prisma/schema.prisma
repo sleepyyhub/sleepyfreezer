@@ -32,6 +32,21 @@ model User {
   characters    Character[]    @relation("CreatedCharacters")
   conversations Conversation[]
   groups        Group[]
+  saved         SavedCharacter[]
+}
+
+// A bookmark. Kept apart from Conversation because saving someone for later is
+// not the same as having talked to them.
+model SavedCharacter {
+  userId      String
+  characterId String
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, characterId])
+  @@index([userId, createdAt])
 }
 
 model Account {
@@ -81,6 +96,7 @@ model Character {
   conversations Conversation[]
   groupMembers  GroupMember[]
   messages      Message[]
+  savedBy       SavedCharacter[]
 
   @@index([isPublic, messageCount])
   @@index([creatorId])

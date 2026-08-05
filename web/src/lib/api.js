@@ -1,4 +1,6 @@
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+// Guarded so this module can be imported by the plain-node tests, which have
+// no import.meta.env. Vite still inlines the value at build time.
+const BASE = import.meta.env?.VITE_API_URL ?? 'http://localhost:4000';
 
 async function request(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -55,6 +57,8 @@ export const api = {
     remove: (id) => request(`/api/characters/${id}`, { method: 'DELETE' }),
     generateAvatar: (id, regenerate = false) =>
       request(`/api/characters/${id}/avatar`, { method: 'POST', body: { regenerate } }),
+    setSaved: (id, saved) =>
+      request(`/api/characters/${id}/save`, { method: saved ? 'PUT' : 'DELETE' }),
   },
 
   conversations: {
@@ -83,6 +87,8 @@ export const api = {
   settings: {
     get: () => request('/api/settings'),
     update: (data) => request('/api/settings', { method: 'PATCH', body: data }),
+    deleteAccount: (confirm) =>
+      request('/api/settings/account', { method: 'DELETE', body: { confirm } }),
   },
 };
 

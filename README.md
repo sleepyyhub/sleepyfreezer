@@ -171,6 +171,18 @@ as a cron job rather than a person.
 `nsfwAllowed`, and those characters are hidden entirely from users who have not
 opted in.
 
+**Saved characters.** A bookmark on a card or a character page, backed by a
+`SavedCharacter` row rather than component state, and readable back through the
+Saved tab. Kept apart from `Conversation` because saving someone for later is
+not the same as having talked to them.
+
+**Deleting an account.** `DELETE /api/settings/account`, confirmed by typing the
+username or email back — the only proof available for an account that signed in
+through Google and has no password stored here. Conversations, groups, messages,
+memories, and bookmarks cascade from the user row. Published characters do not:
+`creatorId` is `SetNull`, so they survive unattributed rather than disappearing
+out of other people's chats.
+
 **Realtime is optional.** Sending a message returns the replies over HTTP, so the
 app works fully without Pusher. Configuring it adds character-to-character
 messages appearing one at a time, and proactive messages arriving without a
@@ -255,4 +267,20 @@ npm test
 ```
 
 Covers thought extraction across every response shape the free models produce —
-including regressions captured from real output — and roleplay segmentation.
+including regressions captured from real output — roleplay segmentation, and
+sample-line extraction from a speaking-style sheet.
+
+## A note on the interface
+
+Nothing on screen is allowed to be decorative if it looks functional. An
+earlier pass had a green presence dot on every character, a follower count
+derived as 32% of the message count, a `⌘K` hint bound to nothing, four
+settings toggles that lived in `useState` and saved nothing, a bookmark that
+toasted "Saved to your library" with no library behind it, a "Featured" badge
+on 100% of characters, and attach/image/microphone buttons in the composer
+with no upload endpoint anywhere. Those are the details that make software feel
+generated, and they are worth auditing for as deliberately as any bug: a
+control that lies is worse than a missing feature.
+
+Where a surface was worth keeping, it was made real — the bookmark and account
+deletion both became actual endpoints. Where it was not, it was removed.

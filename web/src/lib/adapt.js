@@ -74,18 +74,48 @@ export function adaptCharacter(c) {
     role: c.universe || 'Original character',
     description: c.tagline || c.personality?.slice(0, 160) || '',
     tags: c.tags ?? [],
+    // The only real number there is. There was a "likes" count here derived as
+    // 32% of this one — invented social proof, which is exactly the sort of
+    // thing that makes a product feel fake once someone notices.
+    messages: c.messageCount ?? 0,
     chats: formatCount(c.messageCount ?? 0),
-    likes: formatCount(Math.round((c.messageCount ?? 0) * 0.32)),
-    badge: c.isFeatured ? 'Featured' : null,
-    online: true,
+    // "Featured" was on every character, which makes it decoration rather than
+    // a badge. Who wrote them is the distinction that actually exists, and the
+    // character page already draws it the same way.
+    badge: c.creatorId ? null : 'Official',
     colors: gradientFor(c.themeColor),
     nsfwAllowed: c.nsfwAllowed,
     creatorId: c.creatorId,
+    saved: Boolean(c.saved),
     // Detail-only fields, present when fetched from /characters/:id
     personality: c.personality,
     lore: c.lore,
+    speakingStyle: c.speakingStyle,
+    createdAt: c.createdAt,
     creator: c.creator,
   };
+}
+
+/**
+ * Pull the quoted sample lines out of a speaking-style sheet.
+ *
+ * The field is prose with a handful of example lines in quotes, and those
+ * lines say more about someone than the prose around them does.
+ *
+ * The quotes must be the *whole* line. Matching quotes anywhere pulled in the
+ * prose's own asides — a description saying she calls him "idiot" yielded
+ * `idiot` as a sample line. Straight and curly quotes both appear: the seed
+ * data uses one, models write the other.
+ */
+export function sampleLinesFrom(speakingStyle = '', limit = 3) {
+  const found = speakingStyle
+    .split('\n')
+    .map((line) => line.trim().match(/^[-–•]?\s*[“"„](.{3,160})[”"]$/))
+    .filter(Boolean)
+    .map((m) => m[1].trim());
+
+  // De-duplicate: a model asked for three lines sometimes repeats one.
+  return [...new Set(found)].slice(0, limit);
 }
 
 export function formatClock(iso) {

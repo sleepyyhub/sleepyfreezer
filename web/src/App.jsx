@@ -2,48 +2,45 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
-  Bell,
   Bookmark,
   Check,
   ChevronDown,
-  CircleHelp,
   Clock3,
-  Ellipsis,
-  Eye,
+  Feather,
   Globe2,
-  Heart,
   Image as ImageIcon,
   Info,
   Languages,
   Loader2,
   Lock,
   LogOut,
-  Mail,
   Menu,
   MessageCircle,
-  Mic,
-  Paperclip,
+  PenLine,
   Plus,
   Search,
   Send,
-  PenLine,
   Settings as SettingsIcon,
   Share2,
   Shield,
   SlidersHorizontal,
-  Smartphone,
   Tag,
   Trash2,
   User,
   UserPlus,
   Users,
-  Volume2,
-  Feather,
   X,
 } from 'lucide-react';
 
 import { api } from './lib/api.js';
-import { adaptCharacter, adaptMessage, formatRelative, initialsOf } from './lib/adapt.js';
+import {
+  adaptCharacter,
+  adaptMessage,
+  formatRelative,
+  gradientFor,
+  initialsOf,
+  sampleLinesFrom,
+} from './lib/adapt.js';
 import { SessionProvider, useAsync, useDebounced, useSession } from './lib/hooks.jsx';
 import { channels, subscribe } from './lib/realtime.js';
 import { useTypewriter } from './lib/typewriter.js';
@@ -53,6 +50,11 @@ import { CloverMark } from './lib/Mark.jsx';
 /* ------------------------------------------------------------------ */
 /* routing                                                             */
 /* ------------------------------------------------------------------ */
+
+// Which modifier to print in the search hint. Reading the platform is the
+// only way to avoid showing Mac users Ctrl or Windows users ⌘.
+const IS_APPLE = typeof navigator !== 'undefined'
+  && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 function useRoute() {
   const read = () => window.location.hash.replace(/^#\/?/, '') || 'home';
@@ -82,7 +84,9 @@ function Logo({ onClick, compact = false }) {
   );
 }
 
-function Avatar({ character, size = 'md', status = false, className = '' }) {
+// No presence dot. There was one, hardcoded to green on every character
+// everywhere — a status indicator with nothing behind it.
+function Avatar({ character, size = 'md', className = '' }) {
   const person = character ?? {};
   const [broken, setBroken] = useState(false);
   const showImage = Boolean(person.imageUrl) && !broken;
@@ -98,7 +102,6 @@ function Avatar({ character, size = 'md', status = false, className = '' }) {
         // an empty circle.
         ? <img src={person.imageUrl} alt="" onError={() => setBroken(true)} />
         : <span>{person.initials || initialsOf(person.name)}</span>}
-      {status && <i className={person.online ? 'online' : ''} />}
     </span>
   );
 }
@@ -274,7 +277,7 @@ function SignInPage() {
         <p>
           {mode === 'login'
             ? 'Sign in to pick up where you left off.'
-            : 'Conversations that feel alive. Create an account to begin.'}
+            : 'Characters who hold a conversation and remember it afterwards.'}
         </p>
 
         <div className="segmented-control signin-tabs">
@@ -406,7 +409,6 @@ function AppHeader({ route, go }) {
         </nav>
         <div className="header-actions">
           <button className="icon-button header-search" onClick={() => go('home')} aria-label="Search"><Search size={18} /></button>
-          <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
           <button className="user-chip" onClick={() => go('settings')} aria-label="Open settings">
             <UserAvatar user={user} />
             <ChevronDown size={14} />
@@ -431,7 +433,7 @@ function CharacterCard({ character, onOpen, saved, onSave }) {
     >
       <div className="card-glow" style={{ '--glow': character.colors[0] }} />
       <div className="card-topline">
-        <Avatar character={character} size="lg" status />
+        <Avatar character={character} size="lg" />
         {onSave && (
           <button
             className={`save-button ${saved ? 'saved' : ''}`}
@@ -456,8 +458,10 @@ function CharacterCard({ character, onOpen, saved, onSave }) {
         {character.tags.slice(0, 3).map((tag) => <span className="tag" key={tag}>{tag}</span>)}
       </div>
       <div className="card-footer">
-        <span><MessageCircle size={14} /> {character.chats}</span>
-        <span><Heart size={14} /> {character.likes}</span>
+        <span>
+          <MessageCircle size={14} />
+          {character.messages > 0 ? `${character.chats} messages` : 'No messages yet'}
+        </span>
         <span className="open-character">View <ArrowRight size={14} /></span>
       </div>
     </article>
@@ -467,6 +471,7 @@ function CharacterCard({ character, onOpen, saved, onSave }) {
 const FILTERS = [
   { label: 'Popular', value: 'popular' },
   { label: 'New', value: 'new' },
+  { label: 'Saved', value: 'saved' },
   { label: 'Community', value: 'community' },
   { label: 'Mine', value: 'mine' },
 ];
@@ -474,23 +479,47 @@ const FILTERS = [
 function HomePage({ go, notify }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('popular');
-  const [saved, setSaved] = useState(() => new Set());
   const search = useDebounced(query, 350);
+  const searchRef = useRef(null);
 
-  const { data, loading, error, reload } = useAsync(
+  const { data, loading, error, reload, setData } = useAsync(
     () => api.characters.list({ filter, q: search }),
     [filter, search],
   );
 
   const visible = useMemo(() => (data?.characters ?? []).map(adaptCharacter), [data]);
 
-  const toggleSave = (id) => {
-    setSaved((current) => {
-      const next = new Set(current);
-      if (next.has(id)) { next.delete(id); notify('Removed from saved characters'); }
-      else { next.add(id); notify('Saved to your library'); }
-      return next;
+  // The hint next to the search box promised this; a keyboard shortcut printed
+  // on screen and not bound to anything is worse than no hint at all.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'k' || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const toggleSave = async (id) => {
+    const wasSaved = data?.characters?.find((c) => c.id === id)?.saved ?? false;
+
+    // Flip first, reconcile after — a bookmark that waits on the network reads
+    // as a broken button.
+    setData({
+      ...data,
+      characters: data.characters.map((c) => (c.id === id ? { ...c, saved: !wasSaved } : c)),
     });
+
+    try {
+      await api.characters.setSaved(id, !wasSaved);
+      // The Saved tab is a filtered list, so unsaving from it must drop the row.
+      if (filter === 'saved' && wasSaved) reload();
+    } catch (err) {
+      notify(err.message);
+      reload();
+    }
   };
 
   return (
@@ -504,13 +533,14 @@ function HomePage({ go, notify }) {
         <div className="hero-search">
           <Search size={20} />
           <input
+            ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search characters, worlds, or personalities..."
+            placeholder="Search by name, world, or trait"
             aria-label="Search characters"
           />
           {query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={17} /></button>}
-          <kbd>⌘ K</kbd>
+          <kbd>{IS_APPLE ? '⌘' : 'Ctrl'} K</kbd>
         </div>
         <div className="hero-suggestions">
           <span>Try</span>
@@ -538,10 +568,11 @@ function HomePage({ go, notify }) {
               onClick={() => setFilter(item.value)}
             >
               {item.label}
-              {item.value === 'new' && <span className="tab-dot" />}
             </button>
           ))}
-          <span className="result-count">{loading ? '…' : `${visible.length} characters`}</span>
+          <span className="result-count">
+            {loading ? '…' : `${visible.length} ${visible.length === 1 ? 'character' : 'characters'}`}
+          </span>
         </div>
 
         {loading && <Spinner label="Loading characters" />}
@@ -553,7 +584,7 @@ function HomePage({ go, notify }) {
               <CharacterCard
                 key={character.id}
                 character={character}
-                saved={saved.has(character.id)}
+                saved={character.saved}
                 onSave={toggleSave}
                 onOpen={() => go(`character/${character.id}`)}
               />
@@ -561,19 +592,30 @@ function HomePage({ go, notify }) {
           </div>
         ) : (
           <div className="empty-state">
-            <span><Search size={23} /></span>
-            <h3>No characters found</h3>
-            <p>Try a different name, trait, or world.</p>
-            <button className="secondary-button" onClick={() => { setQuery(''); setFilter('popular'); }}>Clear search</button>
+            <span>{filter === 'saved' ? <Bookmark size={23} /> : <Search size={23} />}</span>
+            {filter === 'saved' && !search ? (
+              <>
+                <h3>Nothing saved yet</h3>
+                <p>The bookmark on a character keeps them here.</p>
+                <button className="secondary-button" onClick={() => setFilter('popular')}>Browse characters</button>
+              </>
+            ) : (
+              <>
+                <h3>No characters found</h3>
+                <p>Try a different name, trait, or world.</p>
+                <button className="secondary-button" onClick={() => { setQuery(''); setFilter('popular'); }}>Clear search</button>
+              </>
+            )}
           </div>
         ))}
       </section>
 
+      {/* No Safety / Guidelines / Privacy links here. There are no such pages,
+          and three buttons that go nowhere are worse than an honest footer. */}
       <footer className="site-footer page-shell">
         <Logo onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
         <p>Built for conversations worth keeping.</p>
-        <div><button>Safety</button><button>Guidelines</button><button>Privacy</button></div>
-        <span>© 2026 Clovyre</span>
+        <span>© {new Date().getFullYear()} Clovyre</span>
       </footer>
     </main>
   );
@@ -583,20 +625,43 @@ function HomePage({ go, notify }) {
 /* character profile                                                   */
 /* ------------------------------------------------------------------ */
 
-function Stat({ value, label }) {
-  return <div className="profile-stat"><strong>{value}</strong><span>{label}</span></div>;
+/**
+ * Character-sheet prose as real paragraphs.
+ *
+ * These fields are hard-wrapped in the source — the seed file breaks at about
+ * seventy characters and models copy that habit. Rendered with the line breaks
+ * preserved, the text came out ragged and half the column wide. Blank lines
+ * are the only breaks that carry meaning here, so only those become paragraphs.
+ */
+function Prose({ text = '' }) {
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean);
+  return paragraphs.map((paragraph, i) => <p key={i}>{paragraph}</p>);
 }
 
 function CharacterProfile({ id, go, notify }) {
-  const { data, loading, error, reload } = useAsync(() => api.characters.get(id), [id]);
+  const { data, loading, error, reload, setData } = useAsync(() => api.characters.get(id), [id]);
   const { data: health } = useAsync(() => api.health(), []);
   const { user } = useSession();
-  const [saved, setSaved] = useState(false);
   const [starting, setStarting] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [drawing, setDrawing] = useState(false);
 
   const character = data ? adaptCharacter(data.character) : null;
+  const saved = Boolean(character?.saved);
+  const sampleLines = useMemo(
+    () => sampleLinesFrom(character?.speakingStyle ?? ''),
+    [character?.speakingStyle],
+  );
+
+  const toggleSave = async () => {
+    setData({ ...data, character: { ...data.character, saved: !saved } });
+    try {
+      await api.characters.setSaved(id, !saved);
+    } catch (err) {
+      notify(err.message);
+      reload();
+    }
+  };
   const canDraw = Boolean(health?.images)
     && (!data?.character?.creatorId || data.character.creatorId === user?.id);
 
@@ -637,8 +702,7 @@ function CharacterProfile({ id, go, notify }) {
       <section className="profile-hero">
         <div className="profile-aura" style={{ '--profile-color': character.colors[0] }} />
         <div className="profile-avatar-wrap">
-          <Avatar character={character} size="xl" status />
-          <span className="profile-availability">Available</span>
+          <Avatar character={character} size="xl" />
           {canDraw && (
             <button className="draw-avatar" onClick={drawAvatar} disabled={drawing}>
               {drawing
@@ -659,26 +723,27 @@ function CharacterProfile({ id, go, notify }) {
             </div>
             <button
               className={`icon-button profile-save ${saved ? 'active' : ''}`}
-              onClick={() => { setSaved(!saved); notify(saved ? 'Removed from your library' : 'Saved to your library'); }}
-              aria-label="Save character"
+              onClick={toggleSave}
+              aria-label={saved ? 'Remove bookmark' : 'Bookmark character'}
             ><Bookmark size={19} fill={saved ? 'currentColor' : 'none'} /></button>
             <button
               className="icon-button"
-              onClick={() => { navigator.clipboard?.writeText(window.location.href); notify('Share link copied'); }}
-              aria-label="Share"
+              onClick={() => { navigator.clipboard?.writeText(window.location.href); notify('Link copied'); }}
+              aria-label="Copy link"
             ><Share2 size={19} /></button>
-            <button className="icon-button" aria-label="More options"><Ellipsis size={19} /></button>
           </div>
           <p className="profile-description">{character.description}</p>
           <div className="tag-row profile-tags">
             {character.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>)}
             {character.nsfwAllowed && <span className="tag tag-nsfw">18+</span>}
           </div>
-          <div className="profile-stats">
-            <Stat value={character.chats} label="conversations" />
-            <Stat value={character.likes} label="followers" />
-            <Stat value={character.tags.length} label="traits" />
-          </div>
+          {/* One real number. There were three here — a fabricated follower
+              count and a tag tally — which existed to fill the row. */}
+          {character.messages > 0 && (
+            <p className="profile-usage">
+              {character.chats} messages exchanged so far
+            </p>
+          )}
           <div className="profile-actions">
             <button className="primary-button" onClick={startChat} disabled={starting}>
               <MessageCircle size={18} /> {starting ? 'Opening…' : 'Start chat'} <ArrowRight size={17} />
@@ -695,41 +760,44 @@ function CharacterProfile({ id, go, notify }) {
           <div className="content-block">
             <p className="section-kicker">About</p>
             <h2>Who they are</h2>
-            <p className="preserve-lines">{character.personality}</p>
+            <Prose text={character.personality} />
           </div>
           {character.lore && (
             <div className="content-block">
               <p className="section-kicker">Background</p>
               <h2>Their world</h2>
-              <p className="preserve-lines">{character.lore}</p>
+              <Prose text={character.lore} />
             </div>
           )}
           <div className="content-block detail-list">
             <div><span><Tag size={16} /> Traits</span><p>{character.tags.join(' · ') || 'Not set'}</p></div>
             <div><span><Globe2 size={16} /> Universe</span><p>{character.role}</p></div>
-            <div><span><Languages size={16} /> Speaks</span><p>Any language you write in</p></div>
+            {character.createdAt && (
+              <div>
+                <span><Clock3 size={16} /> Added</span>
+                <p>{new Date(character.createdAt).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              </div>
+            )}
           </div>
         </div>
+        {/* This aside used to explain the product's inner-thoughts feature on
+            every character's page. Their own sample lines are more use: it is
+            the closest thing to hearing them before you start. */}
         <aside className="preview-panel">
           <div className="preview-heading">
-            <div><p className="section-kicker">How it works</p><h3>Inner thoughts</h3></div>
-            <span><Eye size={14} /> Always on</span>
+            <div><h3>How they talk</h3></div>
           </div>
-          <div className="preview-chat">
-            <div className="mini-message mini-character">
-              <Avatar character={character} size="sm" />
-              <div>
-                <span className="mini-name">{character.name}</span>
-                <div className="thought-bubble compact-thought">
-                  <span>THOUGHT</span>
-                  <em>Every reply opens with what they’re actually thinking.</em>
-                </div>
-                <p>Then they say what they’d really say out loud.</p>
-              </div>
-            </div>
-          </div>
+          {sampleLines.length ? (
+            <ul className="sample-lines">
+              {sampleLines.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          ) : (
+            <p className="sample-lines-empty">
+              No sample lines written for {character.name} yet.
+            </p>
+          )}
           <button className="preview-cta" onClick={startChat} disabled={starting}>
-            Start this story <ArrowRight size={16} />
+            {starting ? 'Opening…' : 'Start chatting'} <ArrowRight size={16} />
           </button>
         </aside>
       </section>
@@ -852,7 +920,7 @@ function ChatSidebar({ go, active, mobileOpen, onClose, conversations, groups, o
               className={active === item.id ? 'active' : ''}
               onClick={() => { go(`chat/${item.id}`); onClose?.(); }}
             >
-              <Avatar character={character} size="sm" status />
+              <Avatar character={character} size="sm" />
               <span className="conversation-copy">
                 <span><strong>{character.name}</strong><time>{formatRelative(item.lastMessageAt)}</time></span>
                 <small>{stripRoleplay(item.lastMessage?.content ?? '').slice(0, 42) || 'Say hello'}</small>
@@ -894,7 +962,8 @@ function ChatSidebar({ go, active, mobileOpen, onClose, conversations, groups, o
 
       <div className="sidebar-user">
         <UserAvatar user={user} />
-        <span><strong>{user?.name ?? 'You'}</strong><small>Free plan</small></span>
+        {/* Said "Free plan" — there are no plans, paid or otherwise. */}
+        <span><strong>{user?.name ?? 'You'}</strong><small>{user?.email}</small></span>
         <button onClick={() => go('settings')} aria-label="Settings"><SettingsIcon size={17} /></button>
       </div>
     </aside>
@@ -990,11 +1059,9 @@ function ChatComposer({ nsfw, setNsfw, onSend, placeholder, typing, typingLabel 
           placeholder={placeholder}
         />
         <div className="composer-bottom">
+          {/* Attach, image, and microphone buttons lived here and did nothing.
+              There is no upload endpoint and no speech input. */}
           <div className="composer-tools">
-            <button aria-label="Attach file"><Paperclip size={18} /></button>
-            <button aria-label="Add image"><ImageIcon size={18} /></button>
-            <button aria-label="Voice message"><Mic size={18} /></button>
-            <span className="composer-divider" />
             <NsfwPill checked={nsfw} onChange={setNsfw} />
           </div>
           <div className="send-area">
@@ -1125,8 +1192,10 @@ function ChatPage({ id, go, nsfw, setNsfw, notify }) {
         <header className="chat-header">
           <div className="chat-title">
             <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open conversations"><Menu size={20} /></button>
-            <Avatar character={character ?? {}} size="sm" status />
-            <span><strong>{character?.name ?? 'Loading…'}</strong><small><i /> Online · Remembers your story</small></span>
+            <Avatar character={character ?? {}} size="sm" />
+            {/* Was "Online · Remembers your story", with a green presence dot.
+                A character is never offline, so the dot said nothing. */}
+            <span><strong>{character?.name ?? 'Loading…'}</strong><small>{character?.role}</small></span>
           </div>
           <div className="chat-header-actions">
             <button className="secondary-button compact group-add" onClick={() => setGroupOpen(true)}><Users size={15} /> Add to group</button>
@@ -1143,9 +1212,9 @@ function ChatPage({ id, go, nsfw, setNsfw, notify }) {
           {!loading && !error && (
             <>
               <div className="conversation-start">
-                <Avatar character={character ?? {}} size="lg" status />
+                <Avatar character={character ?? {}} size="lg" />
                 <h2>{character?.name}</h2>
-                <p>{character?.role} · Your story begins here</p>
+                <p>{character?.description}</p>
                 <span><Lock size={12} /> This conversation is private</span>
               </div>
               <div className="messages-list">
@@ -1211,7 +1280,7 @@ function MemberPanel({ group, open, onClose, onChanged, notify }) {
       <div className="member-list">
         {members.map((member) => (
           <div key={member.id}>
-            <Avatar character={member} size="sm" status />
+            <Avatar character={member} size="sm" />
             <span><strong>{member.name}</strong><small>{member.role}</small></span>
             {members.length > 2 && (
               <button onClick={() => remove(member.id)} aria-label={`Remove ${member.name}`}><X size={15} /></button>
@@ -1226,9 +1295,6 @@ function MemberPanel({ group, open, onClose, onChanged, notify }) {
           <span><strong>{user?.name ?? 'You'}</strong><small>{user?.email}</small></span>
           <em>Owner</em>
         </div>
-      </div>
-      <div className="group-settings-list">
-        <button><Bell size={17} /><span>Notifications<small>All messages</small></span><ChevronDown size={15} /></button>
       </div>
     </aside>
   );
@@ -1321,7 +1387,6 @@ function GroupChatPage({ id, go, nsfw, setNsfw, notify }) {
           </div>
           <div className="chat-header-actions">
             <button className="icon-button mobile-members" onClick={() => setMembersOpen(true)} aria-label="View members"><Users size={18} /></button>
-            <button className="icon-button" aria-label="More options"><Ellipsis size={19} /></button>
           </div>
         </header>
         <div className="messages-scroll">
@@ -1488,16 +1553,14 @@ function CreatePage({ go, notify }) {
     role: draft.universe || 'Original character',
     description: draft.tagline || 'Your tagline will appear here.',
     tags,
+    messages: 0,
     chats: '0',
-    likes: '0',
-    badge: 'New',
-    online: true,
-    colors: [COLOR_OPTIONS[draft.color], COLOR_OPTIONS[(draft.color + 1) % COLOR_OPTIONS.length]],
+    badge: null,
+    colors: gradientFor(COLOR_OPTIONS[draft.color]),
     nsfwAllowed: draft.nsfwAllowed,
   };
 
   const filled = [draft.name, draft.tagline, draft.personality, draft.lore, draft.speakingStyle].filter(Boolean).length;
-  const completion = Math.round((filled / 5) * 100);
   const canSubmit = draft.name.trim().length > 0 && draft.personality.trim().length >= 20;
 
   const submit = async () => {
@@ -1516,7 +1579,7 @@ function CreatePage({ go, notify }) {
         nsfwAllowed: draft.nsfwAllowed,
         isPublic: draft.isPublic,
       });
-      notify(`${character.name} is ready to meet the world`);
+      notify(`${character.name} created`);
       go(`character/${character.id}`);
     } catch (err) {
       notify(err.message);
@@ -1529,9 +1592,8 @@ function CreatePage({ go, notify }) {
       <div className="create-title-row">
         <div>
           <button className="back-link" onClick={() => go('home')}><ArrowLeft size={16} /> Back to explore</button>
-          <p className="section-kicker">Creator studio</p>
-          <h1>Bring a character to life</h1>
-          <p>Give them a voice, a world, and a reason to be remembered.</p>
+          <h1>New character</h1>
+          <p>A name and a few paragraphs of personality is enough to start.</p>
         </div>
         <div className="create-top-actions">
           <button className="primary-button" onClick={submit} disabled={saving || !canSubmit}>
@@ -1647,7 +1709,9 @@ function CreatePage({ go, notify }) {
                       key={color}
                       onClick={() => update('color', index)}
                       className={draft.color === index ? 'active' : ''}
-                      style={{ background: `linear-gradient(135deg, ${color}, ${COLOR_OPTIONS[(index + 1) % COLOR_OPTIONS.length]})` }}
+                      // The swatch used to blend into the *next* option's
+                      // colour, so it showed a gradient the card never used.
+                      style={{ background: `linear-gradient(135deg, ${gradientFor(color).join(', ')})` }}
                       aria-label={`Colour option ${index + 1}`}
                     >{draft.color === index && <Check size={16} />}</button>
                   ))}
@@ -1682,12 +1746,16 @@ function CreatePage({ go, notify }) {
         </div>
 
         <aside className="live-preview">
-          <div className="live-preview-head"><div><span className="live-dot" /> Live preview</div><span>{completion}% complete</span></div>
-          <div className="progress-track"><i style={{ width: `${completion}%` }} /></div>
+          {/* Was a percentage bar over five fields, which only ever reads
+              20/40/60/80/100 — a counter wearing a progress bar. */}
+          <div className="live-preview-head">
+            <div>Preview</div>
+            <span>{filled} of 5 written</span>
+          </div>
           <CharacterCard character={previewCharacter} onOpen={() => {}} />
           <div className="preview-note">
             <Info size={15} />
-            <p>Personality, background, and speaking style are fed straight into the model. Sample lines matter more than adjectives.</p>
+            <p>Personality, background, and speaking style go straight into the model. Sample lines matter more than adjectives.</p>
           </div>
         </aside>
       </div>
@@ -1702,9 +1770,8 @@ function CreatePage({ go, notify }) {
 function SettingsNav({ active, setActive, onSignOut }) {
   const sections = [
     { id: 'account', label: 'Account', icon: User },
-    { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal },
-    { id: 'safety', label: 'Safety & content', icon: Shield },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'conversations', label: 'Conversations', icon: SlidersHorizontal },
+    { id: 'content', label: 'Mature content', icon: Shield },
   ];
   const jump = (id) => {
     setActive(id);
@@ -1717,7 +1784,6 @@ function SettingsNav({ active, setActive, onSignOut }) {
         <button key={id} className={active === id ? 'active' : ''} onClick={() => jump(id)}><Icon size={17} />{label}</button>
       ))}
       <div className="settings-nav-divider" />
-      <button><CircleHelp size={17} /> Help &amp; support</button>
       <button className="sign-out" onClick={onSignOut}><LogOut size={17} /> Sign out</button>
     </aside>
   );
@@ -1742,12 +1808,70 @@ const LANGUAGES = [
   ['日本語', '日本語'],
 ];
 
+/**
+ * Confirming an irreversible action by typing the account name back.
+ *
+ * A plain "are you sure" is one stray click from gone. Typing something is the
+ * usual bar, and it is also the only proof available for an account that
+ * signed in through Google and has no password stored here.
+ */
+function DeleteAccountModal({ user, onClose, notify }) {
+  const [typed, setTyped] = useState('');
+  const [working, setWorking] = useState(false);
+  const handle = user?.username ?? user?.email ?? '';
+  const matches = typed.trim().toLowerCase() === handle.toLowerCase();
+
+  const confirm = async () => {
+    setWorking(true);
+    try {
+      await api.settings.deleteAccount(typed.trim());
+      // Nothing is left to show, so drop back to a signed-out home rather than
+      // leaving a dead session on screen.
+      window.location.hash = '';
+      window.location.reload();
+    } catch (err) {
+      notify(err.message);
+      setWorking(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Delete account"
+      onClose={onClose}
+      footer={(
+        <>
+          <button className="secondary-button" onClick={onClose}>Keep my account</button>
+          <button className="danger-button" onClick={confirm} disabled={!matches || working}>
+            {working ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </>
+      )}
+    >
+      <p className="modal-lede">
+        This removes your conversations, groups, and everything characters
+        remember about you. Characters you published stay up, but without your
+        name on them.
+      </p>
+      <Field label={`Type ${handle} to confirm`}>
+        <input
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          autoFocus
+          autoComplete="off"
+          spellCheck="false"
+        />
+      </Field>
+    </Modal>
+  );
+}
+
 function SettingsPage({ go, notify }) {
   const { user, updateSettings, signOut } = useSession();
   const [active, setActive] = useState('account');
   const [name, setName] = useState(user?.name ?? '');
   const [saving, setSaving] = useState(false);
-  const [local, setLocal] = useState({ email: true, push: true, sound: true, activity: true });
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const save = async (patch, message) => {
     try {
@@ -1758,7 +1882,7 @@ function SettingsPage({ go, notify }) {
 
   const saveAccount = async () => {
     setSaving(true);
-    await save({ name: name.trim() }, 'Account changes saved');
+    await save({ name: name.trim() }, 'Saved');
     setSaving(false);
   };
 
@@ -1766,42 +1890,41 @@ function SettingsPage({ go, notify }) {
     <main className="settings-page page-shell">
       <button className="back-link" onClick={() => go('home')}><ArrowLeft size={16} /> Back to Clovyre</button>
       <div className="settings-title">
-        <p className="section-kicker">Your space</p>
         <h1>Settings</h1>
-        <p>Manage your account and conversation preferences.</p>
       </div>
       <div className="settings-layout">
         <SettingsNav active={active} setActive={setActive} onSignOut={signOut} />
         <div className="settings-content">
           <section className="settings-section" id="account">
-            <div className="settings-section-head"><div><h2>Account</h2><p>Your profile and account information.</p></div></div>
+            <div className="settings-section-head"><div><h2>Account</h2></div></div>
             <div className="account-profile-row">
               <UserAvatar user={user} className="settings-avatar" />
               <div>
-                <strong>Profile photo</strong>
-                <p>Taken from the account you signed in with.</p>
+                <strong>{user?.name || user?.username || 'You'}</strong>
+                <p>
+                  {user?.avatarUrl
+                    ? 'Your picture comes from the account you signed in with.'
+                    : 'Characters see your display name. Nothing else about you is shared.'}
+                </p>
               </div>
             </div>
             <div className="account-fields">
               <Field label="Display name"><input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} /></Field>
               {user?.username && (
-                <Field label="Username">
-                  <div className="prefix-input"><span>clovyre.ai/</span><input value={user.username} disabled /></div>
-                </Field>
+                <Field label="Username" hint="Fixed once chosen"><input value={user.username} disabled /></Field>
               )}
-              <Field label="Email address"><input type="email" value={user?.email ?? ''} disabled /></Field>
+              <Field label="Email address" hint="Used to sign in"><input type="email" value={user?.email ?? ''} disabled /></Field>
             </div>
             <div className="section-save">
-              <span>Signed in with a linked account</span>
-              <button className="primary-button small-primary" onClick={saveAccount} disabled={saving}>
+              <button className="primary-button small-primary" onClick={saveAccount} disabled={saving || name.trim() === (user?.name ?? '')}>
                 {saving ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </section>
 
-          <section className="settings-section" id="preferences">
-            <div className="settings-section-head"><div><h2>Preferences</h2><p>Customize your experience across Clovyre.</p></div></div>
-            <SettingsRow icon={Languages} title="Reply language" description="Characters mirror your language by default.">
+          <section className="settings-section" id="conversations">
+            <div className="settings-section-head"><div><h2>Conversations</h2></div></div>
+            <SettingsRow icon={Languages} title="Reply language" description="Characters mirror whatever you write in unless you pin one.">
               <div className="select-wrap settings-select">
                 <select value={user?.language ?? 'auto'} onChange={(e) => save({ language: e.target.value }, 'Language updated')}>
                   {LANGUAGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -1809,42 +1932,10 @@ function SettingsPage({ go, notify }) {
                 <ChevronDown size={15} />
               </div>
             </SettingsRow>
-            <SettingsRow icon={Volume2} title="Message sounds" description="Play a subtle sound when a character replies.">
-              <Toggle checked={local.sound} onChange={(v) => setLocal((s) => ({ ...s, sound: v }))} label="Message sounds" />
-            </SettingsRow>
-            <SettingsRow icon={Clock3} title="Activity status" description="Let characters show when you were last active.">
-              <Toggle checked={local.activity} onChange={(v) => setLocal((s) => ({ ...s, activity: v }))} label="Activity status" />
-            </SettingsRow>
-          </section>
-
-          <section className="settings-section" id="safety">
-            <div className="settings-section-head"><div><h2>Safety &amp; content</h2><p>Control the kinds of conversations you can start.</p></div></div>
-            <div className={`mature-setting ${user?.nsfwEnabled ? 'enabled' : ''}`}>
-              <span className="mature-icon"><Shield size={19} /></span>
-              <div>
-                <strong>Allow NSFW conversations</strong>
-                <p>Enables mature characters and adult themes. You must be 18 or older.</p>
-                <span className="age-note"><Info size={13} /> This setting applies to every conversation.</span>
-              </div>
-              <NsfwPill
-                checked={Boolean(user?.nsfwEnabled)}
-                onChange={(v) => save({ nsfwEnabled: v }, v ? 'Mature content enabled' : 'Mature content disabled')}
-              />
-            </div>
-            <SettingsRow icon={Eye} title="Show character thoughts" description="Display inner monologue above character messages.">
-              <span className="locked-label"><Check size={13} /> Always on</span>
-            </SettingsRow>
-            <SettingsRow icon={Lock} title="Private conversations" description="Your chats are private by default and never shown publicly.">
-              <span className="locked-label"><Lock size={13} /> Always on</span>
-            </SettingsRow>
-          </section>
-
-          <section className="settings-section" id="notifications">
-            <div className="settings-section-head"><div><h2>Notifications</h2><p>Choose what you want to hear about.</p></div></div>
             <SettingsRow
               icon={MessageCircle}
               title="Let characters message me first"
-              description="Characters may reach out on their own when a conversation has gone quiet."
+              description="They reach out on their own after a few quiet hours."
             >
               <Toggle
                 checked={Boolean(user?.proactiveEnabled)}
@@ -1855,7 +1946,7 @@ function SettingsPage({ go, notify }) {
             <SettingsRow
               icon={ImageIcon}
               title="Let characters illustrate scenes"
-              description="Occasionally a character draws the moment. Each picture costs a real image generation, so this is off by default and limited to one every 20 messages."
+              description="A character can draw the moment instead of describing it. Each picture costs a real image generation, so this is off by default and limited to one every 20 messages."
             >
               <Toggle
                 checked={Boolean(user?.sceneImagesEnabled)}
@@ -1863,22 +1954,42 @@ function SettingsPage({ go, notify }) {
                 label="Scene images"
               />
             </SettingsRow>
-            <SettingsRow icon={Mail} title="Email notifications" description="Product updates and account alerts.">
-              <Toggle checked={local.email} onChange={(v) => setLocal((s) => ({ ...s, email: v }))} label="Email notifications" />
-            </SettingsRow>
-            <SettingsRow icon={Smartphone} title="Push notifications" description="Notifications on your signed-in devices.">
-              <Toggle checked={local.push} onChange={(v) => setLocal((s) => ({ ...s, push: v }))} label="Push notifications" />
-            </SettingsRow>
+          </section>
+
+          <section className="settings-section" id="content">
+            <div className="settings-section-head"><div><h2>Mature content</h2></div></div>
+            <div className={`mature-setting ${user?.nsfwEnabled ? 'enabled' : ''}`}>
+              <span className="mature-icon"><Shield size={19} /></span>
+              <div>
+                <strong>Allow NSFW conversations</strong>
+                <p>
+                  Unlocks characters marked 18+, who are hidden entirely while
+                  this is off. Applies everywhere, in every conversation.
+                </p>
+              </div>
+              <NsfwPill
+                checked={Boolean(user?.nsfwEnabled)}
+                onChange={(v) => save({ nsfwEnabled: v }, v ? 'Mature content enabled' : 'Mature content disabled')}
+              />
+            </div>
           </section>
 
           <section className="settings-section danger-section">
-            <div className="settings-section-head"><div><h2>Danger zone</h2><p>Irreversible account actions.</p></div></div>
-            <SettingsRow icon={Trash2} title="Delete account" description="Permanently delete your account, characters, and conversations.">
-              <button className="danger-button" onClick={() => notify('Account deletion requires email confirmation')}>Delete account</button>
+            <div className="settings-section-head"><div><h2>Delete account</h2></div></div>
+            <SettingsRow
+              icon={Trash2}
+              title="Delete this account"
+              description="Removes your conversations, groups, and everything characters remember about you. Characters you published stay up without your name."
+            >
+              <button className="danger-button" onClick={() => setConfirmDelete(true)}>Delete account</button>
             </SettingsRow>
           </section>
         </div>
       </div>
+
+      {confirmDelete && (
+        <DeleteAccountModal user={user} notify={notify} onClose={() => setConfirmDelete(false)} />
+      )}
     </main>
   );
 }

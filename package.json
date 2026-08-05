@@ -9,7 +9,7 @@
     "start": "npm --prefix server run db:deploy && npm --prefix server start",
     "dev:api": "npm --prefix server run dev",
     "dev:web": "npm --prefix web run dev",
-    "test": "node server/test/parse.test.js && node web/test/roleplay.test.js"
+    "test": "node server/test/parse.test.js && node web/test/roleplay.test.js && node web/test/samplelines.test.js"
   },
   "engines": {
     "node": ">=18"

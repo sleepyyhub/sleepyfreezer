@@ -29,6 +29,27 @@ const SORTS = {
   name: [{ name: 'asc' }],
 };
 
+/**
+ * Mark which of these characters the signed-in user has bookmarked.
+ *
+ * One extra query for the whole page rather than a relation on every row: the
+ * list is read constantly and by signed-out visitors too, for whom the answer
+ * is always false and no query runs at all.
+ */
+async function withSavedFlag(characters, user) {
+  if (!user || characters.length === 0) {
+    return characters.map((c) => ({ ...c, saved: false }));
+  }
+
+  const rows = await prisma.savedCharacter.findMany({
+    where: { userId: user.id, characterId: { in: characters.map((c) => c.id) } },
+    select: { characterId: true },
+  });
+  const saved = new Set(rows.map((r) => r.characterId));
+
+  return characters.map((c) => ({ ...c, saved: saved.has(c.id) }));
+}
+
 /** GET /api/characters?filter=popular&q=nino&tag=tsundere */
 router.get('/', async (req, res, next) => {
   try {
@@ -47,6 +68,9 @@ router.get('/', async (req, res, next) => {
       where.creatorId = req.user.id;
     } else if (filter === 'community') {
       where.creatorId = { not: null };
+    } else if (filter === 'saved') {
+      if (!req.user) return res.status(401).json({ error: 'Not signed in' });
+      where.savedBy = { some: { userId: req.user.id } };
     }
 
     if (q) {
@@ -67,8 +91,10 @@ router.get('/', async (req, res, next) => {
     });
 
     const hasMore = characters.length > limit;
+    const page = hasMore ? characters.slice(0, limit) : characters;
+
     res.json({
-      characters: hasMore ? characters.slice(0, limit) : characters,
+      characters: await withSavedFlag(page, req.user),
       nextCursor: hasMore ? characters[limit - 1].id : null,
     });
   } catch (err) {
@@ -85,6 +111,9 @@ router.get('/:id', async (req, res, next) => {
         ...publicFields,
         personality: true,
         lore: true,
+        // Shown on the character page: the sample lines are the most concrete
+        // thing you can read about someone before talking to them.
+        speakingStyle: true,
         creator: { select: { id: true, name: true, avatarUrl: true } },
       },
     });
@@ -94,7 +123,8 @@ router.get('/:id', async (req, res, next) => {
       return res.status(403).json({ error: 'Enable mature content to view this character' });
     }
 
-    res.json({ character });
+    const [withFlag] = await withSavedFlag([character], req.user);
+    res.json({ character: withFlag });
   } catch (err) {
     next(err);
   }
@@ -121,6 +151,46 @@ router.post('/compose', requireAuth, async (req, res, next) => {
 
     const draft = await composeCharacter(parsed.data);
     res.json({ draft });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PUT / DELETE /api/characters/:id/save — bookmark a character.
+ *
+ * Idempotent in both directions, because the UI flips the icon optimistically
+ * and a double click should not become an error.
+ */
+router.put('/:id/save', requireAuth, async (req, res, next) => {
+  try {
+    const character = await prisma.character.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, nsfwAllowed: true },
+    });
+    if (!character) return res.status(404).json({ error: 'Character not found' });
+    if (character.nsfwAllowed && !req.user.nsfwEnabled) {
+      return res.status(403).json({ error: 'Enable mature content to save this character' });
+    }
+
+    await prisma.savedCharacter.upsert({
+      where: { userId_characterId: { userId: req.user.id, characterId: character.id } },
+      create: { userId: req.user.id, characterId: character.id },
+      update: {},
+    });
+
+    res.json({ saved: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id/save', requireAuth, async (req, res, next) => {
+  try {
+    await prisma.savedCharacter.deleteMany({
+      where: { userId: req.user.id, characterId: req.params.id },
+    });
+    res.json({ saved: false });
   } catch (err) {
     next(err);
   }
