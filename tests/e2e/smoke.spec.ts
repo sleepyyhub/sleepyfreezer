@@ -92,7 +92,9 @@ test.describe('session lifecycle', () => {
     await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
     const sessionId = page.url().split('/session/')[1]!;
 
-    const original = (await page.locator('pre', { hasText: 'ClovyreConfig' }).first().innerText()).trim();
+    const original = (
+      await page.locator('pre', { hasText: 'ClovyreConfig' }).first().innerText()
+    ).trim();
     expect(original).toContain('RobloxToken = "crx_');
 
     // Wipe the tab's copy of the tokens, exactly as closing and reopening would.
@@ -121,7 +123,10 @@ test.describe('session lifecycle', () => {
     await expect(page.getByText('Add custom connector', { exact: false })).toBeVisible();
 
     const connectorUrl = (
-      await page.locator('pre', { hasText: `/api/mcp/${sessionId}/cmc_` }).first().innerText()
+      await page
+        .locator('pre', { hasText: `/api/mcp/${sessionId}/cmc_` })
+        .first()
+        .innerText()
     ).trim();
     expect(connectorUrl).toContain(`/api/mcp/${sessionId}/cmc_`);
 
@@ -279,6 +284,21 @@ test.describe('public endpoints', () => {
       data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
     });
     expect(response.status()).toBe(401);
+  });
+
+  test('the operator console does not exist unless configured', async ({ page, request }) => {
+    // This deployment sets no ADMIN_TOKEN, so the console must be indistinguishable
+    // from a path that was never implemented.
+    const overview = await request.get('/api/admin/overview');
+    expect(overview.status()).toBe(404);
+
+    const withGuess = await request.get('/api/admin/overview?k=some-guessed-secret-value-123456');
+    expect(withGuess.status()).toBe(404);
+
+    const response = await page.goto('/admin');
+    expect(response?.status()).toBe(404);
+    await expect(page.getByText('Operator console')).toHaveCount(0);
+    await expect(page.getByText('Connected sessions')).toHaveCount(0);
   });
 
   test('security headers are present', async ({ request }) => {

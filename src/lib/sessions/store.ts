@@ -351,6 +351,14 @@ export class SessionStore {
     return { total: this.sessions.size, active, robloxConnected, mcpConnections };
   }
 
+  /**
+   * Read-only snapshot of every session record, used by the operator console.
+   * Returns the live records, so callers must not mutate them.
+   */
+  listAll(): SessionRecord[] {
+    return [...this.sessions.values()];
+  }
+
   /** Test-only: drops every session. */
   clear(): void {
     this.sessions.clear();

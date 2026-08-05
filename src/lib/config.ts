@@ -42,6 +42,14 @@ const envSchema = z.object({
   MAX_SESSIONS: intFromEnv(500, 1, 100_000),
   /** Sessions one address may create per minute. Raised only for test runs. */
   SESSION_CREATE_PER_MINUTE: intFromEnv(12, 1, 10_000),
+  /**
+   * Operator console credential. When unset the console does not exist at all:
+   * every one of its routes answers 404, indistinguishable from a path that was
+   * never implemented.
+   */
+  ADMIN_TOKEN: z.string().min(24).optional(),
+  /** How long an operator console sign-in lasts. */
+  ADMIN_SESSION_MINUTES: intFromEnv(120, 5, 1440),
 });
 
 export interface ClovyreConfig {
@@ -60,6 +68,10 @@ export interface ClovyreConfig {
   readonly privilegeTtlMs: number;
   readonly maxSessions: number;
   readonly sessionCreatePerMinute: number;
+  /** Null when no operator console credential is configured. */
+  readonly adminToken: string | null;
+  readonly adminSessionMs: number;
+  readonly adminEnabled: boolean;
   /** True when secrets were generated at boot instead of supplied by the environment. */
   readonly usingEphemeralSecrets: boolean;
   readonly version: string;
@@ -104,6 +116,9 @@ function build(): ClovyreConfig {
     privilegeTtlMs: env.PRIVILEGE_TTL_MINUTES * 60_000,
     maxSessions: env.MAX_SESSIONS,
     sessionCreatePerMinute: env.SESSION_CREATE_PER_MINUTE,
+    adminToken: env.ADMIN_TOKEN ?? null,
+    adminSessionMs: env.ADMIN_SESSION_MINUTES * 60_000,
+    adminEnabled: Boolean(env.ADMIN_TOKEN),
     usingEphemeralSecrets,
     version: APP_VERSION,
   });
