@@ -74,14 +74,22 @@ export function useSession(sessionId: string) {
     () => null,
   );
 
+  // Rotated credentials arrive after mount, so they live in state and take
+  // precedence over whatever the creation flow stored.
+  const [rotated, setRotated] = useState<Partial<StoredSecrets> | null>(null);
+
   const secrets = useMemo<StoredSecrets | null>(() => {
-    if (!rawSecrets) return null;
-    try {
-      return JSON.parse(rawSecrets) as StoredSecrets;
-    } catch {
-      return null;
+    let stored: StoredSecrets | null = null;
+    if (rawSecrets) {
+      try {
+        stored = JSON.parse(rawSecrets) as StoredSecrets;
+      } catch {
+        stored = null;
+      }
     }
-  }, [rawSecrets]);
+    if (!stored && !rotated) return null;
+    return { ...(stored ?? {}), ...(rotated ?? {}) } as StoredSecrets;
+  }, [rawSecrets, rotated]);
 
   const refresh = useCallback(async () => {
     try {
@@ -240,5 +248,71 @@ export function useSession(sessionId: string) {
     [mutate, sessionId],
   );
 
-  return { ...state, secrets, refresh, mutate, callTool };
+  /**
+   * Issues a fresh Roblox or MCP credential so the dashboard can always show a
+   * working script. Only digests are stored server-side, so a token that has
+   * scrolled out of this tab genuinely cannot be recovered — regenerating is the
+   * honest alternative to showing nothing.
+   */
+  const regenerate = useCallback(
+    async (
+      role: 'roblox' | 'mcp',
+      options: { force?: boolean } = {},
+    ): Promise<{ ok: boolean; message: string | null; requiresConfirmation: boolean }> => {
+      const outcome = await mutate(`/api/sessions/${sessionId}/credentials/rotate`, {
+        body: { role, force: options.force ?? false },
+      });
+
+      if (!outcome.ok) {
+        const requiresConfirmation = Boolean(
+          (outcome.data as { error?: { requiresConfirmation?: boolean } } | null)?.error
+            ?.requiresConfirmation,
+        );
+        return { ok: false, message: outcome.message, requiresConfirmation };
+      }
+
+      const payload = outcome.data as {
+        secret: string;
+        loadstring?: string;
+        mcpConfig?: {
+          url: string;
+          connectorUrl: string;
+          authorizationHeader: string;
+          claudeCodeCommand: string;
+          remoteJson: string;
+          proxyJson: string;
+        };
+      };
+
+      const next: Partial<StoredSecrets> =
+        role === 'roblox'
+          ? { robloxToken: payload.secret, loadstring: payload.loadstring }
+          : {
+              mcpToken: payload.secret,
+              mcpUrl: payload.mcpConfig?.url,
+              mcpConnectorUrl: payload.mcpConfig?.connectorUrl,
+              authorizationHeader: payload.mcpConfig?.authorizationHeader,
+              claudeCodeCommand: payload.mcpConfig?.claudeCodeCommand,
+              mcpRemoteJson: payload.mcpConfig?.remoteJson,
+              mcpProxyJson: payload.mcpConfig?.proxyJson,
+            };
+
+      setRotated((previous) => ({ ...(previous ?? {}), ...next }));
+
+      // Keep the tab's copy in step so a reload does not lose it again.
+      try {
+        const key = `${SECRETS_STORAGE_PREFIX}${sessionId}`;
+        const existing = sessionStorage.getItem(key);
+        const merged = { ...(existing ? JSON.parse(existing) : {}), ...next };
+        sessionStorage.setItem(key, JSON.stringify(merged));
+      } catch {
+        // Storage refused; the in-memory copy still drives this tab.
+      }
+
+      return { ok: true, message: null, requiresConfirmation: false };
+    },
+    [mutate, sessionId],
+  );
+
+  return { ...state, secrets, refresh, mutate, callTool, regenerate };
 }

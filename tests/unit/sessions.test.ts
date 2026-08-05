@@ -107,6 +107,50 @@ describe('session credentials', () => {
     expect(session.credentials.owner.fingerprint).toBe(fingerprint(secrets.ownerToken));
   });
 
+  it('regenerates a credential, invalidating the previous one', () => {
+    const { session, secrets } = store.create();
+    expect(store.authenticate(session.id, 'roblox', secrets.robloxToken).ok).toBe(true);
+
+    const replacement = store.rotateCredential(session, 'roblox', 'owner');
+
+    expect(replacement).not.toBe(secrets.robloxToken);
+    expect(replacement.startsWith('crx_')).toBe(true);
+    expect(store.authenticate(session.id, 'roblox', replacement).ok).toBe(true);
+    expect(store.authenticate(session.id, 'roblox', secrets.robloxToken)).toEqual({
+      ok: false,
+      reason: 'invalid_credential',
+    });
+  });
+
+  it('leaves the other credentials untouched when one is regenerated', () => {
+    const { session, secrets } = store.create();
+    store.rotateCredential(session, 'roblox', 'owner');
+
+    expect(store.authenticate(session.id, 'mcp', secrets.mcpToken).ok).toBe(true);
+    expect(store.authenticate(session.id, 'owner', secrets.ownerToken).ok).toBe(true);
+  });
+
+  it('clears a revocation when the credential is regenerated', () => {
+    const { session } = store.create();
+    store.revokeCredential(session, 'mcp', 'owner');
+
+    const replacement = store.rotateCredential(session, 'mcp', 'owner');
+    expect(session.credentials.mcp.revokedAt).toBeNull();
+    expect(store.authenticate(session.id, 'mcp', replacement).ok).toBe(true);
+  });
+
+  it('audits a regeneration without recording either token', () => {
+    const { session, secrets } = store.create();
+    const replacement = store.rotateCredential(session, 'roblox', 'owner');
+
+    const events = session.audit.list();
+    expect(events.some((event) => event.kind === 'credential_rotated')).toBe(true);
+
+    const serialised = JSON.stringify(events);
+    expect(serialised).not.toContain(secrets.robloxToken);
+    expect(serialised).not.toContain(replacement);
+  });
+
   it('sweeps sessions that ended well in the past', () => {
     const { session } = store.create();
     store.terminate(session, 'done', 'owner');

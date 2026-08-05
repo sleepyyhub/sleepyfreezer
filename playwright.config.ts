@@ -31,6 +31,9 @@ export default defineConfig({
       PUBLIC_BASE_URL: baseURL,
       SESSION_SECRET: 'e2e-session-secret-value-0123456789',
       TOKEN_HASH_SECRET: 'e2e-token-hash-secret-value-0123456789',
+      // The suite creates many sessions from one address in well under a minute,
+      // which the production default (12/min) is right to reject.
+      SESSION_CREATE_PER_MINUTE: '500',
     },
   },
 });

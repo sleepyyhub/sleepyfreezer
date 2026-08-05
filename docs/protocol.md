@@ -178,9 +178,22 @@ payload ceiling per frame. Non-finite numbers become `Unsupported` rather than i
 
 ## 4. MCP over Streamable HTTP
 
-**Endpoint:** `POST https://<deployment>/api/mcp/<sessionId>`
-**Auth:** `Authorization: Bearer <session MCP token>` (or `X-Clovyre-Token` for clients that cannot
-set `Authorization`).
+**Endpoints:** two equivalent forms.
+
+```
+POST https://<deployment>/api/mcp/<sessionId>            Authorization: Bearer <MCP token>
+POST https://<deployment>/api/mcp/<sessionId>/<MCP token>
+```
+
+**Auth:** `Authorization: Bearer <session MCP token>`, or `X-Clovyre-Token`, or the token as the
+final path segment. A token in the path wins, because a client using that URL form cannot send a
+header at all.
+
+The path form exists for connector UIs that accept only a URL — claude.ai's custom connector is the
+motivating case. The credential is then visible to proxy and platform access logs, which is an
+accepted trade-off for a session-scoped credential that expires with its session and can be
+regenerated or revoked at will. Both forms authenticate against the addressed session's own digest,
+so neither can drive a different session.
 **Response:** `application/json`. Clovyre has no server-initiated messages, so it never opens an SSE
 stream and `GET` returns `405` with an explanation.
 

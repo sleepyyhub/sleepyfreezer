@@ -86,6 +86,62 @@ test.describe('session lifecycle', () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
+  test('regenerates a script automatically after a reload', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Create session' }).first().click();
+    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
+    const sessionId = page.url().split('/session/')[1]!;
+
+    const original = (await page.locator('pre', { hasText: 'ClovyreConfig' }).first().innerText()).trim();
+    expect(original).toContain('RobloxToken = "crx_');
+
+    // Wipe the tab's copy of the tokens, exactly as closing and reopening would.
+    await page.evaluate((id) => sessionStorage.removeItem(`clovyre.secrets.${id}`), sessionId);
+    await page.reload();
+
+    // A fresh, working script must appear without the user doing anything.
+    const regenerated = page.locator('pre', { hasText: 'ClovyreConfig' }).first();
+    await expect(regenerated).toBeVisible({ timeout: 20_000 });
+    const text = (await regenerated.innerText()).trim();
+
+    expect(text).toContain(`SessionId = "${sessionId}"`);
+    expect(text).toContain('RobloxToken = "crx_');
+    // It must be a genuinely new credential, not the old one resurrected.
+    expect(text).not.toEqual(original);
+
+    await expect(page.getByRole('button', { name: 'Generate a new script' })).toBeVisible();
+  });
+
+  test('shows a connector URL that needs no header', async ({ page, request }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Create session' }).first().click();
+    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
+    const sessionId = page.url().split('/session/')[1]!;
+
+    await expect(page.getByText('Add custom connector', { exact: false })).toBeVisible();
+
+    const connectorUrl = (
+      await page.locator('pre', { hasText: `/api/mcp/${sessionId}/cmc_` }).first().innerText()
+    ).trim();
+    expect(connectorUrl).toContain(`/api/mcp/${sessionId}/cmc_`);
+
+    // The URL alone must authenticate, with no Authorization header at all.
+    const response = await request.post(connectorUrl, {
+      headers: { 'content-type': 'application/json' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(response.ok()).toBe(true);
+    const body = await response.json();
+    expect(body.result.tools.length).toBeGreaterThan(20);
+
+    // A wrong token in the same position must still be refused.
+    const bad = await request.post(`/api/mcp/${sessionId}/cmc_wrongtoken`, {
+      headers: { 'content-type': 'application/json' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(bad.status()).toBe(401);
+  });
+
   test('explorer and scripts explain themselves with no client attached', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Create session' }).first().click();

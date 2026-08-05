@@ -120,10 +120,41 @@ loadstring(game:HttpGet("https://<deployment>/client.lua"))()
 Running it twice cleans up the previous connection instead of creating a duplicate. Call
 `getgenv().ClovyreDisconnect()` to stop the bridge.
 
-## Connecting an MCP client
+## Connecting Claude
 
-Clovyre speaks MCP over **Streamable HTTP**. One endpoint per session, authenticated by a bearer
-token bound to that session:
+Clovyre speaks MCP over **Streamable HTTP**. There are three ways in; pick the one matching your
+client.
+
+### Claude app (claude.ai / desktop) — recommended
+
+Claude's custom connector screen accepts a URL and offers no field for an authorization header, so
+Clovyre also publishes the endpoint with the credential in the path:
+
+```
+https://<deployment>/api/mcp/<sessionId>/<MCP token>
+```
+
+1. Settings → Connectors → **Add custom connector**
+2. Paste that URL. Leave everything else blank.
+3. Save, open a chat, and ask Claude to run `clovyre_session_info`.
+
+The dashboard generates this URL for you and offers it as a one-tap copy.
+
+**The trade-off, stated plainly:** a credential in a URL path is visible to proxy and platform
+access logs, and anyone holding the URL can drive the session. It is mitigated by the credential
+being session-scoped, expiring with the session, and being regenerable or revocable from the
+dashboard at any moment. If your client can send headers, prefer the forms below.
+
+### Claude Code
+
+```bash
+claude mcp add --transport http clovyre https://<deployment>/api/mcp/<sessionId> \
+  --header "Authorization: Bearer <MCP token>"
+```
+
+### Config file (Codex and other HTTP-capable clients)
+
+One endpoint per session, authenticated by a bearer token bound to that session:
 
 ```
 POST https://<deployment>/api/mcp/<sessionId>
@@ -148,8 +179,16 @@ For clients that accept a remote HTTP MCP server:
 For desktop clients that only speak stdio, the dashboard also generates an `mcp-remote` proxy
 configuration. The remote HTTP form is preferred — it needs no local process, which is the point.
 
-In Claude, add a custom connector with the endpoint URL and supply the bearer token as the
-authorization header. Start with `clovyre_session_info` to confirm the bridge is live.
+Start with `clovyre_session_info` to confirm the bridge is live.
+
+### Losing a token is recoverable
+
+Tokens are shown once and stored only as digests, so the original genuinely cannot be redisplayed.
+The dashboard therefore **generates a fresh one automatically** when a tab has none — after a
+reload, for instance — and offers an explicit _Generate a new script_ / _Generate a new MCP
+credential_ control at any time. Regenerating never disturbs a live Roblox bridge; it only
+invalidates the old credential for future connections, and it asks for confirmation first if
+something is currently connected with it.
 
 ## Tools
 
