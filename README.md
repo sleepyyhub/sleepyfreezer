@@ -219,7 +219,7 @@ npm run dev                    # http://localhost:3000
 
 Clovyre deploys as a single Render web service. `render.yaml` is a working blueprint.
 
-- Build: `npm ci && npm run build`
+- Build: `npm ci --include=dev && npm run build` (Render sets `NODE_ENV=production`, which would otherwise skip the devDependencies the build needs)
 - Start: `npm start`
 - Health check: `/api/health`
 - Instances: **1** — session state is in-process, so a second instance would not see the first
