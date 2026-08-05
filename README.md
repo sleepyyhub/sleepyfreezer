@@ -86,6 +86,18 @@ These are properties of the design, not bugs:
 - **Sessions are temporary and in-memory.** They expire on a timer and do not survive a restart or
   redeploy. Treat every session as disposable.
 
+## Live deployment
+
+**https://clovyre-mcp.onrender.com**
+
+Running on a Render free instance, which means two things worth knowing before you rely on it:
+
+- The service **spins down after roughly 15 minutes without traffic**, and the first request after
+  that takes ~30 seconds to wake it. Every session dies when it spins down.
+- Sessions are in-memory regardless of instance type, so any restart or redeploy ends them all.
+
+For anything beyond evaluation, move to a paid instance type — `render.yaml` documents the settings.
+
 ## Quick start (as a user)
 
 1. Open the deployment and tap **Create session**.
@@ -222,6 +234,7 @@ Clovyre deploys as a single Render web service. `render.yaml` is a working bluep
 - Build: `npm ci --include=dev && npm run build` (Render sets `NODE_ENV=production`, which would otherwise skip the devDependencies the build needs)
 - Start: `npm start`
 - Health check: `/api/health`
+- Instance type: the live deployment uses `free`; sessions do not survive its spin-down.
 - Instances: **1** — session state is in-process, so a second instance would not see the first
   instance's sessions. Scaling out requires a shared broker (Redis or equivalent).
 
@@ -241,6 +254,8 @@ configuration needs neither.
 ## Production limitations
 
 - Single instance only. A redeploy or restart ends every live session.
+- On the free instance type the service also spins down after ~15 minutes of inactivity, ending
+  every session, and the next request pays a cold-start delay.
 - No durable storage; nothing survives a restart by design.
 - No ownership verification.
 - Rate limits and session state are per-process, so they reset with the process.
