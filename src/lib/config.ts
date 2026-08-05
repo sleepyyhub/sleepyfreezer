@@ -1,0 +1,143 @@
+import { randomBytes } from 'node:crypto';
+import { z } from 'zod';
+
+/**
+ * Runtime configuration for Clovyre.
+ *
+ * Every value is read once, validated with Zod, and frozen on globalThis so the
+ * Next.js bundle and the custom Node server observe the same configuration
+ * object even though they load modules through different registries.
+ */
+
+const intFromEnv = (fallback: number, min: number, max: number) =>
+  z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined || value === '' ? fallback : Number(value)))
+    .pipe(z.number().int().min(min).max(max));
+
+const boolFromEnv = (fallback: boolean) =>
+  z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value === '') return fallback;
+      return value === '1' || value.toLowerCase() === 'true';
+    })
+    .pipe(z.boolean());
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: intFromEnv(3000, 1, 65535),
+  PUBLIC_BASE_URL: z.string().url().optional(),
+  SESSION_SECRET: z.string().min(16).optional(),
+  TOKEN_HASH_SECRET: z.string().min(16).optional(),
+  SESSION_TTL_MINUTES: intFromEnv(60, 1, 24 * 60),
+  MAX_WS_PAYLOAD_BYTES: intFromEnv(512 * 1024, 4096, 8 * 1024 * 1024),
+  MAX_COMMAND_TIMEOUT_MS: intFromEnv(30_000, 1000, 120_000),
+  MAX_SCRIPT_SOURCE_BYTES: intFromEnv(256 * 1024, 1024, 4 * 1024 * 1024),
+  ENABLE_EXECUTE_LUAU_FEATURE: boolFromEnv(true),
+  ENABLE_MUTATION_TOOLS_FEATURE: boolFromEnv(true),
+  PRIVILEGE_TTL_MINUTES: intFromEnv(15, 1, 120),
+  MAX_SESSIONS: intFromEnv(500, 1, 100_000),
+});
+
+export interface ClovyreConfig {
+  readonly nodeEnv: 'development' | 'test' | 'production';
+  readonly isProduction: boolean;
+  readonly port: number;
+  readonly publicBaseUrl: string | null;
+  readonly sessionSecret: string;
+  readonly tokenHashSecret: string;
+  readonly sessionTtlMs: number;
+  readonly maxWsPayloadBytes: number;
+  readonly maxCommandTimeoutMs: number;
+  readonly maxScriptSourceBytes: number;
+  readonly executeLuauFeatureEnabled: boolean;
+  readonly mutationToolsFeatureEnabled: boolean;
+  readonly privilegeTtlMs: number;
+  readonly maxSessions: number;
+  /** True when secrets were generated at boot instead of supplied by the environment. */
+  readonly usingEphemeralSecrets: boolean;
+  readonly version: string;
+}
+
+const APP_VERSION = '0.1.0';
+
+function build(): ClovyreConfig {
+  const parsed = envSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Invalid Clovyre environment configuration -> ${detail}`);
+  }
+  const env = parsed.data;
+  const isProduction = env.NODE_ENV === 'production';
+
+  const usingEphemeralSecrets = !env.SESSION_SECRET || !env.TOKEN_HASH_SECRET;
+  if (usingEphemeralSecrets && isProduction) {
+    // Ephemeral secrets are survivable (sessions are in-memory anyway) but the
+    // operator needs to know that a restart invalidates every issued cookie.
+    console.warn(
+      '[clovyre] SESSION_SECRET / TOKEN_HASH_SECRET are not set. Generating ephemeral secrets; ' +
+        'all sessions and owner cookies will be invalidated on restart.',
+    );
+  }
+
+  return Object.freeze({
+    nodeEnv: env.NODE_ENV,
+    isProduction,
+    port: env.PORT,
+    publicBaseUrl: env.PUBLIC_BASE_URL ? env.PUBLIC_BASE_URL.replace(/\/+$/, '') : null,
+    sessionSecret: env.SESSION_SECRET ?? randomBytes(32).toString('hex'),
+    tokenHashSecret: env.TOKEN_HASH_SECRET ?? randomBytes(32).toString('hex'),
+    sessionTtlMs: env.SESSION_TTL_MINUTES * 60_000,
+    maxWsPayloadBytes: env.MAX_WS_PAYLOAD_BYTES,
+    maxCommandTimeoutMs: env.MAX_COMMAND_TIMEOUT_MS,
+    maxScriptSourceBytes: env.MAX_SCRIPT_SOURCE_BYTES,
+    executeLuauFeatureEnabled: env.ENABLE_EXECUTE_LUAU_FEATURE,
+    mutationToolsFeatureEnabled: env.ENABLE_MUTATION_TOOLS_FEATURE,
+    privilegeTtlMs: env.PRIVILEGE_TTL_MINUTES * 60_000,
+    maxSessions: env.MAX_SESSIONS,
+    usingEphemeralSecrets,
+    version: APP_VERSION,
+  });
+}
+
+type ConfigGlobal = typeof globalThis & { __clovyreConfig?: ClovyreConfig };
+
+export function getConfig(): ClovyreConfig {
+  const store = globalThis as ConfigGlobal;
+  if (!store.__clovyreConfig) {
+    store.__clovyreConfig = build();
+  }
+  return store.__clovyreConfig;
+}
+
+/** Test-only reset so suites can exercise different environment shapes. */
+export function resetConfigForTests(): void {
+  delete (globalThis as ConfigGlobal).__clovyreConfig;
+}
+
+/**
+ * Resolves the externally reachable origin. PUBLIC_BASE_URL wins; otherwise we
+ * fall back to the request's forwarded host, which is what Render provides.
+ */
+export function resolvePublicBaseUrl(headers: { get(name: string): string | null }): string {
+  const config = getConfig();
+  if (config.publicBaseUrl) return config.publicBaseUrl;
+
+  const forwardedHost = headers.get('x-forwarded-host') ?? headers.get('host');
+  const forwardedProto =
+    headers.get('x-forwarded-proto') ?? (config.isProduction ? 'https' : 'http');
+  if (forwardedHost) {
+    return `${forwardedProto.split(',')[0]!.trim()}://${forwardedHost.split(',')[0]!.trim()}`;
+  }
+  return `http://localhost:${config.port}`;
+}
+
+/** Converts an http(s) origin into the matching ws(s) origin. */
+export function toWebSocketOrigin(baseUrl: string): string {
+  return baseUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+}
