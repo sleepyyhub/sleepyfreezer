@@ -374,7 +374,7 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
           </P>
           <Ul
             items={[
-              'Build: npm ci && npm run build — compiles the Next.js app and the TypeScript server.',
+              'Build: npm ci --include=dev && npm run build — Render sets NODE_ENV=production, which would otherwise make npm ci skip the devDependencies the build needs.',
               'Start: npm start — runs the compiled server, which binds to process.env.PORT.',
               'Health check path: /api/health.',
               'Instance count: one. Session state is in-process, so a second instance would not see the first instance sessions.',
