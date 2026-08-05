@@ -11,6 +11,7 @@ import {
 } from '../src/lib/protocol/messages';
 import { getSessionBroker, type RobloxTransport } from '../src/lib/sessions/broker';
 import { getSessionStore, hashAddress } from '../src/lib/sessions/store';
+import { ingestClientEvent, resetObservations } from '../src/lib/sessions/observations';
 import { sessionStatus, type SessionRecord } from '../src/lib/sessions/types';
 import { getRateLimiter } from '../src/lib/security/rate-limit';
 import { normalizeIncoming } from '../src/lib/serialization/roblox-value';
@@ -231,12 +232,17 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
       }
 
       case 'event': {
-        session.audit.record({
-          kind: 'client_event',
-          actor: 'roblox',
-          message: `Client event: ${message.event}`,
-          detail: message.data,
-        });
+        // Watcher and remote-spy traffic is high volume, so it goes into the
+        // bounded observation buffers instead of the audit trail.
+        const consumed = ingestClientEvent(session, message.event, message.data);
+        if (!consumed) {
+          session.audit.record({
+            kind: 'client_event',
+            actor: 'roblox',
+            message: `Client event: ${message.event}`,
+            detail: message.data,
+          });
+        }
         break;
       }
 
@@ -372,6 +378,8 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
     const session = store.get(state.sessionId);
     if (session?.roblox?.connectionId === state.id) {
       session.roblox = null;
+      // Hooks and watchers lived in the client that just went away.
+      resetObservations(session);
       session.audit.record({
         kind: 'roblox_disconnected',
         actor: 'roblox',

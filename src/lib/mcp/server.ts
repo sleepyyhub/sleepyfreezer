@@ -5,6 +5,7 @@ import type { SessionRecord } from '../sessions/types';
 import { invokeTool } from '../tools/invoke';
 import { type ToolDefinition } from '../tools/registry';
 import { listableTools } from './tool-availability';
+import { listResources, readResource } from './resources';
 
 /**
  * Remote MCP server over Streamable HTTP.
@@ -179,7 +180,7 @@ async function handleSingle(
 
       return ok(id, {
         protocolVersion: negotiated,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: { listChanged: true } },
         serverInfo: {
           name: 'clovyre-mcp',
           title: 'Clovyre MCP',
@@ -188,8 +189,11 @@ async function handleSingle(
         instructions:
           'Clovyre bridges a live Roblox client to this agent. Only state replicated to that client is ' +
           'reachable: server scripts, ServerStorage, ServerScriptService and server memory are not. Start ' +
-          'with clovyre_session_info to confirm the client is connected, then clovyre_get_services to orient. ' +
-          'Script sources may be decompiled and are best-effort, not guaranteed originals.',
+          'with clovyre_session_info to confirm the client is connected, then clovyre_get_services to orient, ' +
+          'or attach the clovyre://session and clovyre://services resources instead. Script sources may be ' +
+          'decompiled and are best-effort, not guaranteed originals. To observe change over time, install a ' +
+          'watcher with clovyre_watch_start and poll clovyre_get_watch_events rather than re-reading the same ' +
+          'instance repeatedly.',
       });
     }
 
@@ -218,7 +222,31 @@ async function handleSingle(
     }
 
     case 'resources/list':
-      return ok(id, { resources: [] });
+      return ok(id, { resources: listResources(session) });
+
+    case 'resources/read': {
+      const params = (request.params ?? {}) as { uri?: unknown };
+      if (typeof params.uri !== 'string') {
+        return fail(
+          id,
+          JsonRpcErrorCodes.INVALID_PARAMS,
+          'resources/read requires a string "uri".',
+        );
+      }
+      try {
+        const contents = await readResource(session, params.uri);
+        return ok(id, { contents: [contents] });
+      } catch (error) {
+        return fail(
+          id,
+          JsonRpcErrorCodes.INVALID_PARAMS,
+          error instanceof Error ? error.message : 'That resource could not be read.',
+        );
+      }
+    }
+
+    case 'resources/templates/list':
+      return ok(id, { resourceTemplates: [] });
     case 'prompts/list':
       return ok(id, { prompts: [] });
 

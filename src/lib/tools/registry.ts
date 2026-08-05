@@ -17,6 +17,7 @@ import type { PrivilegeName } from '../sessions/types';
 export type ToolCategory =
   | 'session'
   | 'discovery'
+  | 'observation'
   | 'scripts'
   | 'runtime'
   | 'activity'
@@ -271,6 +272,167 @@ const discoveryTools: ToolDefinition[] = [
       maxNodes: args.maxNodes,
       childLimitPerNode: args.childLimitPerNode,
     }),
+  }),
+  tool({
+    name: 'clovyre_get_gui_tree',
+    title: 'Inspect the GUI hierarchy',
+    description:
+      'Returns the on-screen GUI hierarchy with text, visibility, absolute position and size already ' +
+      'resolved, so you can answer questions about the interface without walking the tree property by ' +
+      'property. Defaults to the local PlayerGui; pass a root to scope it elsewhere, and set ' +
+      'visibleOnly to skip hidden branches.',
+    category: 'discovery',
+    inputSchema: z.object({
+      root: target.optional(),
+      maxDepth: z.number().int().min(1).max(12).default(6),
+      maxNodes: limitField(800, 250),
+      visibleOnly: z.boolean().default(false),
+      includeText: z.boolean().default(true),
+      includeCoreGui: z.boolean().default(false),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 20_000,
+    toCommand: (args) => ({
+      root: args.root ? targetToCommand(args.root) : null,
+      maxDepth: args.maxDepth,
+      maxNodes: args.maxNodes,
+      visibleOnly: args.visibleOnly,
+      includeText: args.includeText,
+      includeCoreGui: args.includeCoreGui,
+    }),
+  }),
+];
+
+/* ------------------------------------------------------------------ */
+/* Observation: watchers and the remote spy                            */
+/* ------------------------------------------------------------------ */
+
+const observationTools: ToolDefinition[] = [
+  tool({
+    name: 'clovyre_watch_start',
+    title: 'Watch an instance for changes',
+    description:
+      'Installs a watcher on a visible instance and streams its changes back to Clovyre, where they are ' +
+      'buffered for you to poll with clovyre_get_watch_events. Watch a property, attributes, or ' +
+      'children being added and removed. Use this instead of polling the same tool repeatedly: it ' +
+      'catches changes you would otherwise miss between calls.',
+    category: 'observation',
+    inputSchema: withTarget({
+      kinds: z
+        .array(z.enum(['property', 'attribute', 'childAdded', 'childRemoved']))
+        .min(1)
+        .max(4)
+        .default(['property']),
+      /** Required when watching a property; must be in the safe registry. */
+      property: z.string().max(128).optional(),
+      attribute: z.string().max(128).optional(),
+      label: z.string().max(64).optional(),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({
+      ...targetToCommand(args),
+      kinds: args.kinds,
+      property: args.property ?? null,
+      attribute: args.attribute ?? null,
+      label: args.label ?? null,
+    }),
+  }),
+  tool({
+    name: 'clovyre_watch_stop',
+    title: 'Stop a watcher',
+    description:
+      'Removes one watcher by id, or every watcher when "all" is true. Watchers are also cleared ' +
+      'automatically when the Roblox client disconnects.',
+    category: 'observation',
+    inputSchema: z.object({
+      watchId: z.string().max(64).optional(),
+      all: z.boolean().default(false),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 10_000,
+    toCommand: (args) => ({ watchId: args.watchId ?? null, all: args.all }),
+  }),
+  tool({
+    name: 'clovyre_list_watches',
+    title: 'List active watchers',
+    description:
+      'Returns the watchers currently installed on the client and what each one observes.',
+    category: 'observation',
+    inputSchema: empty,
+    local: true,
+    readOnly: true,
+    defaultTimeoutMs: 5_000,
+  }),
+  tool({
+    name: 'clovyre_get_watch_events',
+    title: 'Read buffered watch events',
+    description:
+      'Returns changes recorded by active watchers, newest first. The buffer is capped, so poll it ' +
+      'while you work rather than waiting until the end. Reports how many events were dropped if the ' +
+      'buffer overflowed.',
+    category: 'observation',
+    inputSchema: z.object({
+      limit: limitField(200, 50),
+      watchId: z.string().max(64).optional(),
+      since: z.number().int().min(0).optional(),
+      clear: z.boolean().default(false),
+    }),
+    local: true,
+    readOnly: true,
+    defaultTimeoutMs: 5_000,
+  }),
+  tool({
+    name: 'clovyre_remote_spy_start',
+    title: 'Observe outgoing remote traffic (privileged)',
+    description:
+      'Records RemoteEvent and RemoteFunction calls this client sends to the server, with serialized ' +
+      'arguments, so you can see how the game actually communicates. Observation only — Clovyre has no ' +
+      'tool for firing a remote. This installs a metatable hook in the running client, which can break ' +
+      'the game, so the session owner must enable the remote spy in the dashboard first.',
+    category: 'observation',
+    inputSchema: z.object({
+      includeArguments: z.boolean().default(true),
+      nameFilter: z.string().max(128).optional(),
+      maxArgumentBytes: z.number().int().min(64).max(20_000).default(2_000),
+    }),
+    requiresPrivilege: 'remote_spy',
+    requiresCapability: 'hookmetamethod',
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({
+      includeArguments: args.includeArguments,
+      nameFilter: args.nameFilter ?? null,
+      maxArgumentBytes: args.maxArgumentBytes,
+    }),
+  }),
+  tool({
+    name: 'clovyre_remote_spy_stop',
+    title: 'Stop observing remote traffic',
+    description: 'Removes the remote spy hook. Already-recorded calls stay readable in the buffer.',
+    category: 'observation',
+    inputSchema: empty,
+    readOnly: true,
+    defaultTimeoutMs: 10_000,
+    toCommand: () => ({}),
+  }),
+  tool({
+    name: 'clovyre_get_remote_calls',
+    title: 'Read observed remote calls',
+    description:
+      'Returns remote calls recorded by the spy, newest first, with their serialized arguments. ' +
+      'Filter by remote name to follow one channel.',
+    category: 'observation',
+    inputSchema: z.object({
+      limit: limitField(200, 50),
+      remoteName: z.string().max(128).optional(),
+      method: z.enum(['FireServer', 'InvokeServer', 'any']).default('any'),
+      since: z.number().int().min(0).optional(),
+      clear: z.boolean().default(false),
+    }),
+    local: true,
+    readOnly: true,
+    defaultTimeoutMs: 5_000,
   }),
 ];
 
@@ -695,6 +857,7 @@ const privilegedTools: ToolDefinition[] = [
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   ...sessionTools,
   ...discoveryTools,
+  ...observationTools,
   ...scriptTools,
   ...runtimeTools,
   ...activityTools,

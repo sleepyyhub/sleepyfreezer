@@ -60,7 +60,9 @@ export function SessionHeader({ session }: { session: SessionView }) {
         </div>
         <p className="text-[12.5px] text-ink-faint">
           {session.status === 'active'
-            ? `Expires in ${formatDuration(session.expiresInSeconds)}`
+            ? session.expiresInSeconds === null
+              ? 'No timed expiry — runs until terminated'
+              : `Expires in ${formatDuration(session.expiresInSeconds)}`
             : session.status === 'expired'
               ? 'Expired'
               : `Terminated — ${session.terminationReason ?? 'no reason recorded'}`}

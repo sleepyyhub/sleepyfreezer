@@ -46,7 +46,7 @@ export interface ConnectedSessionRow {
   readonly agents: readonly ConnectedAgent[];
   readonly startedAt: string;
   readonly ageSeconds: number;
-  readonly expiresInSeconds: number;
+  readonly expiresInSeconds: number | null;
 }
 
 export interface AdminOverview {
@@ -54,7 +54,7 @@ export interface AdminOverview {
   readonly service: {
     readonly version: string;
     readonly uptimeSeconds: number;
-    readonly sessionTtlMinutes: number;
+    readonly sessionTtlMinutes: number | null;
   };
   readonly totals: {
     /** Every one of these is measured, never configured. */
@@ -94,7 +94,8 @@ function toRow(session: SessionRecord, now: number): ConnectedSessionRow {
     })),
     startedAt: new Date(session.createdAt).toISOString(),
     ageSeconds: Math.floor((now - session.createdAt) / 1000),
-    expiresInSeconds: Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
+    expiresInSeconds:
+      session.expiresAt === null ? null : Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
   };
 }
 
@@ -123,7 +124,8 @@ export function buildAdminOverview(now = Date.now()): AdminOverview {
     service: {
       version: config.version,
       uptimeSeconds: Math.floor(process.uptime()),
-      sessionTtlMinutes: Math.round(config.sessionTtlMs / 60_000),
+      sessionTtlMinutes:
+        config.sessionTtlMs === null ? null : Math.round(config.sessionTtlMs / 60_000),
     },
     totals: {
       sessions: stats.total,

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionStore } from '../../src/lib/sessions/store';
 import { sessionStatus } from '../../src/lib/sessions/types';
 import { getConfig, resetConfigForTests } from '../../src/lib/config';
@@ -252,9 +252,15 @@ describe('token primitives', () => {
 describe('config', () => {
   beforeEach(() => resetConfigForTests());
 
-  it('rejects an invalid session lifetime rather than silently defaulting', () => {
-    process.env.SESSION_TTL_MINUTES = '0';
+  it('rejects an out-of-range session lifetime rather than silently defaulting', () => {
+    // 0 is meaningful now (never expire), so the invalid case is out of range.
+    process.env.SESSION_TTL_MINUTES = '999999';
     expect(() => getConfig()).toThrow(/Invalid Clovyre environment/);
+
+    process.env.SESSION_TTL_MINUTES = '-5';
+    resetConfigForTests();
+    expect(() => getConfig()).toThrow(/Invalid Clovyre environment/);
+
     delete process.env.SESSION_TTL_MINUTES;
     resetConfigForTests();
   });
@@ -274,5 +280,57 @@ describe('config', () => {
     if (previousSession) process.env.SESSION_SECRET = previousSession;
     if (previousHash) process.env.TOKEN_HASH_SECRET = previousHash;
     resetConfigForTests();
+  });
+});
+
+describe('sessions that never expire', () => {
+  beforeEach(() => {
+    resetConfigForTests();
+    process.env.SESSION_SECRET = 'unit-test-session-secret-0123456789';
+    process.env.TOKEN_HASH_SECRET = 'unit-test-token-hash-secret-0123456789';
+    process.env.SESSION_TTL_MINUTES = '0';
+  });
+
+  afterAll(() => {
+    delete process.env.SESSION_TTL_MINUTES;
+    resetConfigForTests();
+  });
+
+  it('creates sessions with no expiry when the TTL is zero', () => {
+    const store = new SessionStore();
+    const { session } = store.create();
+
+    expect(getConfig().sessionTtlMs).toBeNull();
+    expect(session.expiresAt).toBeNull();
+    expect(sessionStatus(session)).toBe('active');
+  });
+
+  it('stays active arbitrarily far into the future', () => {
+    const store = new SessionStore();
+    const { session, secrets } = store.create();
+
+    const aYearOn = Date.now() + 365 * 24 * 60 * 60_000;
+    expect(sessionStatus(session, aYearOn)).toBe('active');
+    expect(store.authenticate(session.id, 'mcp', secrets.mcpToken).ok).toBe(true);
+  });
+
+  it('can still be terminated explicitly', () => {
+    const store = new SessionStore();
+    const { session, secrets } = store.create();
+
+    store.terminate(session, 'done', 'owner');
+    expect(sessionStatus(session)).toBe('terminated');
+    expect(store.authenticate(session.id, 'mcp', secrets.mcpToken)).toEqual({
+      ok: false,
+      reason: 'session_terminated',
+    });
+  });
+
+  it('is never swept while it is still active', () => {
+    const store = new SessionStore();
+    const { session } = store.create();
+
+    expect(store.sweep(Date.now() + 10 * 365 * 24 * 60 * 60_000)).toBe(0);
+    expect(store.get(session.id)).not.toBeNull();
   });
 });

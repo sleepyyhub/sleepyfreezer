@@ -42,6 +42,9 @@ export function evaluateTool(session: SessionRecord, definition: ToolDefinition)
   if (definition.requiresPrivilege === 'mutations' && !config.mutationToolsFeatureEnabled) {
     return deny('feature_disabled', 'Mutation tools are disabled on this Clovyre deployment.');
   }
+  if (definition.requiresPrivilege === 'remote_spy' && !config.remoteSpyFeatureEnabled) {
+    return deny('feature_disabled', 'The remote spy is disabled on this Clovyre deployment.');
+  }
 
   if (definition.requiresPrivilege && !store.hasPrivilege(session, definition.requiresPrivilege)) {
     return deny(

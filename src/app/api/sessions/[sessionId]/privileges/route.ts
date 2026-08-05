@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const bodySchema = z.object({
-  privilege: z.enum(['execute_luau', 'executor_globals', 'mutations']),
+  privilege: z.enum(['execute_luau', 'executor_globals', 'mutations', 'remote_spy']),
   enabled: z.boolean(),
   /**
    * Free-text acknowledgement the dashboard sends when switching a privilege on.
@@ -50,6 +50,9 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   }
   if (enabled && privilege === 'mutations' && !config.mutationToolsFeatureEnabled) {
     return apiError('FEATURE_DISABLED', 'Mutation tools are disabled on this deployment.', 409);
+  }
+  if (enabled && privilege === 'remote_spy' && !config.remoteSpyFeatureEnabled) {
+    return apiError('FEATURE_DISABLED', 'The remote spy is disabled on this deployment.', 409);
   }
   if (enabled && privilege === 'executor_globals' && !config.executeLuauFeatureEnabled) {
     return apiError(

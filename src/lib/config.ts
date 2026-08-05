@@ -32,12 +32,14 @@ const envSchema = z.object({
   PUBLIC_BASE_URL: z.string().url().optional(),
   SESSION_SECRET: z.string().min(16).optional(),
   TOKEN_HASH_SECRET: z.string().min(16).optional(),
-  SESSION_TTL_MINUTES: intFromEnv(60, 1, 24 * 60),
+  /** Session lifetime in minutes. 0 means sessions never expire on a timer. */
+  SESSION_TTL_MINUTES: intFromEnv(60, 0, 7 * 24 * 60),
   MAX_WS_PAYLOAD_BYTES: intFromEnv(512 * 1024, 4096, 8 * 1024 * 1024),
   MAX_COMMAND_TIMEOUT_MS: intFromEnv(30_000, 1000, 120_000),
   MAX_SCRIPT_SOURCE_BYTES: intFromEnv(256 * 1024, 1024, 4 * 1024 * 1024),
   ENABLE_EXECUTE_LUAU_FEATURE: boolFromEnv(true),
   ENABLE_MUTATION_TOOLS_FEATURE: boolFromEnv(true),
+  ENABLE_REMOTE_SPY_FEATURE: boolFromEnv(true),
   PRIVILEGE_TTL_MINUTES: intFromEnv(15, 1, 120),
   MAX_SESSIONS: intFromEnv(500, 1, 100_000),
   /** Sessions one address may create per minute. Raised only for test runs. */
@@ -59,12 +61,14 @@ export interface ClovyreConfig {
   readonly publicBaseUrl: string | null;
   readonly sessionSecret: string;
   readonly tokenHashSecret: string;
-  readonly sessionTtlMs: number;
+  /** Null when sessions never expire on a timer. */
+  readonly sessionTtlMs: number | null;
   readonly maxWsPayloadBytes: number;
   readonly maxCommandTimeoutMs: number;
   readonly maxScriptSourceBytes: number;
   readonly executeLuauFeatureEnabled: boolean;
   readonly mutationToolsFeatureEnabled: boolean;
+  readonly remoteSpyFeatureEnabled: boolean;
   readonly privilegeTtlMs: number;
   readonly maxSessions: number;
   readonly sessionCreatePerMinute: number;
@@ -107,12 +111,13 @@ function build(): ClovyreConfig {
     publicBaseUrl: env.PUBLIC_BASE_URL ? env.PUBLIC_BASE_URL.replace(/\/+$/, '') : null,
     sessionSecret: env.SESSION_SECRET ?? randomBytes(32).toString('hex'),
     tokenHashSecret: env.TOKEN_HASH_SECRET ?? randomBytes(32).toString('hex'),
-    sessionTtlMs: env.SESSION_TTL_MINUTES * 60_000,
+    sessionTtlMs: env.SESSION_TTL_MINUTES === 0 ? null : env.SESSION_TTL_MINUTES * 60_000,
     maxWsPayloadBytes: env.MAX_WS_PAYLOAD_BYTES,
     maxCommandTimeoutMs: env.MAX_COMMAND_TIMEOUT_MS,
     maxScriptSourceBytes: env.MAX_SCRIPT_SOURCE_BYTES,
     executeLuauFeatureEnabled: env.ENABLE_EXECUTE_LUAU_FEATURE,
     mutationToolsFeatureEnabled: env.ENABLE_MUTATION_TOOLS_FEATURE,
+    remoteSpyFeatureEnabled: env.ENABLE_REMOTE_SPY_FEATURE,
     privilegeTtlMs: env.PRIVILEGE_TTL_MINUTES * 60_000,
     maxSessions: env.MAX_SESSIONS,
     sessionCreatePerMinute: env.SESSION_CREATE_PER_MINUTE,

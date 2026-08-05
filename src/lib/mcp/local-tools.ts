@@ -44,8 +44,12 @@ export function sessionInfo(session: SessionRecord): Record<string, unknown> {
     },
     session: {
       createdAt: new Date(session.createdAt).toISOString(),
-      expiresAt: new Date(session.expiresAt).toISOString(),
-      expiresInSeconds: Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
+      expiresAt: session.expiresAt === null ? null : new Date(session.expiresAt).toISOString(),
+      expiresInSeconds:
+        session.expiresAt === null
+          ? null
+          : Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
+      neverExpires: session.expiresAt === null,
       ageSeconds: Math.floor((now - session.createdAt) / 1000),
       mcpConnections: session.mcpConnections.size,
     },
@@ -141,6 +145,114 @@ export function recentErrors(session: SessionRecord, limit: number): Record<stri
       kind: event.kind,
       message: event.message,
     })),
+  };
+}
+
+/** Watchers the client currently has installed. */
+export function listWatches(session: SessionRecord): Record<string, unknown> {
+  const observations = session.observations;
+  return {
+    active: [...observations.activeWatches.entries()].map(([watchId, watch]) => ({
+      watchId,
+      target: watch.target,
+      kinds: watch.kinds,
+    })),
+    count: observations.activeWatches.size,
+    bufferedEvents: observations.watchEvents.length,
+    droppedEvents: observations.droppedWatchEvents,
+    note:
+      observations.activeWatches.size === 0
+        ? 'No watchers are installed. Use clovyre_watch_start to add one.'
+        : 'Poll clovyre_get_watch_events to read what these watchers recorded.',
+  };
+}
+
+export function getWatchEvents(
+  session: SessionRecord,
+  options: { limit: number; watchId?: string; since?: number; clear?: boolean },
+): Record<string, unknown> {
+  const observations = session.observations;
+  let events = observations.watchEvents;
+
+  if (options.watchId) events = events.filter((event) => event.watchId === options.watchId);
+  if (options.since) events = events.filter((event) => event.at > options.since!);
+
+  const selected = events.slice(-options.limit).reverse();
+  const dropped = observations.droppedWatchEvents;
+
+  if (options.clear) {
+    observations.watchEvents.length = 0;
+    observations.droppedWatchEvents = 0;
+  }
+
+  return {
+    events: selected.map((event) => ({
+      at: new Date(event.at).toISOString(),
+      atEpochMs: event.at,
+      watchId: event.watchId,
+      kind: event.kind,
+      target: event.target,
+      detail: event.detail,
+    })),
+    returned: selected.length,
+    buffered: observations.watchEvents.length,
+    dropped,
+    activeWatches: observations.activeWatches.size,
+    note:
+      dropped > 0
+        ? `${dropped} event(s) were dropped because the buffer filled. Poll more often or narrow the watch.`
+        : undefined,
+  };
+}
+
+export function getRemoteCalls(
+  session: SessionRecord,
+  options: { limit: number; remoteName?: string; method?: string; since?: number; clear?: boolean },
+): Record<string, unknown> {
+  const observations = session.observations;
+  let calls = observations.remoteCalls;
+
+  if (options.remoteName) {
+    const needle = options.remoteName.toLowerCase();
+    calls = calls.filter((call) => call.remote.toLowerCase().includes(needle));
+  }
+  if (options.method && options.method !== 'any') {
+    calls = calls.filter((call) => call.method === options.method);
+  }
+  if (options.since) calls = calls.filter((call) => call.at > options.since!);
+
+  const selected = calls.slice(-options.limit).reverse();
+  const dropped = observations.droppedRemoteCalls;
+
+  if (options.clear) {
+    observations.remoteCalls.length = 0;
+    observations.droppedRemoteCalls = 0;
+  }
+
+  return {
+    spyActive: observations.remoteSpyActive,
+    startedAt: observations.remoteSpyStartedAt
+      ? new Date(observations.remoteSpyStartedAt).toISOString()
+      : null,
+    calls: selected.map((call) => ({
+      at: new Date(call.at).toISOString(),
+      atEpochMs: call.at,
+      remote: call.remote,
+      className: call.className,
+      method: call.method,
+      argCount: call.argCount,
+      args: call.args,
+      callerScript: call.callerScript,
+      truncated: call.truncated,
+    })),
+    returned: selected.length,
+    buffered: observations.remoteCalls.length,
+    dropped,
+    note: !observations.remoteSpyActive
+      ? 'The remote spy is not running. The session owner must enable it, then call clovyre_remote_spy_start.'
+      : dropped > 0
+        ? `${dropped} call(s) were dropped because the buffer filled. Poll more often or use nameFilter.`
+        : 'Outgoing client-to-server calls only. Clovyre cannot fire remotes.',
   };
 }
 
