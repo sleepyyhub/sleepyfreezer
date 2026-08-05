@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Key Tester</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --panel: #fff; --text: #111; --muted: #666;
+    --border: #e3e3e6; --accent: #4f46e5; --ok: #059669; --err: #dc2626;
+    --code-bg: #f1f1f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f0f11; --panel:#1a1a1d; --text:#f2f2f3; --muted:#9a9aa2;
+      --border:#2a2a2f; --accent:#818cf8; --ok:#34d399; --err:#f87171; --code-bg:#242428; }
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f7f8; --panel: #fff; --text: #111; --muted: #666;
+    --border: #e3e3e6; --accent: #4f46e5; --ok: #059669; --err: #dc2626; --code-bg:#f1f1f3;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0f0f11; --panel:#1a1a1d; --text:#f2f2f3; --muted:#9a9aa2;
+    --border:#2a2a2f; --accent:#818cf8; --ok:#34d399; --err:#f87171; --code-bg:#242428;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 16px; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .sub { color: var(--muted); margin-bottom: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; margin-bottom: 14px; }
+  label { display:block; font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+  input, textarea, select { width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    font: inherit; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  textarea { font-family: inherit; min-height: 60px; resize: vertical; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:10px; }
+  button { background: var(--accent); color: white; border: 0; border-radius: 8px;
+    padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .detect { display:flex; align-items:center; gap:10px; margin-top: 10px; font-size: 14px; }
+  .badge { display:inline-block; padding: 3px 10px; border-radius: 999px;
+    background: var(--code-bg); color: var(--text); font-weight: 600; font-size: 12px; }
+  .badge.unknown { color: var(--muted); }
+  .result { white-space: pre-wrap; word-wrap: break-word; background: var(--code-bg);
+    padding: 12px; border-radius: 8px; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px; max-height: 400px; overflow: auto; }
+  .status { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .status.ok { color: var(--ok); font-weight: 600; }
+  .status.err { color: var(--err); font-weight: 600; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .warn { background: rgba(220, 38, 38, .08); border:1px solid rgba(220,38,38,.3);
+    padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+</style>
+
+</head><body>
+<div class="wrap">
+  <h1>🔑 Live API Key Tester</h1>
+  <div class="sub">Paste an API key. I'll guess the provider and ask its model to introduce itself.</div>
+
+  <div class="warn">
+    <strong>Heads-up:</strong> If this page is opened inside claude.ai's artifact viewer, browser CSP will
+    block the outbound API request. Save this HTML and open it as a local file (or host it) for it to
+    actually call the API. Keys stay in your browser — nothing is stored or sent anywhere except the
+    provider's own API.
+  </div>
+
+  <div class="panel">
+    <label for="key">API Key</label>
+    <input id="key" type="password" placeholder="sk-..., sk-ant-..., AIza..., gsk_..., xai-..." autocomplete="off" />
+    <div class="detect">
+      Detected: <span id="detected" class="badge unknown">—</span>
+      <span id="model-info" style="color:var(--muted); font-size:13px;"></span>
+    </div>
+
+    <div id="model-picker-wrap" style="margin-top:12px; display:none;">
+      <label for="modelpick">Model</label>
+      <select id="modelpick"></select>
+    </div>
+
+    <div style="margin-top:14px;">
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt">Explain who you are.</textarea>
+    </div>
+
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer; font-weight:600; font-size:13px;">Advanced: custom endpoint / model</summary>
+      <div style="margin-top:10px;">
+        <label for="endpoint">API format</label>
+        <select id="endpoint">
+          <option value="auto">Auto (use detected provider)</option>
+          <option value="openai">OpenAI-compatible (chat/completions)</option>
+          <option value="anthropic">Anthropic Messages</option>
+          <option value="gemini">Google Gemini generateContent</option>
+          <option value="cohere">Cohere v2/chat</option>
+        </select>
+      </div>
+      <div style="margin-top:10px;">
+        <label for="baseurl">Base URL <span style="font-weight:400;color:var(--muted)">(optional — overrides provider default)</span></label>
+        <input id="baseurl" type="text" placeholder="e.g. https://api.together.xyz/v1  or  http://localhost:11434/v1" />
+      </div>
+      <div style="margin-top:10px;">
+        <label for="modelover">Model <span style="font-weight:400;color:var(--muted)">(optional — overrides default)</span></label>
+        <input id="modelover" type="text" placeholder="e.g. gpt-4o, llama-3.1-8b-instant, claude-opus-4-5" />
+      </div>
+      <div style="margin-top:10px;">
+        <label for="authhdr">Auth header <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <select id="authhdr">
+          <option value="auto">Auto</option>
+          <option value="bearer">Authorization: Bearer &lt;key&gt;</option>
+          <option value="xapi">x-api-key: &lt;key&gt;</option>
+          <option value="query">?key=&lt;key&gt; (query param)</option>
+          <option value="none">None</option>
+        </select>
+      </div>
+    </details>
+
+    <div class="row">
+      <button id="go">Test key →</button>
+      <label style="margin:0; font-weight:400; color:var(--muted); font-size:13px;">
+        <input type="checkbox" id="show" style="width:auto; vertical-align:middle;" /> show key
+      </label>
+    </div>
+  </div>
+
+  <div class="panel" id="output-panel" style="display:none;">
+    <div class="status" id="status">…</div>
+    <div class="result" id="result"></div>
+  </div>
+
+  <div class="note">
+    Detection is by key prefix — it doesn't guarantee the key is valid, just the likely provider.
+    Supported: OpenAI, Anthropic, Google Gemini, Groq, xAI, DeepSeek, Mistral, OpenRouter, Perplexity, Cohere.
+  </div>
+</div>
+
+<script>
+  const providers = [
+    { id:'anthropic', name:'Anthropic (Claude)', match:k => k.startsWith('sk-ant-'),
+      format:'anthropic',
+      models:['claude-haiku-4-5-20251001','claude-sonnet-4-5','claude-opus-4-5','claude-3-5-sonnet-latest','claude-3-5-haiku-latest'] },
+    { id:'openai', name:'OpenAI', match:k => /^sk-(proj-|svcacct-|None-|[A-Za-z0-9_-]{20,})/.test(k) && !k.startsWith('sk-ant-') && !k.startsWith('sk-or-'),
+      format:'openai',
+      models:['gpt-4o-mini','gpt-4o','gpt-4.1','gpt-4.1-mini','o3-mini','o1-mini'] },
+    { id:'openrouter', name:'OpenRouter', match:k => k.startsWith('sk-or-'),
+      format:'openai', baseUrl:'https://openrouter.ai/api/v1',
+      models:['openai/gpt-4o-mini','anthropic/claude-3.5-sonnet','google/gemini-2.0-flash-exp','meta-llama/llama-3.3-70b-instruct','deepseek/deepseek-chat'] },
+    { id:'google', name:'Google Gemini', match:k => /^AIza[0-9A-Za-z_-]{35}$/.test(k),
+      format:'gemini',
+      models:['gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-1.5-pro'] },
+    { id:'groq', name:'Groq', match:k => k.startsWith('gsk_'),
+      format:'openai', baseUrl:'https://api.groq.com/openai/v1',
+      models:['llama-3.3-70b-versatile','llama-3.1-8b-instant','mixtral-8x7b-32768','gemma2-9b-it'] },
+    { id:'xai', name:'xAI (Grok)', match:k => k.startsWith('xai-'),
+      format:'openai', baseUrl:'https://api.x.ai/v1',
+      models:['grok-2-latest','grok-2','grok-beta'] },
+    { id:'deepseek', name:'DeepSeek', match:k => /^sk-[a-f0-9]{32}$/.test(k),
+      format:'openai', baseUrl:'https://api.deepseek.com/v1',
+      models:['deepseek-chat','deepseek-reasoner'] },
+    { id:'perplexity', name:'Perplexity', match:k => k.startsWith('pplx-'),
+      format:'openai', baseUrl:'https://api.perplexity.ai',
+      models:['sonar','sonar-pro','sonar-reasoning'] },
+    { id:'mistral', name:'Mistral', match:k => /^[A-Za-z0-9]{32}$/.test(k),
+      format:'openai', baseUrl:'https://api.mistral.ai/v1',
+      models:['mistral-small-latest','mistral-large-latest','open-mistral-nemo','codestral-latest'] },
+    { id:'cohere', name:'Cohere', match:k => /^[A-Za-z0-9]{40}$/.test(k),
+      format:'cohere',
+      models:['command-r-plus','command-r','command-a-03-2025'] },
+  ];
+
+  const $ = id => document.getElementById(id);
+  function detect(key) {
+    key = key.trim();
+    if (!key) return null;
+    return providers.find(p => p.match(key)) || null;
+  }
+  function updateDetect() {
+    const k = $('key').value.trim();
+    const p = detect(k);
+    const el = $('detected'); const info = $('model-info');
+    const pickerWrap = $('model-picker-wrap'); const picker = $('modelpick');
+    if (!k) { el.textContent='—'; el.className='badge unknown'; info.textContent=''; pickerWrap.style.display='none'; return; }
+    if (!p) { el.textContent='Unknown'; el.className='badge unknown'; info.textContent='(prefix not recognized — set format under Advanced)'; pickerWrap.style.display='none'; return; }
+    el.textContent = p.name; el.className='badge'; info.textContent = '';
+    // populate model picker with this provider's models
+    picker.innerHTML = '';
+    for (const m of p.models) {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      picker.appendChild(opt);
+    }
+    pickerWrap.style.display = 'block';
+  }
+  $('key').addEventListener('input', updateDetect);
+  $('show').addEventListener('change', e => { $('key').type = e.target.checked ? 'text' : 'password'; });
+  // Format-specific callers (used when a custom endpoint/format is chosen)
+  const formats = {
+    openai: async (key, prompt, {baseUrl, model, auth}) => {
+      const url = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/,'') + '/chat/completions';
+      const headers = { 'content-type':'application/json' };
+      if (auth === 'bearer' || auth === 'auto') headers['authorization'] = 'Bearer '+key;
+      else if (auth === 'xapi') headers['x-api-key'] = key;
+      const r = await fetch(url, { method:'POST', headers,
+        body: JSON.stringify({ model, messages:[{role:'user', content: prompt}] }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error?.message || JSON.stringify(j));
+      return j.choices?.[0]?.message?.content || JSON.stringify(j);
+    },
+    anthropic: async (key, prompt, {baseUrl, model, auth}) => {
+      const url = (baseUrl || 'https://api.anthropic.com').replace(/\/$/,'') + '/v1/messages';
+      const headers = { 'content-type':'application/json',
+        'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' };
+      if (auth === 'bearer') headers['authorization'] = 'Bearer '+key;
+      else if (auth === 'xapi' || auth === 'auto') headers['x-api-key'] = key;
+      const r = await fetch(url, { method:'POST', headers,
+        body: JSON.stringify({ model, max_tokens: 500, messages:[{role:'user', content: prompt}] }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error?.message || JSON.stringify(j));
+      return j.content?.[0]?.text || JSON.stringify(j);
+    },
+    gemini: async (key, prompt, {baseUrl, model, auth}) => {
+      const base = (baseUrl || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/,'');
+      let url = `${base}/models/${encodeURIComponent(model)}:generateContent`;
+      const headers = { 'content-type':'application/json' };
+      if (auth === 'bearer') headers['authorization'] = 'Bearer '+key;
+      else url += '?key=' + encodeURIComponent(key);
+      const r = await fetch(url, { method:'POST', headers,
+        body: JSON.stringify({ contents:[{parts:[{text: prompt}]}] }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error?.message || JSON.stringify(j));
+      return j.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(j);
+    },
+    cohere: async (key, prompt, {baseUrl, model, auth}) => {
+      const url = (baseUrl || 'https://api.cohere.com').replace(/\/$/,'') + '/v2/chat';
+      const headers = { 'content-type':'application/json' };
+      if (auth !== 'none') headers['authorization'] = 'Bearer '+key;
+      const r = await fetch(url, { method:'POST', headers,
+        body: JSON.stringify({ model, messages:[{role:'user', content: prompt}] }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.message || JSON.stringify(j));
+      return j.message?.content?.[0]?.text || JSON.stringify(j);
+    },
+  };
+  $('go').addEventListener('click', async () => {
+    const key = $('key').value.trim();
+    const prompt = $('prompt').value.trim() || 'Explain who you are.';
+    const p = detect(key);
+    const out = $('output-panel'), status = $('status'), result = $('result');
+    out.style.display = 'block'; result.textContent = '';
+    if (!key) { status.textContent = 'Enter a key first.'; status.className='status err'; return; }
+
+    const formatSel = $('endpoint').value;
+    const baseUrlOver = $('baseurl').value.trim();
+    const modelOver = $('modelover').value.trim();
+    const auth = $('authhdr').value;
+    const modelPicked = $('modelpick').value;
+
+    // resolve format, model, baseUrl (overrides win, then provider defaults)
+    const fmt = formatSel !== 'auto' ? formatSel : p?.format;
+    const model = modelOver || modelPicked || p?.models?.[0];
+    const baseUrl = baseUrlOver || p?.baseUrl;
+
+    if (!fmt) { status.textContent = "Couldn't identify the provider — pick an API format under Advanced."; status.className='status err'; return; }
+    if (!model) { status.textContent = "No model — enter one under Advanced."; status.className='status err'; return; }
+
+    const label = `${p ? p.name : fmt} · ${model}${baseUrlOver ? ' @ '+baseUrlOver : ''}`;
+    status.className = 'status'; status.textContent = `Calling ${label}…`;
+    $('go').disabled = true;
+    try {
+      const text = await formats[fmt](key, prompt, {baseUrl, model, auth});
+      status.className='status ok'; status.textContent = `✓ ${label}`;
+      result.textContent = text;
+    } catch (e) {
+      status.className='status err';
+      const msg = String(e.message || e);
+      if (/Failed to fetch|NetworkError|CSP|blocked/i.test(msg)) {
+        status.textContent = 'Network blocked. If you\'re inside claude.ai\'s artifact viewer, save this HTML and open it locally.';
+      } else {
+        status.textContent = 'API error';
+      }
+      result.textContent = msg;
+    } finally {
+      $('go').disabled = false;
+    }
+  });
+</script>
+</body></html>
