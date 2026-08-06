@@ -344,6 +344,7 @@ function buildRequestMessages() {
     if (m.role === 'user') msgs.push({ role: 'user', content: m.content });
     else if (m.role === 'tool') msgs.push({ role: 'tool', tool_call_id: m.tool_call_id, content: m.content });
     else if (m.role === 'assistant') {
+      if (!m.content && !m.tool_calls?.length) continue;
       const entry = { role: 'assistant', content: m.content || '' };
       if (m.tool_calls?.length) entry.tool_calls = m.tool_calls;
       msgs.push(entry);
@@ -445,8 +446,13 @@ function finishTurn(turn) {
   turn.prose.innerHTML = renderMarkdown(turn.msg.content || '');
   wireCodeBlocks(turn.prose);
   updateReasoning(turn.reasoning, turn.msg.reasoning || '', false);
-  // A turn that only called tools has nothing to show but its step cards.
-  if (!turn.msg.content && !turn.msg.steps.length && !turn.msg.reasoning) turn.node.remove();
+  // A turn that produced nothing at all leaves no trace — not on screen, and
+  // not in the transcript, where an empty assistant message would be noise.
+  if (!turn.msg.content && !turn.msg.steps.length && !turn.msg.reasoning && !turn.msg.tool_calls) {
+    turn.node.remove();
+    const idx = chat.messages.indexOf(turn.msg);
+    if (idx >= 0) chat.messages.splice(idx, 1);
+  }
   save();
 }
 
