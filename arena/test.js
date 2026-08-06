@@ -12,8 +12,17 @@ import {
   buildLoadout,
   measureCurvature,
 } from './rules.js';
-import { createBattle, runToCompletion } from './sim.js';
+import {
+  beginRound,
+  collectIntel,
+  createMatch,
+  decideOnPoints,
+  pickAttacker,
+  runRound,
+  setLoadout,
+} from './sim.js';
 import { extractJson, needsRelay, offlineLoadout, resolveEndpoint } from './agents.js';
+import { patchWebmDuration, readVint, writeVint } from './webm.js';
 
 let passed = 0;
 let failed = 0;
@@ -217,44 +226,217 @@ section('endpoint routing');
       === 'https://api.example.com/v1/chat/completions');
 }
 
+/* ------------------------------ webm patch ------------------------------ */
+
+section('recording duration patch');
+{
+  // A minimal but structurally real header: EBML head, unknown-size Segment,
+  // Info containing only TimecodeScale — exactly MediaRecorder's shape.
+  const build = () => {
+    const parts = [
+      [0x1a, 0x45, 0xdf, 0xa3, 0x84, 0x42, 0x86, 0x81, 0x01],       // EBML head
+      [0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff], // Segment, unknown size
+      [0x15, 0x49, 0xa9, 0x66, 0x84],                                // Info, size 4
+      [0x2a, 0xd7, 0xb1, 0x83, 0x0f, 0x42, 0x40],                    // TimecodeScale (1ms)
+    ];
+    // Info's declared size covers TimecodeScale's 3-byte ID+size and payload.
+    return new Uint8Array(parts.flat());
+  };
+
+  check('vint round-trips', (() => {
+    const encoded = writeVint(32, 1);
+    const decoded = readVint(encoded, 0);
+    return decoded.value === 32 && decoded.length === 1;
+  })());
+
+  check('multi-byte vints round-trip', (() => {
+    const encoded = writeVint(5000, 2);
+    const decoded = readVint(encoded, 0);
+    return decoded.value === 5000 && decoded.length === 2;
+  })());
+
+  const original = build();
+  const patched = patchWebmDuration(original, 12345.5);
+
+  check('duration element is inserted', patched.length === original.length + 11,
+    `${original.length} -> ${patched.length}`);
+
+  const infoAt = patched.indexOf(0x15);
+  check('Info size grew by the element size', patched[infoAt + 4] === 0x80 + 4 + 11,
+    `size byte 0x${patched[infoAt + 4].toString(16)}`);
+
+  const durAt = (() => {
+    for (let i = 0; i < patched.length - 1; i++) {
+      if (patched[i] === 0x44 && patched[i + 1] === 0x89) return i;
+    }
+    return -1;
+  })();
+  check('Duration element is present', durAt !== -1);
+  check('Duration payload is an 8-byte float', patched[durAt + 2] === 0x88);
+  check('Duration holds the right value', (() => {
+    const view = new DataView(patched.buffer, patched.byteOffset, patched.byteLength);
+    return Math.abs(view.getFloat64(durAt + 3, false) - 12345.5) < 1e-6;
+  })());
+
+  // Patching an already-patched file must overwrite, not append a second one.
+  const twice = patchWebmDuration(patched, 999);
+  check('patching twice overwrites in place', twice.length === patched.length,
+    `${patched.length} -> ${twice.length}`);
+  check('the overwritten value is correct', (() => {
+    const view = new DataView(twice.buffer, twice.byteOffset, twice.byteLength);
+    return Math.abs(view.getFloat64(durAt + 3, false) - 999) < 1e-6;
+  })());
+
+  check('garbage input is returned untouched',
+    patchWebmDuration(new Uint8Array([1, 2, 3, 4]), 500).length === 4);
+  check('a non-finite duration is refused',
+    patchWebmDuration(original, Infinity) === original);
+  check('a zero duration is refused',
+    patchWebmDuration(original, 0) === original);
+}
+
 /* ----------------------------- simulation ------------------------------- */
 
-section('simulation');
+const build = (team, n, round = 1) => Array.from({ length: n }, (_, i) =>
+  buildLoadout(offlineLoadout({ round, unitIndex: i, teamName: team })));
+
+/** Play `rounds` turn-based rounds of a match, no rendering. */
+function playMatch(unitsPerTeam = 3, rounds = 6) {
+  const match = createMatch(build('Alpha', unitsPerTeam), build('Bravo', unitsPerTeam));
+  for (let round = 1; round <= rounds && !match.over; round++) {
+    const attackers = [0, 1].map((team) => pickAttacker(match, team, round));
+    if (attackers.some((a) => !a)) break;
+    beginRound(match, round, attackers.map((a) => a.id));
+    runRound(match);
+  }
+  return match;
+}
+
+section('turn structure');
 {
-  const build = (team, n) => Array.from({ length: n }, (_, i) =>
-    buildLoadout(offlineLoadout({ round: 1, unitIndex: i, teamName: team })));
+  const match = createMatch(build('Alpha', 3), build('Bravo', 3));
+  check('a fresh match is not mid-round', match.roundComplete === true);
 
-  const battle = createBattle(build('Alpha', 3), build('Bravo', 3));
-  runToCompletion(battle);
+  const attackers = [0, 1].map((team) => pickAttacker(match, team, 1));
+  check('one attacker is chosen per team', attackers.length === 2 && attackers.every(Boolean));
+  check('attackers are on opposing teams', attackers[0].team === 0 && attackers[1].team === 1);
 
-  check('battle terminates', battle.over === true);
-  check('a result is recorded', battle.reason.length > 0);
+  beginRound(match, 1, attackers.map((a) => a.id));
+  check('the round opens on an announcement', match.phase === 'announce');
+  check('the announcement names the weapon',
+    match.announcement.weaponName === attackers[0].loadout.weapon.name,
+    match.announcement.weaponName);
+  check('the announcement carries the equation',
+    match.announcement.equation === attackers[0].loadout.weapon.source.y,
+    match.announcement.equation);
 
-  const damaged = battle.units.filter((u) => u.hitsTaken > 0);
-  check('units actually traded fire', damaged.length > 0,
-    `${damaged.length} units were hit`);
+  runRound(match);
+  check('the round completes', match.roundComplete === true || match.over === true);
 
-  const oneShot = battle.units.filter((u) => !u.alive && u.hitsTaken < 3);
+  const fired = match.units.filter((u) => u.turnsTaken > 0);
+  check('exactly one unit per team fired', fired.length === 2,
+    fired.map((u) => u.callsign).join(', '));
+  check('the units that fired are the announced attackers',
+    fired.every((u) => attackers.some((a) => a.id === u.id)));
+
+  // Round 2 must hand the turn to a different unit.
+  const second = [0, 1].map((team) => pickAttacker(match, team, 2));
+  check('the attacker rotates between rounds',
+    second[0].id !== attackers[0].id && second[1].id !== attackers[1].id,
+    `${second[0].id} vs ${attackers[0].id}`);
+}
+
+section('match play');
+{
+  const match = playMatch(3, 6);
+
+  check('the match progresses through rounds', match.round >= 1);
+
+  const damaged = match.units.filter((u) => u.hitsTaken > 0);
+  check('units actually traded fire', damaged.length > 0, `${damaged.length} units were hit`);
+
+  const oneShot = match.units.filter((u) => !u.alive && u.hitsTaken < 3);
   check('nothing died in fewer than 3 hits', oneShot.length === 0,
     oneShot.map((u) => `${u.callsign} died in ${u.hitsTaken}`).join(', '));
 
-  const straightShooters = battle.units.filter((u) => u.loadout.weapon.curvature < MIN_CURVE_DEVIATION);
+  const straightShooters = match.units.filter((u) => u.loadout.weapon.curvature < MIN_CURVE_DEVIATION);
   check('every weapon in play is curved', straightShooters.length === 0,
     straightShooters.map((u) => u.callsign).join(', '));
 
-  check('HP never goes negative', battle.units.every((u) => u.hp >= 0));
+  check('HP never goes negative', match.units.every((u) => u.hp >= 0));
   check('shields never exceed capacity',
-    battle.units.every((u) => u.shieldCharge <= u.loadout.shield.capacity + 1e-6));
+    match.units.every((u) => u.shieldCharge <= u.loadout.shield.capacity + 1e-6));
+  check('no projectiles are left hanging', match.projectiles.length === 0);
+
+  // Each team fires once per round, so total volleys cannot exceed the rounds.
+  for (const team of [0, 1]) {
+    const turns = match.units
+      .filter((u) => u.team === team)
+      .reduce((sum, u) => sum + u.turnsTaken, 0);
+    check(`team ${team} fired at most once per round`, turns <= match.round,
+      `${turns} volleys across ${match.round} rounds`);
+  }
+
+  const decided = decideOnPoints(match);
+  check('a match that runs out of rounds is still decided', decided.over === true);
+  check('the decision has a stated reason', decided.reason.length > 0);
+}
+
+section('HP persists across rounds');
+{
+  const match = createMatch(build('Alpha', 1), build('Bravo', 1));
+  const target = match.units[1];
+
+  beginRound(match, 1, match.units.map((u) => u.id));
+  runRound(match);
+  const afterFirst = target.hp;
+
+  if (afterFirst < UNIT_MAX_HP && target.alive) {
+    beginRound(match, 2, match.units.map((u) => u.id));
+    runRound(match);
+    check('damage carries over between rounds', target.hp <= afterFirst,
+      `${afterFirst} -> ${target.hp}`);
+  } else {
+    check('damage carries over between rounds', true, 'skipped — no damage landed in round 1');
+  }
+  check('a unit is never revived by a new round', target.hp <= UNIT_MAX_HP);
+}
+
+section('loadout swap mid-match');
+{
+  const match = createMatch(build('Alpha', 2), build('Bravo', 2));
+  const unit = match.units[0];
+  unit.hp = 55;
+  const replacement = buildLoadout(offlineLoadout({ round: 3, unitIndex: 1, teamName: 'Alpha' }));
+
+  setLoadout(match, unit.id, replacement);
+  check('the new loadout is installed', unit.loadout === replacement);
+  check('accrued damage survives a redesign', unit.hp === 55, `hp ${unit.hp}`);
+  check('the new shield arrives charged',
+    unit.shieldCharge === replacement.shield.capacity);
+}
+
+section('intel for the next round');
+{
+  const match = playMatch(2, 3);
+  const intel = collectIntel(match, 1);
+  check('intel covers every unit on the team', intel.length === 2);
+  check('intel includes the path expression', typeof intel[0].pathY === 'string' && intel[0].pathY.length > 0);
+  check('intel samples the shield around its arc', intel[0].shieldProfile.length === 8);
+  check('the sampled profile has real radii',
+    intel[0].shieldProfile.every((p) => p.radius > 0 && Number.isFinite(p.radius)));
+  check('the profile spans a full turn',
+    intel[0].shieldProfile[0].degrees === 0 && intel[0].shieldProfile[7].degrees === 315,
+    intel[0].shieldProfile.map((p) => p.degrees).join(','));
 }
 
 section('determinism');
 {
-  const build = (team) => Array.from({ length: 2 }, (_, i) =>
-    buildLoadout(offlineLoadout({ round: 2, unitIndex: i, teamName: team })));
-  const a = runToCompletion(createBattle(build('Alpha'), build('Bravo')));
-  const b = runToCompletion(createBattle(build('Alpha'), build('Bravo')));
-  check('same loadouts produce the same result',
-    a.winner === b.winner && Math.abs(a.time - b.time) < 1e-9,
+  const a = playMatch(2, 4);
+  const b = playMatch(2, 4);
+  check('the same match plays out identically',
+    a.winner === b.winner && Math.abs(a.time - b.time) < 1e-9
+      && a.units.every((u, i) => u.hp === b.units[i].hp),
     `${a.winner}@${a.time.toFixed(3)} vs ${b.winner}@${b.time.toFixed(3)}`);
 }
 

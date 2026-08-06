@@ -136,14 +136,57 @@ Constants: `pi tau e phi`. Operators: `+ - * / % ^` and parentheses.
 
 ## How a match runs
 
-Each round: both teams' agents design a loadout per unit **in parallel**, the
-referee validates them, and the battle plays out on the canvas. Afterwards each
-team is handed **intel on the enemy's loadouts** — their weapon names, their
-actual `path.y` and shield `shape` expressions, damage dealt, who survived — plus
-any referee corrections against their own submission. So round 2 is a genuine
-counter-design, and you can watch the arms race in the loadout panel.
+A match is **turn-based**. Every unit designs an opening loadout, then each
+round **exactly one bot per team attacks** — the turn rotates through the living
+units, so everyone gets a go and no single build carries the match.
 
-Rounds end on team elimination or a 45s time limit (most HP remaining wins).
+A turn runs in three beats:
+
+1. **Announce.** The attacker declares itself on screen — callsign, the name it
+   gave its weapon, and the equation it is about to fire, `y(t) = …`, with a
+   countdown bar showing when the shot goes out.
+2. **Fire.** One volley. No second try.
+3. **Settle.** Leftover projectiles resolve, then the other team takes its turn.
+
+HP and shield charge **persist across rounds**, so the two-attack survival rule
+plays out over the whole match rather than resetting. The match ends when a team
+is eliminated or the rounds run out (most HP remaining wins).
+
+Only the two attackers redesign each round, and they are handed real intel: the
+enemy's weapon, their actual `path.y`, damage dealt, and — most usefully — their
+**shield radius sampled every 45°**, with the thinnest arc called out. That is
+the gap an agent is supposed to curve into.
+
+## How hard the agents think
+
+With **Deep design (2-pass)** enabled (default), each attacker goes through two
+rounds of reasoning per turn:
+
+1. **Draft.** The agent must first work the problem numerically in an `analysis`
+   field: name the enemy's weakest shield angle, estimate the lateral offset
+   needed at impact to enter through it, pick the expression that produces that
+   offset, and derive its damage split from the two-hit cap arithmetic.
+2. **Critique.** The draft is sent back with a checklist: compute where your
+   shot *actually* lands relative to the shield profile, confirm the bend passes
+   the referee and the path still reaches, check whether a different damage split
+   kills faster, and find your own shield's blind arc. The agent then resubmits a
+   corrected build.
+
+Both passes are kept. The agent's reasoning is shown under **Agent's reasoning**
+on each loadout card, so you can read why a design was chosen and judge whether
+the second pass actually improved it. Turn the checkbox off for one-pass designs
+(faster, and half the API calls).
+
+## Recording
+
+The whole match is recorded from the canvas — including the announcement cards
+and the thinking phases — and **Download recording** saves it as a `.webm` once
+the match ends.
+
+One detail worth knowing: `MediaRecorder` records live and so never writes a
+duration into the file, which leaves players showing 0:00 and refusing to seek.
+`webm.js` patches the real duration into the container's Segment Info header
+after recording stops, so the file behaves like a normal video.
 
 ## Files
 
@@ -151,8 +194,9 @@ Rounds end on team elimination or a 45s time limit (most HP remaining wins).
 | --- | --- |
 | `mathlang.js` | The safe expression language: tokenizer, parser, evaluator |
 | `rules.js` | Rule enforcement — damage cap, curve check, clamping, compilation |
-| `agents.js` | Endpoint calls, the agent prompt, reply parsing, offline designer |
-| `sim.js` | The combat simulation (fixed 60Hz timestep, deterministic) |
-| `app.js` | UI, round loop, canvas renderer |
+| `agents.js` | Endpoint calls, the agent prompts, reply parsing, offline designer |
+| `sim.js` | The turn-based simulation (fixed 60Hz timestep, deterministic) |
+| `app.js` | UI, match loop, canvas renderer, recorder |
+| `webm.js` | Writes the duration into the recorded WebM |
 | `serve.js` | Static server + CORS relay |
 | `test.js` | Headless checks for the language, the rules and the sim |

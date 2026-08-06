@@ -11,11 +11,29 @@ import { FUNCTION_NAMES } from './mathlang.js';
 const SYSTEM_PROMPT = `You are a weapons engineer for one unit in a 2D math arena.
 You design ordnance and armour by writing PURE MATH EXPRESSIONS. You never write code.
 
+THINK BEFORE YOU DESIGN. Work the problem in the "analysis" field, concretely and
+in numbers, before you commit to a build:
+  1. Where is the enemy shield actually weak? You are given its radius sampled
+     every 45 degrees. Name the angle with the smallest radius — that is your
+     entry window.
+  2. What lateral offset does a shot need at impact to arrive through that
+     window instead of head-on? Estimate it in pixels and say the number.
+  3. Which shape gives you that offset? Write the expression and say what its
+     peak value is and where along t it peaks.
+  4. What is your damage-per-second given the two-hit survival cap, and how
+     many rounds until the target dies? Choose count and damage from that
+     arithmetic, not from taste.
+  5. What is your own shield's weakest angle, and can the enemy's last-known
+     curve reach it? If yes, reshape.
+
+A design that does not follow from your own analysis is a wasted round.
+
 Reply with ONE JSON object and nothing else. No prose, no markdown fences.
 
 {
+  "analysis": "your numeric working for the five points above, 3-6 sentences",
   "callsign": "short unit name",
-  "doctrine": "one sentence on your tactic",
+  "doctrine": "one sentence naming the angle you are exploiting and how",
   "weapon": {
     "name": "weapon name",
     "damage": <number, per hit>,
@@ -72,32 +90,67 @@ further than its straight-line reach — budget range for the arc, not the gap.
 Design for the rules: curved shots can round a lopsided shield, so aim your
 curve at the gap in the enemy's shape rather than at the unit itself.`;
 
-function userPrompt({ round, teamName, unitIndex, unitCount, enemyIntel, refereeNotes }) {
+function describeIntel(intel) {
+  const profile = intel.shieldProfile
+    ? intel.shieldProfile.map((p) => `${p.degrees}°:${p.radius}px`).join('  ')
+    : 'unknown';
+  const weakest = intel.shieldProfile
+    ? intel.shieldProfile.reduce((a, b) => (b.radius < a.radius ? b : a))
+    : null;
+  return [
+    `- ${intel.callsign} — ${intel.alive ? `alive, ${intel.hp.toFixed(0)} HP` : 'DESTROYED'}`,
+    `    weapon "${intel.weapon}": ${intel.damage.toFixed(0)} dmg x${intel.count}, path.y = ${intel.pathY}`,
+    `    dealt ${intel.dealt.toFixed(0)} damage across ${intel.hitsLanded} hits`,
+    `    shield "${intel.shield}": shape = ${intel.shieldShape}, absorb ${(intel.absorb * 100).toFixed(0)}%, ` +
+      `charge ${intel.shieldCharge.toFixed(0)}`,
+    `    shield radius by angle (0° faces you): ${profile}`,
+    weakest ? `    thinnest at ${weakest.degrees}° (${weakest.radius}px) — that is the window.` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function userPrompt({ round, teamName, unitIndex, unitCount, enemyIntel, allyIntel, refereeNotes, isAttacker }) {
   const lines = [
     `Round ${round}. You are unit ${unitIndex + 1} of ${unitCount} on team "${teamName}".`,
+    isAttacker
+      ? 'YOU ARE THIS ROUND\'S ATTACKER. Your team fires exactly one volley this '
+        + 'round, and it is yours. There is no spraying and no second try — make '
+        + 'this single volley count.'
+      : 'You are holding this round. Your shield still has to survive the enemy volley.',
   ];
+
   if (enemyIntel && enemyIntel.length) {
-    lines.push('', 'Enemy loadouts observed last round:');
-    for (const intel of enemyIntel) {
-      lines.push(
-        `- ${intel.callsign}: weapon "${intel.weapon}" (${intel.damage.toFixed(0)} dmg x${intel.count}, ` +
-        `path.y = ${intel.pathY}); shield "${intel.shield}" (shape = ${intel.shieldShape}, ` +
-        `absorb ${(intel.absorb * 100).toFixed(0)}%). It dealt ${intel.dealt.toFixed(0)} damage and ` +
-        `${intel.alive ? 'survived' : 'was destroyed'}.`,
-      );
-    }
-    lines.push('', 'Counter it. Curve your shots into the weak arc of their shield shape.');
+    lines.push('', 'ENEMY:', ...enemyIntel.map(describeIntel));
   } else {
-    lines.push('', 'No intel yet — this is the opening round. Design something you can iterate on.');
+    lines.push('', 'No contact yet — this is the opening round, so no enemy shield data exists.');
+  }
+  if (allyIntel && allyIntel.length) {
+    lines.push('', 'YOUR TEAM:', ...allyIntel.map(describeIntel));
   }
   if (refereeNotes && refereeNotes.length) {
     lines.push('', 'The referee corrected your last submission:');
     for (const note of refereeNotes) lines.push(`- ${note}`);
-    lines.push('Do not repeat those mistakes.');
+    lines.push('Do not repeat those mistakes — a corrected shot is a wasted round.');
   }
-  lines.push('', 'Reply with the JSON object only.');
+  lines.push('', 'Do the analysis first, then reply with the JSON object only.');
   return lines.join('\n');
 }
+
+const CRITIQUE_PROMPT = `Now critique your own design before it is locked in.
+
+Check it honestly against these, and answer each in one line:
+  a. At impact, where does your shot actually arrive relative to the enemy
+     shield's thin angle? Compute the lateral offset your path.y produces at
+     t = 1 and compare it against the shield radii you were given. If it lands
+     on a thick arc, your design failed and you must change it.
+  b. Does your path bend far enough that the referee will accept it, and does
+     path.x still carry the shot the full distance to the target?
+  c. Given the damage cap, how many rounds does your build need to secure a
+     kill? If a different count/damage split kills faster, take it.
+  d. Where is your own shield thinnest, and is that arc pointed at the enemy?
+
+Then reply with the FULL corrected JSON object — same schema, every field, no
+prose outside it. Put your answers to a-d in the "analysis" field. If the design
+genuinely needs no change, resend it unchanged, but say why in "analysis".`;
 
 /** Pull the first balanced JSON object out of a model reply. */
 export function extractJson(reply) {
@@ -168,7 +221,8 @@ export async function chatCompletion(config, messages, { signal, temperature = 0
         model: config.model,
         messages,
         temperature,
-        max_tokens: 900,
+        // Generous: the agent is asked to show numeric working before the JSON.
+        max_tokens: 2400,
       }),
       signal,
     });
@@ -290,12 +344,39 @@ export function offlineLoadout({ round, unitIndex, teamName }) {
   };
 }
 
+/** One request + parse, retrying once with the parse error fed back. */
+async function askForDesign(config, messages, { signal, report, label }) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const reply = await chatCompletion(config, messages, { signal });
+      return { spec: extractJson(reply), reply };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      report(`${label}: ${error.message}`);
+      if (attempt === 2) throw error;
+      messages = [...messages,
+        { role: 'assistant', content: '(unparseable reply)' },
+        {
+          role: 'user',
+          content: `That failed: ${error.message}. Reply with ONLY the JSON object, no prose or fences.`,
+        },
+      ];
+    }
+  }
+  throw new Error('unreachable');
+}
+
 /**
- * Design one unit's loadout. Falls back to the offline designer if the team
- * has no key, and retries once with the parse error fed back to the model.
+ * Design one unit's loadout.
+ *
+ * With `deep` enabled the agent designs, then critiques its own design against
+ * the enemy's measured shield profile and resubmits — two passes of real
+ * reasoning rather than one snap judgement. Falls back to the offline designer
+ * if the team has no key or the endpoint fails.
  */
-export async function designLoadout(config, context, { signal, log } = {}) {
+export async function designLoadout(config, context, { signal, log, deep = true } = {}) {
   const report = (msg) => log && log(msg);
+  const label = `${context.teamName} unit ${context.unitIndex + 1}`;
 
   if (!config.apiKey || !config.baseUrl || !config.model) {
     const loadout = buildLoadout(offlineLoadout(context));
@@ -303,32 +384,42 @@ export async function designLoadout(config, context, { signal, log } = {}) {
     return loadout;
   }
 
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: userPrompt(context) },
-  ];
+  try {
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt(context) },
+    ];
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const reply = await chatCompletion(config, messages, { signal });
-      const loadout = buildLoadout(extractJson(reply));
-      loadout.origin = 'llm';
-      loadout.raw = reply;
-      return loadout;
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      report(`${context.teamName} unit ${context.unitIndex + 1}: ${error.message}`);
-      if (attempt === 2) break;
-      messages.push({ role: 'assistant', content: '(unparseable reply)' });
-      messages.push({
-        role: 'user',
-        content: `That failed: ${error.message}. Reply with ONLY the JSON object, no prose or fences.`,
-      });
+    const draft = await askForDesign(config, messages, { signal, report, label });
+    let final = draft;
+    let passes = 1;
+
+    if (deep) {
+      try {
+        const critiqued = await askForDesign(config, [
+          ...messages,
+          { role: 'assistant', content: draft.reply },
+          { role: 'user', content: CRITIQUE_PROMPT },
+        ], { signal, report, label: `${label} (critique)` });
+        final = critiqued;
+        passes = 2;
+      } catch {
+        // The critique pass is a bonus — keep the draft if it fails.
+        report(`${label}: critique pass failed, keeping the first design.`);
+      }
     }
-  }
 
-  const loadout = buildLoadout(offlineLoadout(context));
-  loadout.origin = 'fallback';
-  loadout.notes.unshift('Endpoint failed twice — the referee issued a stock loadout.');
-  return loadout;
+    const loadout = buildLoadout(final.spec);
+    loadout.origin = 'llm';
+    loadout.passes = passes;
+    loadout.draftAnalysis = typeof draft.spec.analysis === 'string' ? draft.spec.analysis : '';
+    loadout.raw = final.reply;
+    return loadout;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const loadout = buildLoadout(offlineLoadout(context));
+    loadout.origin = 'fallback';
+    loadout.notes.unshift('Endpoint failed — the referee issued a stock loadout.');
+    return loadout;
+  }
 }

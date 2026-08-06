@@ -240,7 +240,10 @@ export function buildLoadout(raw) {
   const { shield } = buildShield(spec.shield, notes);
   return {
     callsign: text(spec.callsign, 'Unit', 24),
-    doctrine: text(spec.doctrine, 'No doctrine supplied.', 160),
+    doctrine: text(spec.doctrine, 'No doctrine supplied.', 200),
+    // The agent's own working, kept so the reasoning is visible and reviewable
+    // rather than discarded once the numbers are extracted.
+    analysis: text(spec.analysis, '', 1200),
     weapon,
     shield,
     notes,

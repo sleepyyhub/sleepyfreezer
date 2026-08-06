@@ -35,7 +35,7 @@
     </label>
     <label class="field inline">
       <span>Rounds</span>
-      <input type="number" id="roundCount" min="1" max="10" value="3" />
+      <input type="number" id="roundCount" min="1" max="12" value="4" />
     </label>
     <label class="field inline">
       <span>Sim speed</span>
@@ -46,9 +46,14 @@
         <option value="4">4x</option>
       </select>
     </label>
-    <button id="startBtn" class="primary">Start battle</button>
+    <label class="field inline check">
+      <input type="checkbox" id="deepDesign" checked />
+      <span>Deep design (2-pass)</span>
+    </label>
+    <button id="startBtn" class="primary">Start match</button>
     <button id="stopBtn" class="ghost" disabled>Stop</button>
-    <span id="status" class="status">Idle — configure both teams, or press start to use the offline designers.</span>
+    <button id="downloadBtn" class="ghost" disabled>Download recording</button>
+    <span id="status" class="status">Idle — one bot per team attacks each round. Press start to use the offline designers.</span>
   </section>
 
   <section class="stage">
