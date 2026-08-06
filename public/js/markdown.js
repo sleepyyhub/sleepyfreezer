@@ -49,7 +49,9 @@ function inline(src) {
   s = s.replace(/(^|[^*])\*(?=\S)([^*\n]*?\S)\*/g, '$1<em>$2</em>');
   s = s.replace(/(^|[^_])_(?=\S)([^_\n]*?\S)_/g, '$1<em>$2</em>');
   s = s.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<del>$1</del>');
-  s = s.replace(/\uE001(\d+)\uE001/g, (_, i) => `<code>${escapeHtml(code[+i])}</code>`);
+  // The stashed text came from the already-escaped string \u2014 escaping it again
+  // would render entities literally (`&quot;` instead of `"`).
+  s = s.replace(/\uE001(\d+)\uE001/g, (_, i) => `<code>${code[+i]}</code>`);
   return s;
 }
 
