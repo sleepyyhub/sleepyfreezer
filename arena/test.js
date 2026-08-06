@@ -13,7 +13,7 @@ import {
   measureCurvature,
 } from './rules.js';
 import { createBattle, runToCompletion } from './sim.js';
-import { extractJson, offlineLoadout } from './agents.js';
+import { extractJson, needsRelay, offlineLoadout, resolveEndpoint } from './agents.js';
 
 let passed = 0;
 let failed = 0;
@@ -172,6 +172,49 @@ section('reply parsing');
   let threw = false;
   try { extractJson('no json here'); } catch { threw = true; }
   check('throws on a reply with no JSON', threw);
+}
+
+/* --------------------------- endpoint routing --------------------------- */
+
+section('endpoint routing');
+{
+  const withLocation = (value, fn) => {
+    const had = 'location' in globalThis;
+    const previous = globalThis.location;
+    globalThis.location = value;
+    try { return fn(); } finally {
+      if (had) globalThis.location = previous;
+      else delete globalThis.location;
+    }
+  };
+
+  const https = { protocol: 'https:', origin: 'https://arena.example.com' };
+  const http = { protocol: 'http:', origin: 'http://localhost:8080' };
+
+  check('https page + http endpoint needs the relay',
+    withLocation(https, () => needsRelay('http://106.54.43.21:3000/v1')) === true);
+  check('https page + https endpoint does not',
+    withLocation(https, () => needsRelay('https://api.example.com/v1')) === false);
+  check('http page never needs it',
+    withLocation(http, () => needsRelay('http://106.54.43.21:3000/v1')) === false);
+
+  const config = { baseUrl: 'http://106.54.43.21:3000/v1', useRelay: false };
+  check('direct routing is unchanged',
+    withLocation(https, () => resolveEndpoint(config, '/chat/completions'))
+      === 'http://106.54.43.21:3000/v1/chat/completions');
+
+  const relayed = withLocation(https, () =>
+    resolveEndpoint({ ...config, useRelay: true }, '/chat/completions'));
+  check('relay routing prefixes the origin',
+    relayed === 'https://arena.example.com/relay/http://106.54.43.21:3000/v1/chat/completions',
+    relayed);
+  check('relay URL survives URL normalisation',
+    new URL(relayed).pathname === '/relay/http://106.54.43.21:3000/v1/chat/completions',
+    new URL(relayed).pathname);
+
+  check('trailing slashes on the base URL are handled',
+    withLocation(https, () => resolveEndpoint({ baseUrl: 'https://api.example.com/v1//' }, '/chat/completions'))
+      === 'https://api.example.com/v1/chat/completions');
 }
 
 /* ----------------------------- simulation ------------------------------- */

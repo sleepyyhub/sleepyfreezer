@@ -134,22 +134,59 @@ function joinUrl(baseUrl, path) {
   return `${String(baseUrl).trim().replace(/\/+$/, '')}${path}`;
 }
 
+/**
+ * A page served over https cannot call a plain http endpoint — browsers block
+ * it as mixed content before the request is even sent, and the only error the
+ * page gets is an unhelpful "Load failed" / "Failed to fetch". Detect that.
+ */
+export function needsRelay(baseUrl) {
+  return typeof location !== 'undefined'
+    && location.protocol === 'https:'
+    && /^http:\/\//i.test(String(baseUrl || '').trim());
+}
+
+/** Resolve the URL actually fetched, routing via the server relay if asked. */
+export function resolveEndpoint(config, path) {
+  const direct = joinUrl(config.baseUrl, path);
+  if (!config.useRelay) return direct;
+  return `${location.origin}/relay/${direct}`;
+}
+
 /** POST to a team's chat-completions endpoint. */
 export async function chatCompletion(config, messages, { signal, temperature = 0.9 } = {}) {
-  const response = await fetch(joinUrl(config.baseUrl, '/chat/completions'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature,
-      max_tokens: 900,
-    }),
-    signal,
-  });
+  const url = resolveEndpoint(config, '/chat/completions');
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature,
+        max_tokens: 900,
+      }),
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    // A network-level fetch rejection carries no detail by design, so explain
+    // the two causes that actually produce it here.
+    if (needsRelay(config.baseUrl) && !config.useRelay) {
+      throw new Error(
+        'Blocked as mixed content: this page is https and the endpoint is http. '
+        + 'Tick "Route through server relay" on this team to fix it.',
+      );
+    }
+    throw new Error(
+      `Could not reach ${url} (${error.message}). Either the endpoint is down, or it `
+      + 'is not sending CORS headers — tick "Route through server relay" to bypass CORS.',
+    );
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');

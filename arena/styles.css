@@ -121,6 +121,15 @@ input:focus, select:focus { outline: 2px solid #3b82f6; outline-offset: -1px; }
   cursor: pointer; font-size: 15px; padding: 6px;
 }
 
+.field.relay { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.field.relay input { width: 16px; height: 16px; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.relay-text { font-size: 13px; }
+.relay-text em {
+  display: block; font-style: normal; font-size: 12px;
+  color: var(--muted); margin-top: 2px;
+}
+.relay-text em.warn { color: #fbbf24; }
+
 .model-box {
   border: 1px solid var(--line);
   border-radius: 11px;

@@ -36,16 +36,26 @@ Each team panel takes:
 Team 1 and Team 2 can point at completely different providers and models — that
 is the point. Put one model on each side and see whose ordnance design wins.
 
-### If "Test" fails but the endpoint works from curl
+### "Load failed" / "Failed to fetch" when you enter a key
 
-That's browser CORS, not a broken endpoint. `serve.js` includes a relay: set the
-team's Base URL to
+Two different browser-level blocks produce that message, and neither means your
+endpoint is broken:
 
-```
-http://localhost:8080/relay/http://106.54.43.21:3000/v1
-```
+- **Mixed content.** A page served over `https` cannot call an `http` endpoint.
+  The browser blocks it before the request is sent, which is why the error has
+  no detail. This is what you hit on the deployed site.
+- **CORS.** The endpoint works, but doesn't send `Access-Control-Allow-Origin`,
+  so the browser discards the response.
 
-and the request goes out from Node instead, where CORS doesn't apply.
+Both are fixed by the **"Route through server relay"** checkbox on the team
+panel: the request is forwarded by this app's own Node server, where neither
+mixed content nor CORS applies. It switches itself on automatically when an
+`http` endpoint is entered on an `https` page.
+
+The trade-off is real and worth stating: with the relay on, your API key is sent
+to the server hosting the arena so it can be forwarded upstream. Direct calls
+keep the key in your browser. On your own deployment that's your own server; on
+someone else's, it isn't.
 
 ## The three arena rules
 

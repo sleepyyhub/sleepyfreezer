@@ -2,7 +2,7 @@
  * app.js — UI wiring, the round loop and the canvas renderer.
  */
 
-import { designLoadout, testConnection } from './agents.js';
+import { designLoadout, needsRelay, resolveEndpoint, testConnection } from './agents.js';
 import { ARENA, UNIT_RADIUS, advance, collectIntel, createBattle } from './sim.js';
 import { MAX_DAMAGE, UNIT_MAX_HP } from './rules.js';
 
@@ -10,11 +10,16 @@ const TEAM_COLORS = ['#38bdf8', '#fb7185'];
 const STORAGE_KEY = 'math-arena-teams-v1';
 
 const DEFAULT_TEAMS = [
-  { name: 'Team 1', baseUrl: 'http://106.54.43.21:3000/v1', apiKey: '', model: 'gpt-5.6-sol', enabled: true },
-  { name: 'Team 2', baseUrl: 'http://106.54.43.21:3000/v1', apiKey: '', model: 'gpt-5.6-sol', enabled: true },
+  { name: 'Team 1', baseUrl: 'http://106.54.43.21:3000/v1', apiKey: '', model: 'gpt-5.6-sol', enabled: true, useRelay: false },
+  { name: 'Team 2', baseUrl: 'http://106.54.43.21:3000/v1', apiKey: '', model: 'gpt-5.6-sol', enabled: true, useRelay: false },
 ];
 
 const teams = loadTeams();
+
+// A saved http endpoint on an https page can only work through the relay.
+for (const team of teams) {
+  if (needsRelay(team.baseUrl)) team.useRelay = true;
+}
 
 const el = {
   config: document.getElementById('config'),
@@ -97,6 +102,14 @@ function renderConfig() {
         </span>
       </label>
 
+      <label class="field relay">
+        <input type="checkbox" data-field="useRelay" ${team.useRelay ? 'checked' : ''} />
+        <span class="relay-text">
+          Route through server relay
+          <em data-role="relay-hint"></em>
+        </span>
+      </label>
+
       <div class="field">
         <span>Model list</span>
         <div class="model-box">
@@ -116,13 +129,42 @@ function renderConfig() {
       saveTeams();
     });
 
+    const relayHint = card.querySelector('[data-role="relay-hint"]');
+    const relayToggle = card.querySelector('[data-field="useRelay"]');
+
+    const refreshRelayHint = () => {
+      if (needsRelay(team.baseUrl) && !team.useRelay) {
+        relayHint.className = 'warn';
+        relayHint.textContent =
+          'Required — this page is https and your endpoint is http, so the browser will block the call.';
+      } else if (team.useRelay) {
+        relayHint.className = '';
+        relayHint.textContent =
+          `Calls go via ${location.origin}/relay/… — your API key passes through this server.`;
+      } else {
+        relayHint.className = '';
+        relayHint.textContent = 'Off — the browser calls your endpoint directly. Turn on if you hit CORS.';
+      }
+    };
+
     card.querySelectorAll('[data-field]').forEach((input) => {
-      input.addEventListener('input', (e) => {
-        team[e.target.dataset.field] = e.target.value.trim();
+      const event = input.type === 'checkbox' ? 'change' : 'input';
+      input.addEventListener(event, (e) => {
+        const field = e.target.dataset.field;
+        team[field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value.trim();
+        // A fresh http endpoint on an https page needs the relay; switch it on
+        // rather than letting the user hit an opaque "Load failed".
+        if (field === 'baseUrl' && needsRelay(team.baseUrl)) {
+          team.useRelay = true;
+          relayToggle.checked = true;
+        }
         saveTeams();
+        refreshRelayHint();
         card.querySelector('[data-role="conn"]').innerHTML = '';
       });
     });
+
+    refreshRelayHint();
 
     card.querySelector('[data-act="reveal"]').addEventListener('click', () => {
       const input = card.querySelector('[data-field="apiKey"]');
@@ -437,7 +479,7 @@ async function startBattle() {
     } else if (!team.apiKey) {
       log(`${team.name} has no API key — using the offline designer.`, 'warn');
     } else {
-      log(`${team.name}: ${team.model} @ ${team.baseUrl}`);
+      log(`${team.name}: ${team.model} @ ${resolveEndpoint(team, '/chat/completions')}`);
     }
     void i;
   }
