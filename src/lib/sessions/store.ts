@@ -60,8 +60,11 @@ export function hashAddress(address: string | null | undefined): string {
 export class SessionStore {
   private readonly sessions = new Map<string, SessionRecord>();
   private sweepTimer: NodeJS.Timeout | null = null;
+  private nextSequence = 1;
 
-  create(options: { creatorAddress?: string | null } = {}): CreatedSession {
+  create(
+    options: { creatorAddress?: string | null; ownerLinkId?: string | null } = {},
+  ): CreatedSession {
     const config = getConfig();
     this.sweep();
 
@@ -87,6 +90,7 @@ export class SessionStore {
     const session: SessionRecord = {
       id: generateSessionId(),
       createdAt: now,
+      sequence: this.nextSequence++,
       expiresAt: config.sessionTtlMs === null ? null : now + config.sessionTtlMs,
       terminatedAt: null,
       terminationReason: null,
@@ -111,6 +115,7 @@ export class SessionStore {
       audit: new AuditLog(),
       observations: createObservations(),
       creatorAddressHash: hashAddress(options.creatorAddress),
+      ownerLinkId: options.ownerLinkId ?? null,
     };
 
     session.audit.record({
@@ -355,6 +360,24 @@ export class SessionStore {
       }
     }
     return { total: this.sessions.size, active, robloxConnected, mcpConnections };
+  }
+
+  /**
+   * Resolves the session a persistent agent link currently points at: the most
+   * recently created active session bound to that link.
+   *
+   * Binding by newest rather than tracking a pointer means a fresh session takes
+   * over the link the moment it is created, with no extra bookkeeping and
+   * nothing to go stale when a session ends.
+   */
+  findActiveByLink(ownerLinkId: string, now = Date.now()): SessionRecord | null {
+    let newest: SessionRecord | null = null;
+    for (const session of this.sessions.values()) {
+      if (session.ownerLinkId !== ownerLinkId) continue;
+      if (sessionStatus(session, now) !== 'active') continue;
+      if (!newest || session.sequence > newest.sequence) newest = session;
+    }
+    return newest;
   }
 
   /**

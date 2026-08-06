@@ -132,7 +132,25 @@ Running it twice cleans up the previous connection instead of creating a duplica
 Clovyre speaks MCP over **Streamable HTTP**. There are three ways in; pick the one matching your
 client.
 
-### Claude app (claude.ai / desktop) — recommended
+### Permanent link — recommended
+
+Configure this once and never touch it again:
+
+```
+https://<deployment>/api/mcp/link/<link token>
+```
+
+The link resolves at request time to whichever session is currently bound to it. Creating a new
+session, regenerating a script, or restarting the service does **not** change the URL, so your agent
+never needs reconfiguring. The Roblox loadstring changes constantly; the MCP endpoint does not.
+
+It is stateless by design — an owner id plus an HMAC keyed by `TOKEN_HASH_SECRET` — because anything
+stored server-side would die with the in-memory session store and break the URL on every restart.
+
+**Trade-off:** a per-session token leaks one session; a link token leaks every session you bind to it
+until you rotate the link. Treat it as a long-lived password.
+
+### Session-only URL (claude.ai / desktop)
 
 Claude's custom connector screen accepts a URL and offers no field for an authorization header, so
 Clovyre also publishes the endpoint with the credential in the path:

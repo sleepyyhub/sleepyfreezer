@@ -19,9 +19,18 @@ export interface SessionEndpoints {
   clientScript: string;
 }
 
+export interface AgentLinkView {
+  token: string;
+  url: string;
+  remoteJson: string;
+  proxyJson: string;
+  claudeCodeCommand: string;
+}
+
 export interface SessionState {
   session: SessionView | null;
   endpoints: SessionEndpoints | null;
+  agentLink: AgentLinkView | null;
   loading: boolean;
   error: string | null;
   /** True when the browser holds no owner cookie for this session. */
@@ -45,6 +54,7 @@ export function useSession(sessionId: string) {
   const [state, setState] = useState<SessionState>({
     session: null,
     endpoints: null,
+    agentLink: null,
     loading: true,
     error: null,
     unauthorised: false,
@@ -121,6 +131,7 @@ export function useSession(sessionId: string) {
         ...previous,
         session: payload.session as SessionView,
         endpoints: payload.endpoints as SessionEndpoints,
+        agentLink: (payload.agentLink as AgentLinkView | null) ?? null,
         loading: false,
         error: null,
         unauthorised: false,

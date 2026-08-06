@@ -10,7 +10,12 @@ import {
 import { getRateLimiter } from '@/lib/security/rate-limit';
 import { getSessionStore } from '@/lib/sessions/store';
 import { buildSessionView } from '@/lib/sessions/view';
-import { buildLoadstring, buildMcpConfigSnippets } from '@/lib/sessions/snippets';
+import {
+  buildAgentLinkSnippets,
+  buildLoadstring,
+  buildMcpConfigSnippets,
+} from '@/lib/sessions/snippets';
+import { createAgentLink, verifyAgentLink } from '@/lib/sessions/link';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,9 +46,25 @@ export async function POST(request: NextRequest): Promise<Response> {
   const config = getConfig();
   const baseUrl = resolvePublicBaseUrl(request.headers);
 
+  // Reuse the caller's existing agent link when they present a valid one, so the
+  // MCP URL they configured once keeps working. Otherwise mint a fresh link.
+  let body: unknown = {};
+  try {
+    const text = await request.text();
+    if (text.trim().length > 0) body = JSON.parse(text);
+  } catch {
+    body = {};
+  }
+  const presentedLink = (body as { linkToken?: unknown }).linkToken;
+  const existingOwnerId = typeof presentedLink === 'string' ? verifyAgentLink(presentedLink) : null;
+
+  const link = existingOwnerId
+    ? { ownerId: existingOwnerId, token: presentedLink as string }
+    : createAgentLink();
+
   let created;
   try {
-    created = getSessionStore().create({ creatorAddress: address });
+    created = getSessionStore().create({ creatorAddress: address, ownerLinkId: link.ownerId });
   } catch (error) {
     return apiError(
       'CAPACITY',
@@ -70,6 +91,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       },
       loadstring: buildLoadstring(baseUrl, session.id, secrets.robloxToken),
       mcpConfig: buildMcpConfigSnippets(baseUrl, session.id, secrets.mcpToken),
+      // The stable endpoint. Configure once; it survives new sessions and restarts.
+      agentLink: {
+        token: link.token,
+        reused: Boolean(existingOwnerId),
+        ...buildAgentLinkSnippets(baseUrl, link.token),
+      },
       ttlMinutes: config.sessionTtlMs === null ? null : Math.round(config.sessionTtlMs / 60_000),
     },
     { status: 201 },
