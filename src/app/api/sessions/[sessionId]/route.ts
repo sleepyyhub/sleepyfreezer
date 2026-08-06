@@ -11,6 +11,8 @@ import { resolvePublicBaseUrl, toWebSocketOrigin } from '@/lib/config';
 import { getSessionBroker } from '@/lib/sessions/broker';
 import { getSessionStore } from '@/lib/sessions/store';
 import { buildSessionView } from '@/lib/sessions/view';
+import { agentLinkTokenFor } from '@/lib/sessions/link';
+import { buildAgentLinkSnippets } from '@/lib/sessions/snippets';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,8 +33,16 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
   if (!auth.ok) return auth.response;
 
   const baseUrl = resolvePublicBaseUrl(request.headers);
+
+  // Rebuilt from the stored owner id rather than remembered in the browser, so
+  // the stable URL is still shown after a reload or on another device.
+  const linkToken = auth.session.ownerLinkId ? agentLinkTokenFor(auth.session.ownerLinkId) : null;
+
   return jsonResponse({
     session: buildSessionView(auth.session),
+    agentLink: linkToken
+      ? { token: linkToken, ...buildAgentLinkSnippets(baseUrl, linkToken) }
+      : null,
     endpoints: {
       baseUrl,
       websocket: `${toWebSocketOrigin(baseUrl)}/ws/roblox`,

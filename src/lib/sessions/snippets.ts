@@ -34,6 +34,24 @@ export interface McpConfigSnippets {
   readonly proxyJson: string;
 }
 
+/**
+ * Snippets for the persistent agent link: one URL, configured once, valid across
+ * every future session.
+ */
+export function buildAgentLinkSnippets(baseUrl: string, linkToken: string) {
+  const url = `${baseUrl}/api/mcp/link/${linkToken}`;
+  return {
+    url,
+    remoteJson: JSON.stringify({ mcpServers: { clovyre: { type: 'http', url } } }, null, 2),
+    claudeCodeCommand: `claude mcp add --transport http clovyre ${url}`,
+    proxyJson: JSON.stringify(
+      { mcpServers: { clovyre: { command: 'npx', args: ['-y', 'mcp-remote', url] } } },
+      null,
+      2,
+    ),
+  };
+}
+
 export function buildMcpConfigSnippets(
   baseUrl: string,
   sessionId: string,

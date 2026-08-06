@@ -119,6 +119,12 @@ export function createObservations(): Observations {
 export interface SessionRecord {
   readonly id: string;
   readonly createdAt: number;
+  /**
+   * Monotonic creation order. Millisecond timestamps tie when two sessions are
+   * created in quick succession, which would otherwise make "the newest session
+   * bound to a link" ambiguous — and resolve to the older one.
+   */
+  readonly sequence: number;
   /** Null when this session never expires on a timer. */
   expiresAt: number | null;
   terminatedAt: number | null;
@@ -145,6 +151,12 @@ export interface SessionRecord {
 
   /** Populated when the session was created behind a proxy. Hashed, not raw. */
   readonly creatorAddressHash: string;
+
+  /**
+   * Owner id of the persistent agent link this session is bound to, when the
+   * creator supplied one. A stable MCP URL resolves through this.
+   */
+  readonly ownerLinkId: string | null;
 }
 
 export type SessionStatus = 'active' | 'expired' | 'terminated';

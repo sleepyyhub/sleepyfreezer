@@ -120,7 +120,8 @@ test.describe('session lifecycle', () => {
     await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
     const sessionId = page.url().split('/session/')[1]!;
 
-    await expect(page.getByText('Add custom connector', { exact: false })).toBeVisible();
+    // The phrase appears in both the permanent-link and session-only blocks.
+    await expect(page.getByText('Add custom connector', { exact: false }).first()).toBeVisible();
 
     const connectorUrl = (
       await page
@@ -145,6 +146,57 @@ test.describe('session lifecycle', () => {
       data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
     });
     expect(bad.status()).toBe(401);
+  });
+
+  test('the MCP link stays identical across new sessions', async ({ page, request }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Create session' }).first().click();
+    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
+    const firstSession = page.url().split('/session/')[1]!;
+
+    const firstLink = (
+      await page.locator('pre', { hasText: '/api/mcp/link/' }).first().innerText()
+    ).trim();
+    expect(firstLink).toContain('/api/mcp/link/clk_');
+
+    // The link must authenticate on its own, with no header and no session id.
+    const viaLink = await request.post(firstLink, {
+      headers: { 'content-type': 'application/json' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(viaLink.ok()).toBe(true);
+
+    // Create a second session, exactly as a user would the next day.
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Create session' }).first().click();
+    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
+    const secondSession = page.url().split('/session/')[1]!;
+    expect(secondSession).not.toBe(firstSession);
+
+    const secondLink = (
+      await page.locator('pre', { hasText: '/api/mcp/link/' }).first().innerText()
+    ).trim();
+    // Same URL, different session: nothing to reconfigure in the agent.
+    expect(secondLink).toBe(firstLink);
+
+    const after = await request.post(firstLink, {
+      headers: { 'content-type': 'application/json' },
+      data: {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'clovyre_session_info' },
+      },
+    });
+    const body = await after.json();
+    expect(body.result.structuredContent.data.sessionId).toBe(secondSession);
+
+    // A forged link must not resolve to anything.
+    const forged = await request.post('/api/mcp/link/clk_forged.signature', {
+      headers: { 'content-type': 'application/json' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(forged.status()).toBe(401);
   });
 
   test('explorer and scripts explain themselves with no client attached', async ({ page }) => {

@@ -74,6 +74,11 @@ const apiRoutes = [
     '/api/sessions/{id}/tools',
     'Runs a Clovyre tool as the owner. Same path MCP clients use.',
   ],
+  [
+    'POST',
+    '/api/mcp/link/{linkToken}',
+    'Stable MCP endpoint. Resolves to the session currently bound to the link; the URL never changes.',
+  ],
   ['POST', '/api/mcp/{id}', 'Remote MCP endpoint. Bearer token authentication.'],
   [
     'POST',

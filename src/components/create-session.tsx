@@ -12,6 +12,29 @@ import { ErrorNote } from './ui';
 
 export const SECRETS_STORAGE_PREFIX = 'clovyre.secrets.';
 
+/**
+ * The persistent agent link lives in localStorage, not sessionStorage: its whole
+ * purpose is to outlive individual sessions and tabs so the MCP URL configured
+ * in an agent never has to change.
+ */
+export const AGENT_LINK_STORAGE_KEY = 'clovyre.agentLink';
+
+export function readStoredAgentLink(): string | null {
+  try {
+    return localStorage.getItem(AGENT_LINK_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function storeAgentLink(token: string): void {
+  try {
+    localStorage.setItem(AGENT_LINK_STORAGE_KEY, token);
+  } catch {
+    // Private mode can refuse storage; the dashboard still shows the link.
+  }
+}
+
 export interface StoredSecrets {
   robloxToken: string;
   mcpToken: string;
@@ -33,10 +56,13 @@ export function CreateSessionButton({ className = 'cl-btn-primary' }: { classNam
     setBusy(true);
     setError(null);
     try {
+      // Present the existing link so the new session binds to the same stable
+      // MCP URL instead of minting a new one.
+      const existingLink = readStoredAgentLink();
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(existingLink ? { linkToken: existingLink } : {}),
       });
       const payload = await response.json();
 
@@ -46,6 +72,8 @@ export function CreateSessionButton({ className = 'cl-btn-primary' }: { classNam
         );
         return;
       }
+
+      if (payload.agentLink?.token) storeAgentLink(payload.agentLink.token);
 
       const secrets: StoredSecrets = {
         robloxToken: payload.secrets.robloxToken,
