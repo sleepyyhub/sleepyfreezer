@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Clovyre</title>
+<meta name="description" content="Clovyre — a sleek AI workspace powered by Kimi K3." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2314e08a'/%3E%3Cpath d='M22 11a8 8 0 100 10' stroke='%23052117' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ───────────────── sidebar ───────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="15"/><path d="M22 11a8 8 0 100 10"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>Clovyre</h1>
+        <span id="modelBadge">Kimi K3</span>
+      </div>
+    </div>
+
+    <button class="new-chat" id="newChat">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      New conversation
+    </button>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="searchChats" type="search" placeholder="Search chats" autocomplete="off" />
+    </div>
+
+    <nav class="chat-list" id="chatList"></nav>
+
+    <div class="sidebar-foot">
+      <button class="ghost-btn" id="openFiles">
+        <svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2z"/></svg>
+        Workspace <span class="count" id="fileCount">0</span>
+      </button>
+      <button class="ghost-btn" id="openSettings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.7 1.7 0 008.5 19a1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H2a2 2 0 110-4h.1A1.7 1.7 0 003.6 8.5a1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H8.5A1.7 1.7 0 0010 2.6V2a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v.1a1.7 1.7 0 001.5 1H22a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+        Settings
+      </button>
+    </div>
+  </aside>
+
+  <div class="scrim" id="scrim"></div>
+
+  <!-- ───────────────── main ───────────────── -->
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn only-mobile" id="menuBtn" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <h2 id="chatTitle">New conversation</h2>
+      <div class="spacer"></div>
+      <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="Mode">
+        <button data-mode="chat" class="active" role="tab">Chat</button>
+        <button data-mode="agent" role="tab">Agent</button>
+      </div>
+      <button class="icon-btn" id="exportChat" title="Export conversation">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme">
+        <svg viewBox="0 0 24 24"><path d="M21 13A9 9 0 1111 3a7 7 0 1010 10z"/></svg>
+      </button>
+    </header>
+
+    <div class="stream" id="stream">
+      <div class="welcome" id="welcome">
+        <div class="halo"></div>
+        <h3>Good to see you.</h3>
+        <p>Clovyre runs on Kimi K3 — long context, real reasoning, and an agent that builds files for you.</p>
+        <div class="suggestions">
+          <button data-prompt="Write a modern landing page for a coffee roastery — a single self-contained index.html with elegant type and subtle motion.">Build a landing page</button>
+          <button data-prompt="Explain how transformer attention works, building up from dot products to multi-head attention. Use clear analogies.">Explain attention</button>
+          <button data-prompt="Plan a two-week trip through northern Japan in autumn. Give me a day-by-day itinerary with travel times.">Plan a trip</button>
+          <button data-prompt="Here is a bug: my Python asyncio script hangs on shutdown. Walk me through how to diagnose it systematically.">Debug with me</button>
+        </div>
+      </div>
+      <div id="messages"></div>
+      <div class="stream-pad"></div>
+    </div>
+
+    <div class="composer-wrap">
+      <button class="scroll-down hidden" id="scrollDown" title="Jump to latest">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+      </button>
+
+      <div class="composer" id="composer">
+        <div class="attachments" id="attachments"></div>
+        <textarea id="input" rows="1" placeholder="Message Clovyre…" autocomplete="off"></textarea>
+        <div class="composer-bar">
+          <button class="icon-btn small" id="attachBtn" title="Attach files">
+            <svg viewBox="0 0 24 24"><path d="M21 11l-8.5 8.5a5 5 0 01-7-7L14 4a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 11-2.8-2.8L16 6.5"/></svg>
+          </button>
+          <input type="file" id="fileInput" multiple hidden />
+          <span class="hint" id="modeHint">Chat mode</span>
+          <div class="spacer"></div>
+          <span class="tokens" id="tokenInfo"></span>
+          <button class="send" id="sendBtn" title="Send">
+            <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+          </button>
+          <button class="send stop hidden" id="stopBtn" title="Stop">
+            <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="disclaimer">Clovyre can make mistakes. Verify anything important.</p>
+    </div>
+  </main>
+
+  <!-- ───────────────── workspace drawer ───────────────── -->
+  <aside class="drawer" id="filesDrawer" aria-hidden="true">
+    <header>
+      <h3>Workspace</h3>
+      <div class="spacer"></div>
+      <button class="icon-btn small" id="downloadAll" title="Download all">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg>
+      </button>
+      <button class="icon-btn small" id="closeFiles" title="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="drawer-body" id="filesBody"></div>
+  </aside>
+</div>
+
+<!-- ───────────────── settings modal ───────────────── -->
+<div class="modal" id="settingsModal" aria-hidden="true">
+  <div class="modal-card">
+    <header>
+      <h3>Settings</h3>
+      <div class="spacer"></div>
+      <button class="icon-btn small" id="closeSettings"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <label class="field">
+        <span>System prompt</span>
+        <textarea id="systemPrompt" rows="4"></textarea>
+      </label>
+      <label class="field">
+        <span>Temperature <b id="tempVal">0.6</b></span>
+        <input type="range" id="temperature" min="0" max="2" step="0.05" value="0.6" />
+      </label>
+      <label class="field">
+        <span>Top P <b id="topPVal">1.00</b></span>
+        <input type="range" id="topP" min="0.05" max="1" step="0.05" value="1" />
+      </label>
+      <label class="field">
+        <span>Max output tokens</span>
+        <input type="number" id="maxTokens" min="256" max="128000" step="256" value="8192" />
+      </label>
+      <label class="field row">
+        <input type="checkbox" id="autoTitle" checked />
+        <span>Name conversations automatically</span>
+      </label>
+      <label class="field row">
+        <input type="checkbox" id="sendOnEnter" checked />
+        <span>Enter sends · Shift+Enter for a newline</span>
+      </label>
+      <div class="danger">
+        <button class="ghost-btn" id="clearAll">Delete all conversations</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
