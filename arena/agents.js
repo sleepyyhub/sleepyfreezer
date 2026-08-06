@@ -42,7 +42,7 @@ Reply with ONE JSON object and nothing else. No prose, no markdown fences.
     "speed": <120-520, px/s along the path>,
     "range": <140-620, px>,
     "radius": <2.5-12, projectile size>,
-    "homing": <0-0.65, how hard the shot re-aims mid-flight>,
+    "aim": "<expression: the launch angle in radians — YOU COMPUTE THIS>",
     "path": {
       "x": "<expression: forward distance travelled>",
       "y": "<expression: sideways offset — THIS IS THE CURVE>"
@@ -57,13 +57,47 @@ Reply with ONE JSON object and nothing else. No prose, no markdown fences.
   }
 }
 
-PATH FRAME. The path is in the unit's own aiming frame at the moment of
-firing: +x points at the target, +y is to the left. t runs 0 -> 1 over the
-shot's life. Variables you may use in path.x and path.y:
+PATH FRAME. The path is in the barrel's frame at the moment of firing: +x runs
+along your launch angle, and +y is 90 degrees clockwise from it on screen.
+t runs 0 -> 1 over the shot's life. Variables in path.x and path.y:
   t = flight progress 0..1
   i = projectile index within the volley (0-based)
   n = projectiles in the volley
   d = the weapon's range
+
+AIMING — YOU DO THE TRIGONOMETRY. Nothing auto-aims. Nothing steers a shot once
+it is fired. The launch angle is whatever your "aim" expression evaluates to, in
+radians, measured from screen +x with +y pointing DOWN. Variables:
+  sx, sy    = your position right now
+  tx, ty    = the target's position right now
+  tvx, tvy  = the target's velocity right now, in px/s
+  speed     = your projectile speed in px/s
+  range     = your weapon's range
+
+You are NOT given the bearing to the target. Computing it is the job:
+atan2(ty - sy, tx - sx) points straight at where the target is standing.
+
+That naive aim misses, for two compounding reasons, and correcting both is the
+whole exercise:
+
+  1. LEAD. The target is moving at (tvx, tvy). Your shot takes roughly
+     hypot(tx - sx, ty - sy) / speed seconds to arrive. Aim where the target
+     WILL be, not where it is.
+
+  2. CURVE OFFSET. Your own path.y displaces the shot sideways. At impact
+     (t = 1) it is path.y(1) pixels off the barrel line, so a shot aimed
+     straight at the target lands path.y(1) pixels beside it. Rotate your aim
+     back by atan2(path_y_at_1, path_x_at_1) to bring the END of the curve onto
+     the target. Work out that number from your own expression — if your path.y
+     returns to 0 at t = 1 the correction is zero, and if it does not, you must
+     apply it or you will miss every time.
+
+Both corrections in one expression, leading and then de-rotating:
+  atan2(ty + tvy * hypot(tx-sx, ty-sy) / speed - sy,
+        tx + tvx * hypot(tx-sx, ty-sy) / speed - sx) - atan2(<your y(1)>, <your x(1)>)
+
+Do not copy that blindly — the last term depends on YOUR path, and if you aim
+at the enemy's shield gap rather than its centre you want a further offset.
 
 SHIELD FRAME. shape is a polar radius. Variables:
   a = angle in radians, 0..2*pi, where 0 faces the enemy
@@ -72,7 +106,7 @@ SHIELD FRAME. shape is a polar radius. Variables:
 Functions available: ${FUNCTION_NAMES.join(', ')}.
 Constants: pi, tau, e, phi. Operators: + - * / % ^ and parentheses.
 
-THE THREE ARENA RULES — the referee enforces these and will overwrite you:
+THE ARENA RULES — the referee enforces these and will overwrite you:
 1. NO ONE-SHOT KILLS. Units have ${UNIT_MAX_HP} HP and damage is hard-capped at
    ${MAX_DAMAGE} per hit, so every enemy withstands at least two attacks.
    Asking for more damage is wasted; win with volume, coverage and uptime.
@@ -81,6 +115,8 @@ THE THREE ARENA RULES — the referee enforces these and will overwrite you:
    impact. A constant or purely linear path.y is illegal and gets replaced by
    a generic arc — design your own curve or lose it.
 3. MATH ONLY. Any unknown name, or any attempt at code, is rejected.
+4. YOU AIM. If you omit "aim", the referee fires it straight at the target with
+   no lead and no curve correction. That is a legal shot and a wasted turn.
 
 ARENA GEOMETRY. The two front lines sit about ${ENGAGEMENT_DISTANCE}px apart and
 units drift roughly +/-40px vertically and +/-22px horizontally, so a shot with
@@ -138,18 +174,20 @@ function userPrompt({ round, teamName, unitIndex, unitCount, enemyIntel, allyInt
 const CRITIQUE_PROMPT = `Now critique your own design before it is locked in.
 
 Check it honestly against these, and answer each in one line:
-  a. At impact, where does your shot actually arrive relative to the enemy
-     shield's thin angle? Compute the lateral offset your path.y produces at
-     t = 1 and compare it against the shield radii you were given. If it lands
-     on a thick arc, your design failed and you must change it.
-  b. Does your path bend far enough that the referee will accept it, and does
+  a. Evaluate your own path.y at t = 1 and state the number. Does your "aim"
+     expression subtract atan2 of that offset? If not, your shot lands that
+     many pixels beside the target and you must fix the aim.
+  b. Does your aim lead the target using tvx and tvy over the flight time, or
+     does it fire at a position the target will have left? State the flight
+     time in seconds.
+  c. Does your path bend far enough that the referee will accept it, and does
      path.x still carry the shot the full distance to the target?
-  c. Given the damage cap, how many rounds does your build need to secure a
+  d. Given the damage cap, how many rounds does your build need to secure a
      kill? If a different count/damage split kills faster, take it.
-  d. Where is your own shield thinnest, and is that arc pointed at the enemy?
+  e. Where is your own shield thinnest, and is that arc pointed at the enemy?
 
 Then reply with the FULL corrected JSON object — same schema, every field, no
-prose outside it. Put your answers to a-d in the "analysis" field. If the design
+prose outside it. Put your answers to a-e in the "analysis" field. If the design
 genuinely needs no change, resend it unchanged, but say why in "analysis".`;
 
 /** Pull the first balanced JSON object out of a model reply. */
@@ -278,40 +316,46 @@ export async function testConnection(config) {
 const OFFLINE_WEAPONS = [
   {
     name: 'Sine Lance',
+    endLateral: 0, endForward: 520,
     y: 'sin(t * pi) * 74 * (1 - 2 * mod(i, 2))',
     x: 't * d',
-    damage: 26, count: 2, cooldown: 1.0, speed: 320, range: 520, homing: 0.1,
+    damage: 26, count: 2, cooldown: 1.0, speed: 320, range: 520,
   },
   {
     name: 'Hook Volley',
+    endLateral: -96, endForward: 540,
     y: 'sin(t * tau * 0.75) * 96 * (1 + i * 0.4)',
     x: 'd * smoothstep(0, 1, t)',
-    damage: 19, count: 3, cooldown: 1.35, speed: 280, range: 540, homing: 0.2,
+    damage: 19, count: 3, cooldown: 1.35, speed: 280, range: 540,
   },
   {
     name: 'Spiral Shard',
+    endLateral: 0, endForward: 560,
     y: 'sin(t * tau * 2 + i * tau / n) * 48 * t',
     x: 't * d * (0.6 + 0.4 * t)',
-    damage: 15, count: 4, cooldown: 1.5, speed: 380, range: 560, homing: 0.05,
+    damage: 15, count: 4, cooldown: 1.5, speed: 380, range: 560,
   },
   {
     name: 'Parabola Mortar',
+    endLateral: 0, endForward: 510,
     y: '-4 * 110 * t * (1 - t) * (1 - 2 * mod(i, 2))',
     x: 't * d',
-    damage: 32, count: 1, cooldown: 1.6, speed: 240, range: 510, homing: 0.3,
+    damage: 32, count: 1, cooldown: 1.6, speed: 240, range: 510,
   },
   {
     name: 'Boomerang Cutter',
+    endLateral: 0, endForward: 575,
     // Overshoots to 1.15x range at the apex, then hooks back past the launcher.
     y: 'sin(t * tau) * 120',
     x: 'd * sin(t * pi) * 1.15',
-    damage: 22, count: 2, cooldown: 1.25, speed: 300, range: 500, homing: 0,
+    damage: 22, count: 2, cooldown: 1.25, speed: 300, range: 500,
   },
   {
     name: 'Lissajous Net',
+    endLateral: 0, endForward: 580,
     y: 'sin(t * tau * 1.5 + i * 1.1) * 66',
     x: 't * d * (1 - 0.18 * sin(t * tau))',
-    damage: 13, count: 5, cooldown: 1.7, speed: 340, range: 580, homing: 0.15,
+    damage: 13, count: 5, cooldown: 1.7, speed: 340, range: 580,
   },
 ];
 
@@ -327,6 +371,17 @@ function pick(list, seed) {
   return list[Math.floor(Math.abs(seed)) % list.length];
 }
 
+/**
+ * Build a firing solution the same way an agent is asked to: lead the target
+ * over the flight time, then de-rotate by the curve's own end offset so the
+ * END of the arc lands on the target rather than the start of it.
+ */
+function offlineAim(weapon) {
+  const flight = 'hypot(tx - sx, ty - sy) / speed';
+  const lead = `atan2(ty + tvy * ${flight} - sy, tx + tvx * ${flight} - sx)`;
+  return `${lead} - atan2(${weapon.endLateral}, ${weapon.endForward})`;
+}
+
 export function offlineLoadout({ round, unitIndex, teamName }) {
   const seed = round * 7 + unitIndex * 3 + teamName.length;
   const w = pick(OFFLINE_WEAPONS, seed);
@@ -337,7 +392,8 @@ export function offlineLoadout({ round, unitIndex, teamName }) {
     weapon: {
       name: w.name,
       damage: w.damage, count: w.count, cooldown: w.cooldown,
-      speed: w.speed, range: w.range, radius: 5, homing: w.homing,
+      speed: w.speed, range: w.range, radius: 5,
+      aim: offlineAim(w),
       path: { x: w.x, y: w.y },
     },
     shield: { name: s.name, capacity: s.capacity, regen: s.regen, absorb: s.absorb, shape: s.shape },

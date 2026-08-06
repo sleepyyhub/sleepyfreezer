@@ -12,7 +12,7 @@ each other.
 
 ```bash
 node arena/serve.js          # http://localhost:8080
-node arena/test.js           # headless checks (39 assertions)
+node arena/test.js           # headless checks (92 assertions)
 ```
 
 It has to be served over http, not opened as a `file://` URL, because the app
@@ -57,7 +57,7 @@ to the server hosting the arena so it can be forwarded upstream. Direct calls
 keep the key in your browser. On your own deployment that's your own server; on
 someone else's, it isn't.
 
-## The three arena rules
+## The arena rules
 
 These are stated in the agent prompt, but the prompt is not the enforcement —
 `rules.js` is. Everything an agent submits is validated, clamped or repaired
@@ -74,6 +74,10 @@ referee log so you can see what got overruled.
 3. **Math only.** Agents submit expressions in a small language that is
    tokenized, parsed and evaluated by `mathlang.js`. There is no `eval`, no
    `Function`, and no reachable global. `document.cookie` is a parse error.
+4. **Agents compute their own aim.** Nothing auto-aims and nothing steers a shot
+   after launch. The launch angle is whatever the agent's `aim` expression
+   evaluates to. Omit it and the referee fires straight at the target with no
+   lead and no curve correction — legal, and a wasted turn.
 
 Beyond the rules, every numeric field is clamped to a sane band (projectile
 count 1–5, cooldown 0.35–4s, shield absorb 0–85%, shield radius ≤ 58px), so no
@@ -88,7 +92,8 @@ agent can win by submitting large numbers.
   "weapon": {
     "name": "Sine Lance",
     "damage": 26, "count": 2, "cooldown": 1.0,
-    "speed": 320, "range": 520, "radius": 5, "homing": 0.1,
+    "speed": 320, "range": 520, "radius": 5,
+    "aim": "atan2(ty + tvy * hypot(tx-sx, ty-sy) / speed - sy, tx + tvx * hypot(tx-sx, ty-sy) / speed - sx) - atan2(0, 520)",
     "path": {
       "x": "t * d",
       "y": "sin(t * pi) * 74 * (1 - 2 * mod(i, 2))"
@@ -104,8 +109,8 @@ agent can win by submitting large numbers.
 
 ### Path frame
 
-The path is expressed in the unit's own aiming frame at the moment of firing:
-`+x` points at the target, `+y` is to the left. Variables:
+The path is expressed in the barrel's frame at the moment of firing: `+x` runs
+along the launch angle, `+y` is 90° clockwise from it on screen. Variables:
 
 | Variable | Meaning |
 | --- | --- |
@@ -176,6 +181,37 @@ Both passes are kept. The agent's reasoning is shown under **Agent's reasoning**
 on each loadout card, so you can read why a design was chosen and judge whether
 the second pass actually improved it. Turn the checkbox off for one-pass designs
 (faster, and half the API calls).
+
+## Aiming is the agent's job
+
+This is the part that makes the curve matter. An agent gets raw geometry and
+nothing pre-solved — deliberately **not** the bearing to the target:
+
+| Variable | Meaning |
+| --- | --- |
+| `sx`, `sy` | your position at the moment of firing |
+| `tx`, `ty` | the target's position |
+| `tvx`, `tvy` | the target's velocity, px/s — units drift, so they lead |
+| `speed` | projectile speed |
+| `range` | weapon range |
+
+`atan2(ty - sy, tx - sx)` points straight at where the target is standing, and
+that misses for two compounding reasons the agent has to correct:
+
+1. **Lead.** The target is moving. The shot takes `hypot(tx-sx, ty-sy) / speed`
+   seconds to arrive, so the aim has to go where the target *will* be.
+2. **Curve offset.** The agent's own `path.y` displaces the shot sideways. At
+   impact it is `path.y(1)` pixels off the barrel line, so a shot aimed straight
+   at the target lands that far beside it. Rotating the aim back by
+   `atan2(y(1), x(1))` brings the *end of the curve* onto the target.
+
+The second correction is the interesting one: an agent has to evaluate its own
+expression at `t = 1` to know what to subtract. Get it wrong and the shot sails
+past. In the test suite the same weapon fired with a naive aim lands 2 hits over
+four rounds; with the geometry solved it lands 5.
+
+Homing was removed along with this change — a shot that re-aims itself in flight
+is auto-aim by another name, and it made the firing solution pointless.
 
 ## Recording
 

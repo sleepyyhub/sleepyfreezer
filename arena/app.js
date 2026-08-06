@@ -265,7 +265,10 @@ function renderLoadouts() {
           ${w.speed.toFixed(0)}px/s, ${w.range.toFixed(0)}px range</dd>
         <dt>path.x</dt><dd><code>${escapeHtml(w.source.x)}</code></dd>
         <dt>path.y</dt><dd><code>${escapeHtml(w.source.y)}</code></dd>
-        <dt>Bend</dt><dd>${w.curvature.toFixed(1)}px${w.homing > 0 ? ` · homing ${(w.homing * 100).toFixed(0)}%` : ''}</dd>
+        <dt>aim</dt><dd>${w.aimed
+          ? `<code>${escapeHtml(w.source.aim)}</code>`
+          : '<span class="unaimed">no firing solution — referee aimed it</span>'}</dd>
+        <dt>Bend</dt><dd>${w.curvature.toFixed(1)}px</dd>
         <dt>Shield</dt><dd>${escapeHtml(s.name)} — ${s.capacity.toFixed(0)} pts,
           ${(s.absorb * 100).toFixed(0)}% absorb, +${s.regen.toFixed(1)}/s</dd>
         <dt>shape</dt><dd><code>${escapeHtml(s.source)}</code></dd>
@@ -380,11 +383,16 @@ function drawAnnouncement(a) {
 
   ctx.font = '600 17px ui-monospace, SFMono-Regular, Menlo, monospace';
   const eqLines = wrapText(`y(t) = ${a.equation}`, width - 48);
+
+  ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, monospace';
+  const aimLines = a.aimed
+    ? wrapText(`aim = ${a.aim}`, width - 48)
+    : ['aim = (none supplied — referee is pointing it straight at the target)'];
   ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
   const docLines = a.doctrine ? wrapText(a.doctrine, width - 48) : [];
 
   // Leaves clear space under the last line for the countdown bar.
-  const height = 124 + eqLines.length * 24 + docLines.length * 18;
+  const height = 130 + eqLines.length * 24 + aimLines.length * 17 + docLines.length * 18;
   const y = (ARENA.height - height) / 2;
 
   ctx.fillStyle = 'rgba(12,14,16,0.93)';
@@ -410,11 +418,16 @@ function drawAnnouncement(a) {
   ctx.font = '600 17px ui-monospace, SFMono-Regular, Menlo, monospace';
   eqLines.forEach((line, i) => ctx.fillText(line, centre, y + 94 + i * 24));
 
+  // The firing solution — the trigonometry the agent had to do itself.
+  ctx.fillStyle = a.aimed ? '#7dd3fc' : '#fbbf24';
+  ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, monospace';
+  const aimTop = y + 96 + eqLines.length * 24;
+  aimLines.forEach((line, i) => ctx.fillText(line, centre, aimTop + i * 17));
+
   ctx.fillStyle = '#94a3b8';
   ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
-  docLines.forEach((line, i) => {
-    ctx.fillText(line, centre, y + 100 + eqLines.length * 24 + i * 18);
-  });
+  const docTop = aimTop + aimLines.length * 17 + 8;
+  docLines.forEach((line, i) => ctx.fillText(line, centre, docTop + i * 18));
 
   // Countdown bar — shows exactly when the shot goes out.
   const progress = 1 - Math.max(match.phaseTimer, 0) / ANNOUNCE_SECONDS;
@@ -646,7 +659,8 @@ function renderLoop(timestamp) {
     advance(match, dt, parseFloat(el.simSpeed.value));
     while (match.events.length) {
       const event = match.events.shift();
-      log(event.text, event.kind === 'kill' ? 'warn' : event.kind === 'announce' ? 'head' : '');
+      const kind = { kill: 'warn', announce: 'head', aim: 'aim', warn: 'warn' }[event.kind] || '';
+      log(event.text, kind);
     }
     if ((match.roundComplete || match.over) && roundResolver) {
       const resolve = roundResolver;

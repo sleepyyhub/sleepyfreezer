@@ -136,6 +136,8 @@ function startTurn(match) {
     weaponName: weapon.name,
     equation: weapon.source.y,
     forward: weapon.source.x,
+    aim: weapon.source.aim,
+    aimed: weapon.aimed,
     doctrine: attacker.loadout.doctrine,
   };
   match.phase = 'announce';
@@ -175,11 +177,55 @@ function nearestEnemy(match, unit) {
   return best;
 }
 
+/**
+ * The drift velocity of a unit right now, so an agent can lead its target.
+ * Analytic derivative of the drift in stepOnce — no finite differences, so the
+ * number an agent is given is exactly the motion it is aiming at.
+ */
+export function unitVelocity(unit, time) {
+  const phase = time * 0.9 + unit.index * 1.7 + unit.team * 2.3;
+  return {
+    vx: -Math.sin(phase * 0.6) * DRIFT_X * 0.6 * 0.9,
+    vy: Math.cos(phase) * DRIFT_Y * 0.9,
+  };
+}
+
 function fire(match, unit, target) {
   const weapon = unit.loadout.weapon;
-  const angle = Math.atan2(target.y - unit.y, target.x - unit.x);
+
+  // The agent's own firing solution decides where this goes. The engine
+  // supplies raw geometry and nothing else — no auto-aim.
+  const velocity = unitVelocity(target, match.time);
+  const angle = weapon.aim({
+    sx: unit.x,
+    sy: unit.y,
+    tx: target.x,
+    ty: target.y,
+    tvx: velocity.vx,
+    tvy: velocity.vy,
+    speed: weapon.speed,
+    range: weapon.range,
+  });
+
+  // Recorded so the log can show what the solution cost or bought them.
+  const direct = Math.atan2(target.y - unit.y, target.x - unit.x);
+  unit.lastAim = {
+    angle,
+    direct,
+    offsetDegrees: (angleDelta(direct, angle) * 180) / Math.PI,
+  };
+
   unit.facing = angle;
   unit.turnsTaken++;
+
+  const offset = unit.lastAim.offsetDegrees;
+  match.events.push({
+    text: weapon.aimed
+      ? `${unit.callsign} computes its firing solution: ${((angle * 180) / Math.PI).toFixed(1)}° `
+        + `(${offset >= 0 ? '+' : ''}${offset.toFixed(1)}° off the direct bearing).`
+      : `${unit.callsign} fires without a solution — the referee points it straight at the target.`,
+    kind: weapon.aimed ? 'aim' : 'warn',
+  });
 
   for (let i = 0; i < weapon.count; i++) {
     match.projectiles.push({
@@ -201,16 +247,15 @@ function fire(match, unit, target) {
   }
 }
 
-function projectilePosition(p, targetAngle) {
+function projectilePosition(p) {
   const t = Math.min(p.age / p.weapon.life, 1);
   const scope = { t, i: p.index, n: p.weapon.count, d: p.weapon.range };
   const forward = p.weapon.forward(scope);
   const lateral = p.weapon.lateral(scope);
-  const angle = targetAngle == null
-    ? p.angle
-    : p.angle + angleDelta(p.angle, targetAngle) * p.weapon.homing * t;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
+  // The launch angle is fixed at fire time by the agent's firing solution.
+  // Nothing steers a shot after it leaves the barrel.
+  const cos = Math.cos(p.angle);
+  const sin = Math.sin(p.angle);
   return {
     x: p.originX + forward * cos - lateral * sin,
     y: p.originY + forward * sin + lateral * cos,
@@ -281,13 +326,7 @@ function stepProjectiles(match, dt) {
     p.prevX = p.x;
     p.prevY = p.y;
 
-    let homingAngle = null;
-    if (p.weapon.homing > 0) {
-      const owner = match.units.find((u) => u.id === p.owner);
-      const target = owner ? nearestEnemy(match, owner) : null;
-      if (target) homingAngle = Math.atan2(target.y - p.originY, target.x - p.originX);
-    }
-    const pos = projectilePosition(p, homingAngle);
+    const pos = projectilePosition(p);
     p.x = pos.x;
     p.y = pos.y;
 

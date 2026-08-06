@@ -6,6 +6,7 @@
 
 import { compileExpression, MathLangError } from './mathlang.js';
 import {
+  NAIVE_AIM,
   MAX_DAMAGE,
   MIN_CURVE_DEVIATION,
   UNIT_MAX_HP,
@@ -156,12 +157,11 @@ section('RULE 3 — math only');
 section('spec clamping');
 {
   const wild = buildLoadout({
-    weapon: { name: 'Wild', count: 99, cooldown: 0.001, speed: 99999, range: 99999, homing: 5 },
+    weapon: { name: 'Wild', count: 99, cooldown: 0.001, speed: 99999, range: 99999 },
     shield: { name: 'Fortress', capacity: 9999, absorb: 5, regen: 999, shape: '5000' },
   });
   check('projectile count clamped', wild.weapon.count <= 5, `got ${wild.weapon.count}`);
   check('cooldown clamped', wild.weapon.cooldown >= 0.35);
-  check('homing clamped', wild.weapon.homing <= 0.65);
   check('absorb clamped', wild.shield.absorb <= 0.85);
   check('shield radius clamped', wild.shield.radiusAt(0, 0) <= 58,
     `got ${wild.shield.radiusAt(0, 0)}`);
@@ -224,6 +224,90 @@ section('endpoint routing');
   check('trailing slashes on the base URL are handled',
     withLocation(https, () => resolveEndpoint({ baseUrl: 'https://api.example.com/v1//' }, '/chat/completions'))
       === 'https://api.example.com/v1/chat/completions');
+}
+
+/* ------------------------------- aiming --------------------------------- */
+
+section('RULE 4 — agents compute their own aim');
+{
+  const noAim = buildLoadout({
+    weapon: { name: 'Point Blank', path: { x: 't * 400', y: 'sin(t * pi) * 60' } },
+  });
+  check('a missing firing solution is flagged', noAim.weapon.aimed === false);
+  check('the omission is reported', noAim.notes.some((n) => n.startsWith('RULE 4')));
+  check('the referee substitutes a naive aim', noAim.weapon.source.aim === NAIVE_AIM);
+
+  const badAim = buildLoadout({
+    weapon: { name: 'Bad', aim: 'window.target', path: { x: 't * 400', y: 'sin(t * pi) * 60' } },
+  });
+  check('an invalid aim expression is rejected', badAim.weapon.aimed === false);
+  check('the rejection is reported', badAim.notes.some((n) => n.includes('aim')));
+
+  const aimed = buildLoadout({
+    weapon: {
+      name: 'Solved',
+      aim: 'atan2(ty - sy, tx - sx) - atan2(-96, 540)',
+      path: { x: 't * 540', y: 'sin(t * tau * 0.75) * 96' },
+    },
+  });
+  check('a valid firing solution is kept', aimed.weapon.aimed === true);
+  check('the aim expression is preserved verbatim',
+    aimed.weapon.source.aim === 'atan2(ty - sy, tx - sx) - atan2(-96, 540)');
+
+  // The aim expression must actually drive the launch angle.
+  const angle = aimed.weapon.aim({ sx: 0, sy: 0, tx: 100, ty: 0, tvx: 0, tvy: 0, speed: 300, range: 540 });
+  const expected = Math.atan2(0, 100) - Math.atan2(-96, 540);
+  check('the launch angle comes from the expression', Math.abs(angle - expected) < 1e-9,
+    `${angle} vs ${expected}`);
+
+  check('aim variables are restricted', (() => {
+    const spec = buildLoadout({
+      weapon: { name: 'Peek', aim: 'enemyHp', path: { x: 't * 400', y: 'sin(t * pi) * 60' } },
+    });
+    return spec.weapon.aimed === false;
+  })());
+}
+
+section('aiming changes outcomes');
+{
+  // A weapon whose curve ends 96px off the barrel line at impact. Aimed
+  // straight at the target it lands beside them; de-rotated it connects.
+  const weapon = (aim) => ({
+    name: aim ? 'Solved Hook' : 'Naive Hook',
+    damage: 20,
+    count: 3,
+    speed: 280,
+    range: 540,
+    ...(aim ? { aim } : {}),
+    path: { x: 'd * smoothstep(0, 1, t)', y: 'sin(t * tau * 0.75) * 96 * (1 + i * 0.4)' },
+  });
+
+  const shield = { name: 'Thin', capacity: 0, regen: 0, absorb: 0, shape: '20' };
+  const solved = 'atan2(ty + tvy * hypot(tx - sx, ty - sy) / speed - sy, '
+    + 'tx + tvx * hypot(tx - sx, ty - sy) / speed - sx) - atan2(-96, 540)';
+
+  const runWith = (aim) => {
+    const attacker = buildLoadout({ callsign: 'Shooter', weapon: weapon(aim), shield });
+    const defender = buildLoadout({ callsign: 'Target', weapon: weapon(aim), shield });
+    const match = createMatch([attacker], [defender]);
+    for (let round = 1; round <= 4 && !match.over; round++) {
+      beginRound(match, round, match.units.map((u) => u.id));
+      runRound(match);
+    }
+    return match.units[0].hitsLanded;
+  };
+
+  const naiveHits = runWith(null);
+  const solvedHits = runWith(solved);
+
+  // A naive aim still scores the odd incidental hit — the curve sweeps through
+  // the target area mid-flight even when its endpoint lands elsewhere. What
+  // matters is that solving the geometry is decisively better.
+  check('a computed firing solution lands hits', solvedHits > 0,
+    `landed ${solvedHits} hits`);
+  check('solving the aim at least doubles the hit rate', solvedHits >= naiveHits * 2,
+    `naive ${naiveHits} vs solved ${solvedHits}`);
+  console.log(`       (naive aim: ${naiveHits} hits, solved aim: ${solvedHits} hits)`);
 }
 
 /* ------------------------------ webm patch ------------------------------ */

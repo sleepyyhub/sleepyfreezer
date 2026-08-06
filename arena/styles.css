@@ -240,5 +240,7 @@ canvas {
 .log .entry { color: var(--muted); border-left: 2px solid var(--line); padding-left: 9px; }
 .log .entry.head { color: var(--text); font-weight: 650; border-left-color: var(--accent); margin-top: 6px; }
 .log .entry.warn { color: #fbbf24; border-left-color: #fbbf24; }
+.log .entry.aim { color: #7dd3fc; border-left-color: #7dd3fc; }
+.loadout .unaimed { color: #fbbf24; font-size: 12px; }
 .log .entry.err { color: var(--danger); border-left-color: var(--danger); }
 .empty { color: var(--muted); font-size: 13px; margin: 0; }

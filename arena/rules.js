@@ -28,6 +28,15 @@ export const MIN_CURVE_DEVIATION = 14;
 
 export const PATH_VARS = ['t', 'i', 'n', 'd'];
 export const SHIELD_VARS = ['a', 't'];
+// Everything an agent needs to solve the firing problem, and nothing pre-solved:
+// raw positions, the target's current velocity, and the shot's own speed/range.
+// There is deliberately no "bearing to target" variable — that is the work.
+export const AIM_VARS = ['sx', 'sy', 'tx', 'ty', 'tvx', 'tvy', 'speed', 'range'];
+
+// The referee's stand-in when an agent supplies no firing solution: point
+// straight at where the target is standing right now. It is legal, and it is
+// bad — it ignores the target's drift and its own curve, so it tends to miss.
+export const NAIVE_AIM = 'atan2(ty - sy, tx - sx)';
 
 const clamp = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
 
@@ -150,11 +159,33 @@ export function buildWeapon(raw, notes = []) {
     bestDeviation = measureCurvature(forward, lateral, { i: 0, n: count, d: range });
   }
 
+  // RULE 4: the agent computes its own firing solution. Nothing auto-aims.
+  let aim;
+  let aimed = true;
+  if (spec.aim === undefined || spec.aim === null || spec.aim === '') {
+    notes.push(
+      `RULE 4 — "${name}" supplied no firing solution, so the referee aimed it straight at the `
+      + 'target: no lead for the target\'s drift, no compensation for its own curve. It will miss.',
+    );
+    aim = compileExpression(NAIVE_AIM, { allowedVars: AIM_VARS });
+    aimed = false;
+  } else {
+    try {
+      aim = compileOrThrow(spec.aim, AIM_VARS, 'aim');
+    } catch (error) {
+      notes.push(`${error.message} — the referee fell back to a naive straight-at-target aim.`);
+      aim = compileExpression(NAIVE_AIM, { allowedVars: AIM_VARS });
+      aimed = false;
+    }
+  }
+
   const life = clamp(range / Math.max(speed, 1), 0.35, 4.5);
 
   return {
     weapon: {
       name,
+      aim,
+      aimed,
       damage,
       count,
       cooldown,
@@ -165,11 +196,11 @@ export function buildWeapon(raw, notes = []) {
       forward,
       lateral,
       curvature: bestDeviation,
-      homing: clamp(num(spec.homing, 0, 0, 1), 0, 0.65),
       pierce: spec.pierce === true,
       source: {
         x: forward.source,
         y: lateral.source,
+        aim: aim.source,
       },
     },
     notes,
