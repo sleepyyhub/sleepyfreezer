@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Math Weapon Arena — AI vs AI</title>
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">∫</span>
+    <div>
+      <h1>Math Weapon Arena</h1>
+      <p>Two teams of AI agents design curved ordnance and polar shields. The referee enforces the rules.</p>
+    </div>
+  </div>
+  <div class="rules">
+    <span class="rule"><b>1</b> No one-shot kills — every unit withstands 2 attacks</span>
+    <span class="rule"><b>2</b> Every shot must curve</span>
+    <span class="rule"><b>3</b> Math expressions only</span>
+  </div>
+</header>
+
+<main>
+  <section class="config" id="config">
+    <!-- Team panels are rendered here by app.js -->
+  </section>
+
+  <section class="controls">
+    <label class="field inline">
+      <span>Units per team</span>
+      <input type="number" id="unitCount" min="1" max="4" value="3" />
+    </label>
+    <label class="field inline">
+      <span>Rounds</span>
+      <input type="number" id="roundCount" min="1" max="10" value="3" />
+    </label>
+    <label class="field inline">
+      <span>Sim speed</span>
+      <select id="simSpeed">
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="2">2x</option>
+        <option value="4">4x</option>
+      </select>
+    </label>
+    <button id="startBtn" class="primary">Start battle</button>
+    <button id="stopBtn" class="ghost" disabled>Stop</button>
+    <span id="status" class="status">Idle — configure both teams, or press start to use the offline designers.</span>
+  </section>
+
+  <section class="stage">
+    <canvas id="arena" width="960" height="540"></canvas>
+    <div class="scoreboard" id="scoreboard"></div>
+  </section>
+
+  <section class="panels">
+    <div class="panel">
+      <h2>Loadouts</h2>
+      <div id="loadouts" class="loadouts">
+        <p class="empty">No loadouts yet. Start a battle and the agents will design their kit.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Referee &amp; battle log</h2>
+      <div id="log" class="log"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
