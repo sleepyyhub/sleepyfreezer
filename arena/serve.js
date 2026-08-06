@@ -23,7 +23,10 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
-const PORT = parseInt(process.argv[2], 10) || 8080;
+// Hosts such as Render assign the port through the environment and require
+// binding on all interfaces; the CLI argument stays for local use.
+const PORT = parseInt(process.argv[2], 10) || parseInt(process.env.PORT, 10) || 8080;
+const HOST = process.env.HOST || '0.0.0.0';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -106,7 +109,7 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Math Weapon Arena  →  http://localhost:${PORT}`);
-  console.log(`CORS relay          →  http://localhost:${PORT}/relay/<full-endpoint-url>`);
+server.listen(PORT, HOST, () => {
+  console.log(`Math Weapon Arena  →  http://localhost:${PORT}  (bound on ${HOST}:${PORT})`);
+  console.log(`CORS relay          →  /relay/<full-endpoint-url>`);
 });

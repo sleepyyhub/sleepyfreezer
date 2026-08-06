@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: math-weapon-arena
+    runtime: node
+    plan: free
+    branch: claude/tiktok-video-analysis-pw6jzm
+    # No dependencies — the arena is plain ES modules and the server is
+    # built on node:http, so there is nothing to install.
+    buildCommand: node arena/test.js
+    startCommand: node arena/serve.js
+    healthCheckPath: /

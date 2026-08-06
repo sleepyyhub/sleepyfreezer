@@ -1,0 +1,14 @@
+{
+  "name": "math-weapon-arena",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Two teams of AI agents fight by designing weapons and shields out of math.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node arena/serve.js",
+    "test": "node arena/test.js"
+  }
+}
