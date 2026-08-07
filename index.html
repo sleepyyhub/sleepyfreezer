@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Text → Python Compressor</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #1a1d27;
+    --panel-2: #232735;
+    --border: #2e3444;
+    --text: #e7e9ee;
+    --muted: #9aa0b0;
+    --accent: #6c8cff;
+    --accent-2: #48c78e;
+    --danger: #ff6b6b;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 32px 20px 60px;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: var(--muted);
+    margin: 0 0 28px;
+    font-size: 0.95rem;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 0 0 6px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  textarea, input[type="text"] {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  textarea:focus, input[type="text"]:focus { border-color: var(--accent); }
+  textarea {
+    height: 180px;
+    resize: vertical;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    white-space: pre;
+    overflow: auto;
+  }
+  .field { margin-bottom: 20px; }
+  .row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+  .row .field { flex: 1; min-width: 200px; margin-bottom: 0; }
+  .suffix-wrap { position: relative; }
+  .suffix-wrap .suffix {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+    font-family: ui-monospace, monospace;
+    font-size: 0.9rem;
+  }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s, opacity 0.15s;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.ghost {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 4px 0 20px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    text-align: center;
+  }
+  .stat .num { font-size: 1.15rem; font-weight: 700; }
+  .stat .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+  .stat.good .num { color: var(--accent-2); }
+  .actions { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+  .hint { color: var(--muted); font-size: 0.82rem; margin-top: 14px; }
+  .hidden { display: none !important; }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 0.88rem;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  code.mono { font-family: ui-monospace, monospace; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Text&nbsp;→&nbsp;Python Compressor</h1>
+  <p class="sub">Paste any text, name it, and download it as a compact, self-contained Python file.</p>
+
+  <div class="field">
+    <label for="input">Paste your text</label>
+    <textarea id="input" placeholder="Paste or type here…" spellcheck="false"></textarea>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num" id="statChars">0</div><div class="lbl">Characters</div></div>
+    <div class="stat"><div class="num" id="statRaw">0 B</div><div class="lbl">Raw size</div></div>
+    <div class="stat good"><div class="num" id="statPacked">0 B</div><div class="lbl">Compressed</div></div>
+  </div>
+
+  <div class="row" style="margin-bottom: 20px;">
+    <div class="field">
+      <label for="name">File name</label>
+      <div class="suffix-wrap">
+        <input type="text" id="name" value="my_text" placeholder="my_text" spellcheck="false" />
+        <span class="suffix">.py</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="download" disabled>Download .py file</button>
+    <button id="clear" class="ghost">Clear</button>
+  </div>
+
+  <p class="hint">
+    The Python file stores your text gzip-compressed &amp; base64-encoded, so it stays tiny.
+    Run it with <code class="mono">python your_file.py</code> to print the original text back
+    (or <code class="mono">import</code> it and read <code class="mono">TEXT</code>).
+  </p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const input = $("input");
+  const nameEl = $("name");
+  const downloadBtn = $("download");
+  const clearBtn = $("clear");
+  const statChars = $("statChars");
+  const statRaw = $("statRaw");
+  const statPacked = $("statPacked");
+  const toast = $("toast");
+
+  let packedBytes = null;   // Uint8Array of gzip-compressed data
+  let debounceTimer = null;
+
+  function humanSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => toast.classList.remove("show"), 1800);
+  }
+
+  // Gzip-compress a string, returning a Uint8Array. Uses the native
+  // CompressionStream so there are zero external dependencies.
+  async function gzip(str) {
+    const bytes = new TextEncoder().encode(str);
+    if (typeof CompressionStream === "function") {
+      const cs = new CompressionStream("gzip");
+      const writer = cs.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      const buf = await new Response(cs.readable).arrayBuffer();
+      return new Uint8Array(buf);
+    }
+    // Fallback: no compression available — store raw (Python side detects this).
+    return null;
+  }
+
+  // Base64-encode a Uint8Array in chunks (avoids call-stack overflow on big data).
+  function toBase64(u8) {
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < u8.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, u8.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  async function recompute() {
+    const text = input.value;
+    const rawBytes = new TextEncoder().encode(text).length;
+    statChars.textContent = text.length.toLocaleString();
+    statRaw.textContent = humanSize(rawBytes);
+
+    if (text.length === 0) {
+      packedBytes = null;
+      statPacked.textContent = "0 B";
+      downloadBtn.disabled = true;
+      return;
+    }
+
+    packedBytes = await gzip(text);
+    if (packedBytes) {
+      statPacked.textContent = humanSize(packedBytes.length);
+    } else {
+      statPacked.textContent = humanSize(rawBytes) + " (raw)";
+    }
+    downloadBtn.disabled = false;
+  }
+
+  function scheduleRecompute() {
+    clearTimeout(debounceTimer);
+    // Debounce keeps the UI responsive even when huge text is pasted.
+    debounceTimer = setTimeout(recompute, 180);
+  }
+
+  function sanitizeName(raw) {
+    let n = (raw || "").trim();
+    n = n.replace(/\.py$/i, "");                 // drop a typed .py
+    n = n.replace(/[^A-Za-z0-9_-]+/g, "_");       // safe filename chars
+    n = n.replace(/^_+|_+$/g, "");
+    if (!n) n = "my_text";
+    if (/^[0-9]/.test(n)) n = "_" + n;            // keep it import-friendly
+    return n;
+  }
+
+  function buildPython(b64, compressed) {
+    const header =
+      '#!/usr/bin/env python3\n' +
+      '"""Auto-generated by Text \\u2192 Python Compressor.\n' +
+      'Run this file to print the stored text, or import it and read TEXT."""\n' +
+      'import base64\n' +
+      (compressed ? 'import gzip\n' : '') +
+      '\n' +
+      '_DATA = (\n';
+
+    // Wrap the base64 payload into short, readable lines.
+    let body = "";
+    const width = 76;
+    for (let i = 0; i < b64.length; i += width) {
+      body += '    "' + b64.slice(i, i + width) + '"\n';
+    }
+
+    const decode = compressed
+      ? 'TEXT = gzip.decompress(base64.b64decode(_DATA)).decode("utf-8")\n'
+      : 'TEXT = base64.b64decode(_DATA).decode("utf-8")\n';
+
+    const footer =
+      ')\n\n' +
+      decode +
+      '\n' +
+      'if __name__ == "__main__":\n' +
+      '    print(TEXT)\n';
+
+    return header + body + footer;
+  }
+
+  async function doDownload() {
+    if (input.value.length === 0) return;
+    // Make sure stats/packed reflect the very latest text.
+    if (packedBytes === null) await recompute();
+
+    let payload = packedBytes;
+    let compressed = true;
+    if (!payload) {
+      payload = new TextEncoder().encode(input.value);
+      compressed = false;
+    }
+
+    const b64 = toBase64(payload);
+    const py = buildPython(b64, compressed);
+    const fname = sanitizeName(nameEl.value) + ".py";
+
+    const blob = new Blob([py], { type: "text/x-python" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Downloaded " + fname);
+  }
+
+  input.addEventListener("input", scheduleRecompute);
+  downloadBtn.addEventListener("click", doDownload);
+  clearBtn.addEventListener("click", () => {
+    input.value = "";
+    recompute();
+    input.focus();
+  });
+
+  recompute();
+})();
+</script>
+</body>
+</html>

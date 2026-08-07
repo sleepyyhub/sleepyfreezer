@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: text-python-compressor
+    runtime: static
+    # The site is a single self-contained index.html — nothing to build.
+    buildCommand: ""
+    staticPublishPath: .
+    pullRequestPreviewsEnabled: false
