@@ -257,9 +257,11 @@
     if (typeof CompressionStream === "function") {
       const cs = new CompressionStream("gzip");
       const writer = cs.writable.getWriter();
-      writer.write(bytes);
-      writer.close();
-      const buf = await new Response(cs.readable).arrayBuffer();
+      // Read and write concurrently, and await both, so no bytes are dropped.
+      const readPromise = new Response(cs.readable).arrayBuffer();
+      await writer.write(bytes);
+      await writer.close();
+      const buf = await readPromise;
       return new Uint8Array(buf);
     }
     // Fallback: no compression available — store raw (Python side detects this).
@@ -389,11 +391,14 @@
     showToast("Folder forgotten");
   }
 
-  function buildFile() {
-    let payload = packedBytes;
+  // Always compress the CURRENT box contents at save time — never a stale
+  // debounced snapshot — so what you save is exactly what you see.
+  async function buildFile() {
+    const text = input.value;
+    let payload = await gzip(text);
     let compressed = true;
     if (!payload) {
-      payload = new TextEncoder().encode(input.value);
+      payload = new TextEncoder().encode(text);
       compressed = false;
     }
     const py = buildPython(toBase64(payload), compressed);
@@ -416,8 +421,7 @@
 
   async function doSave() {
     if (input.value.length === 0) return;
-    if (packedBytes === null) await recompute();
-    const { py, fname } = buildFile();
+    const { py, fname } = await buildFile();
 
     // 1) A folder was chosen — write straight into it, no dialog.
     if (folderHandle) {
