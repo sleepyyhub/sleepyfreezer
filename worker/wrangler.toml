@@ -1,0 +1,20 @@
+name = "sleepyauth"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# D1 (durable data). Create with:  wrangler d1 create sleepyauth
+[[d1_databases]]
+binding = "DB"
+database_name = "sleepyauth"
+database_id = "REPLACE_WITH_D1_ID"
+
+# KV (ephemeral nonces/tokens/ratelimits). Create with:  wrangler kv namespace create EPHEMERAL
+[[kv_namespaces]]
+binding = "EPHEMERAL"
+id = "REPLACE_WITH_KV_ID"
+
+# Secrets are NOT stored here. Set them with:
+#   wrangler secret put SERVER_PEPPER      # long random; mixed into KDF + key hashing
+#   wrangler secret put ADMIN_SECRET       # bearer token for /admin/*
+#   wrangler secret put BOT_SECRET         # bearer token for the Discord bot
+#   wrangler secret put LOADER_PEPPER      # split-knowledge half baked into loader
