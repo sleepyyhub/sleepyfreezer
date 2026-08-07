@@ -56,7 +56,8 @@ const PRIVILEGE_COPY: Record<
       'Unlocks set_property, set_attribute, create_instance, destroy_instance and reparent_instance.',
     warning:
       'These write to local client state only. The Roblox server stays authoritative and will usually ignore or ' +
-      'overwrite the change, but destroying an instance is irreversible for this session.',
+      'overwrite the change, but destroying an instance is irreversible for this session. This grant does not ' +
+      'expire on a timer: it stays on until you turn it off or the session ends.',
     confirm: 'Enable mutation tools',
   },
 };
@@ -571,7 +572,9 @@ export default function SessionOverviewPage({
                         </p>
                         {privilege.enabled ? (
                           <p className="mt-2 text-[12px] text-[#ffb4a8]">
-                            Enabled — expires in {formatDuration(privilege.expiresInSeconds ?? 0)}.
+                            {privilege.expires
+                              ? `Enabled — expires in ${formatDuration(privilege.expiresInSeconds ?? 0)}.`
+                              : 'Enabled — stays on until you turn it off.'}
                           </p>
                         ) : null}
                         {!privilege.featureEnabled ? (

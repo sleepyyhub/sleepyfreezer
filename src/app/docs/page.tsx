@@ -34,7 +34,14 @@ const environmentVariables = [
   ],
   ['TOKEN_HASH_SECRET', 'HMAC key for credential digests. Generated per boot if unset.'],
   ['SESSION_TTL_MINUTES', 'Session lifetime. Default 60. Set to 0 for no timed expiry.'],
-  ['PRIVILEGE_TTL_MINUTES', 'How long a privileged grant lasts before expiring. Default 15.'],
+  [
+    'PRIVILEGE_TTL_MINUTES',
+    'Lifetime of the Luau, executor-globals and remote-spy grants. Default 15.',
+  ],
+  [
+    'MUTATION_PRIVILEGE_TTL_MINUTES',
+    'Lifetime of the mutation grant. Default 0, meaning it stands until turned off.',
+  ],
   ['MAX_WS_PAYLOAD_BYTES', 'Maximum WebSocket frame size. Default 524288.'],
   ['MAX_COMMAND_TIMEOUT_MS', 'Upper bound on any single command timeout. Default 30000.'],
   ['MAX_SCRIPT_SOURCE_BYTES', 'Upper bound on returned script source. Default 262144.'],

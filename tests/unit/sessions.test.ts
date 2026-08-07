@@ -334,3 +334,74 @@ describe('sessions that never expire', () => {
     expect(store.get(session.id)).not.toBeNull();
   });
 });
+
+describe('per-privilege grant lifetimes', () => {
+  let store: SessionStore;
+
+  beforeEach(() => {
+    resetConfigForTests();
+    process.env.SESSION_SECRET = 'unit-test-session-secret-0123456789';
+    process.env.TOKEN_HASH_SECRET = 'unit-test-token-hash-secret-0123456789';
+    store = new SessionStore();
+  });
+
+  it('grants mutations without a timed expiry by default', () => {
+    const { session } = store.create();
+    store.setPrivilege(session, 'mutations', true, 'owner');
+
+    expect(store.privilegeTtlMs('mutations')).toBeNull();
+    expect(session.privileges.mutations.expiresAt).toBeNull();
+    expect(store.hasPrivilege(session, 'mutations')).toBe(true);
+  });
+
+  it('keeps a standing mutation grant alive arbitrarily far ahead', () => {
+    const { session } = store.create();
+    store.setPrivilege(session, 'mutations', true, 'owner');
+
+    const aYearOn = Date.now() + 365 * 24 * 60 * 60_000;
+    expect(store.hasPrivilege(session, 'mutations', aYearOn)).toBe(true);
+    expect(session.privileges.mutations.enabled).toBe(true);
+  });
+
+  it('still lets the owner revoke a standing grant', () => {
+    const { session } = store.create();
+    store.setPrivilege(session, 'mutations', true, 'owner');
+    store.setPrivilege(session, 'mutations', false, 'owner');
+
+    expect(store.hasPrivilege(session, 'mutations')).toBe(false);
+    expect(session.privileges.mutations.expiresAt).toBeNull();
+  });
+
+  it('leaves execution and hooking on a short timer', () => {
+    const { session } = store.create();
+    for (const privilege of ['execute_luau', 'remote_spy'] as const) {
+      store.setPrivilege(session, privilege, true, 'owner');
+      expect(store.privilegeTtlMs(privilege)).toBe(getConfig().privilegeTtlMs);
+      expect(session.privileges[privilege].expiresAt).not.toBeNull();
+
+      const later = Date.now() + getConfig().privilegeTtlMs + 1000;
+      expect(store.hasPrivilege(session, privilege, later)).toBe(false);
+    }
+  });
+
+  it('never treats a disabled privilege as standing', () => {
+    const { session } = store.create();
+    // Disabled state also carries a null expiry; `enabled` must be authoritative.
+    expect(session.privileges.mutations.expiresAt).toBeNull();
+    expect(store.hasPrivilege(session, 'mutations')).toBe(false);
+  });
+
+  it('honours a configured mutation lifetime when one is set', () => {
+    process.env.MUTATION_PRIVILEGE_TTL_MINUTES = '30';
+    resetConfigForTests();
+    const limited = new SessionStore();
+    const { session } = limited.create();
+
+    limited.setPrivilege(session, 'mutations', true, 'owner');
+    expect(session.privileges.mutations.expiresAt).not.toBeNull();
+    expect(limited.hasPrivilege(session, 'mutations', Date.now() + 31 * 60_000)).toBe(false);
+
+    delete process.env.MUTATION_PRIVILEGE_TTL_MINUTES;
+    resetConfigForTests();
+  });
+});

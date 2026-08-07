@@ -20,7 +20,11 @@ export type PrivilegeName = 'execute_luau' | 'executor_globals' | 'mutations' | 
 
 export interface PrivilegeState {
   enabled: boolean;
-  /** Absolute time the grant lapses. Null when disabled. */
+  /**
+   * Absolute time the grant lapses. Null means two different things depending on
+   * `enabled`: when disabled there is no grant at all; when enabled the grant
+   * stands until the owner revokes it. `enabled` is always the source of truth.
+   */
   expiresAt: number | null;
   enabledAt: number | null;
 }
@@ -169,5 +173,7 @@ export function sessionStatus(session: SessionRecord, now = Date.now()): Session
 }
 
 export function isPrivilegeActive(state: PrivilegeState, now = Date.now()): boolean {
-  return state.enabled && state.expiresAt !== null && state.expiresAt > now;
+  if (!state.enabled) return false;
+  // An enabled grant with no expiry stands until it is turned off.
+  return state.expiresAt === null || state.expiresAt > now;
 }

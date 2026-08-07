@@ -102,9 +102,10 @@ export function PrivilegeBanner({ session }: { session: SessionView }) {
       </p>
       <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
         {active
-          .map(
-            (privilege) =>
-              `${privilege.name} (expires in ${formatDuration(privilege.expiresInSeconds ?? 0)})`,
+          .map((privilege) =>
+            privilege.expires
+              ? `${privilege.name} (expires in ${formatDuration(privilege.expiresInSeconds ?? 0)})`
+              : `${privilege.name} (stands until you turn it off)`,
           )
           .join(' · ')}
         . Any connected MCP client can use these tools until the grant lapses or you disable it.

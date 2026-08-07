@@ -256,25 +256,36 @@ export class SessionStore {
     });
   }
 
+  /**
+   * How long a grant lasts, per privilege. Mutations write local client state
+   * only and are configured to stand by default; execution and hooking are far
+   * more dangerous and keep a short, self-clearing lifetime.
+   */
+  privilegeTtlMs(privilege: PrivilegeName): number | null {
+    const config = getConfig();
+    return privilege === 'mutations' ? config.mutationPrivilegeTtlMs : config.privilegeTtlMs;
+  }
+
   setPrivilege(
     session: SessionRecord,
     privilege: PrivilegeName,
     enabled: boolean,
     actor: 'owner' | 'system',
   ): void {
-    const config = getConfig();
     const state = session.privileges[privilege];
     if (enabled) {
+      const ttlMs = this.privilegeTtlMs(privilege);
       state.enabled = true;
       state.enabledAt = Date.now();
-      state.expiresAt = Date.now() + config.privilegeTtlMs;
+      state.expiresAt = ttlMs === null ? null : Date.now() + ttlMs;
       session.audit.record({
         kind: 'privilege_enabled',
         actor,
         severity: 'warn',
-        message: `Privileged capability "${privilege}" was enabled for ${Math.round(
-          config.privilegeTtlMs / 60_000,
-        )} minutes.`,
+        message:
+          ttlMs === null
+            ? `Privileged capability "${privilege}" was enabled and stands until it is turned off.`
+            : `Privileged capability "${privilege}" was enabled for ${Math.round(ttlMs / 60_000)} minutes.`,
       });
     } else {
       state.enabled = false;
