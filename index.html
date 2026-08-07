@@ -124,6 +124,27 @@
   .stat.good .num { color: var(--accent-2); }
   .actions { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
   .hint { color: var(--muted); font-size: 0.82rem; margin-top: 14px; }
+  .folder-info {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin: 14px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .folder-info strong { color: var(--accent-2); font-family: ui-monospace, monospace; }
+  button.link {
+    background: none;
+    border: none;
+    color: var(--accent);
+    padding: 0;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  button.link:hover { filter: brightness(1.15); }
   .hidden { display: none !important; }
   .toast {
     position: fixed;
@@ -171,9 +192,15 @@
   </div>
 
   <div class="actions">
-    <button id="download" disabled>Download .py file</button>
+    <button id="download" disabled>Save .py file</button>
+    <button id="chooseFolder" class="ghost">Choose folder…</button>
     <button id="clear" class="ghost">Clear</button>
   </div>
+
+  <p class="folder-info" id="folderInfo">
+    Saving via your browser's download prompt.
+    <button id="clearFolder" class="link hidden" type="button">Forget folder</button>
+  </p>
 
   <p class="hint">
     The Python file stores your text gzip-compressed &amp; base64-encoded, so it stays tiny.
@@ -192,14 +219,23 @@
   const input = $("input");
   const nameEl = $("name");
   const downloadBtn = $("download");
+  const chooseFolderBtn = $("chooseFolder");
+  const clearFolderBtn = $("clearFolder");
+  const folderInfo = $("folderInfo");
   const clearBtn = $("clear");
   const statChars = $("statChars");
   const statRaw = $("statRaw");
   const statPacked = $("statPacked");
   const toast = $("toast");
 
-  let packedBytes = null;   // Uint8Array of gzip-compressed data
+  let packedBytes = null;    // Uint8Array of gzip-compressed data
   let debounceTimer = null;
+  let folderHandle = null;   // FileSystemDirectoryHandle chosen by the user
+
+  const canPickFolder = typeof window.showDirectoryPicker === "function";
+  const canSaveDialog = typeof window.showSaveFilePicker === "function";
+  // Hide "Choose folder…" entirely on browsers that don't support it.
+  if (!canPickFolder) chooseFolderBtn.classList.add("hidden");
 
   function humanSize(bytes) {
     if (bytes < 1024) return bytes + " B";
@@ -309,22 +345,63 @@
     return header + body + footer;
   }
 
-  async function doDownload() {
-    if (input.value.length === 0) return;
-    // Make sure stats/packed reflect the very latest text.
-    if (packedBytes === null) await recompute();
+  function updateFolderInfo() {
+    if (folderHandle) {
+      folderInfo.innerHTML =
+        'Saving into folder <strong></strong> on your device. ' +
+        '<button id="clearFolder" class="link" type="button">Forget folder</button>';
+      folderInfo.querySelector("strong").textContent = folderHandle.name;
+      folderInfo.querySelector("#clearFolder").addEventListener("click", forgetFolder);
+      downloadBtn.textContent = "Save to " + folderHandle.name;
+    } else {
+      folderInfo.textContent = canPickFolder
+        ? 'Pick a folder to save straight to it, or use the download prompt.'
+        : "Saving via your browser's download prompt.";
+      downloadBtn.textContent = "Save .py file";
+    }
+  }
 
+  // Ask (or re-ask) for read/write permission on a directory handle.
+  async function ensureWritable(handle) {
+    const opts = { mode: "readwrite" };
+    if ((await handle.queryPermission(opts)) === "granted") return true;
+    return (await handle.requestPermission(opts)) === "granted";
+  }
+
+  async function chooseFolder() {
+    try {
+      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+      if (!(await ensureWritable(handle))) {
+        showToast("Folder permission denied");
+        return;
+      }
+      folderHandle = handle;
+      updateFolderInfo();
+      showToast('Saving to "' + handle.name + '"');
+    } catch (err) {
+      if (err && err.name !== "AbortError") showToast("Could not open folder");
+    }
+  }
+
+  function forgetFolder() {
+    folderHandle = null;
+    updateFolderInfo();
+    showToast("Folder forgotten");
+  }
+
+  function buildFile() {
     let payload = packedBytes;
     let compressed = true;
     if (!payload) {
       payload = new TextEncoder().encode(input.value);
       compressed = false;
     }
+    const py = buildPython(toBase64(payload), compressed);
+    return { py, fname: sanitizeName(nameEl.value) + ".py" };
+  }
 
-    const b64 = toBase64(payload);
-    const py = buildPython(b64, compressed);
-    const fname = sanitizeName(nameEl.value) + ".py";
-
+  // Fallback for browsers without the File System Access API.
+  function downloadBlob(py, fname) {
     const blob = new Blob([py], { type: "text/x-python" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -337,14 +414,64 @@
     showToast("Downloaded " + fname);
   }
 
+  async function doSave() {
+    if (input.value.length === 0) return;
+    if (packedBytes === null) await recompute();
+    const { py, fname } = buildFile();
+
+    // 1) A folder was chosen — write straight into it, no dialog.
+    if (folderHandle) {
+      try {
+        if (!(await ensureWritable(folderHandle))) {
+          showToast("Folder permission denied");
+          return;
+        }
+        const fileHandle = await folderHandle.getFileHandle(fname, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(py);
+        await writable.close();
+        showToast("Saved " + fname + " to " + folderHandle.name);
+        return;
+      } catch (err) {
+        showToast("Save failed — using download instead");
+        downloadBlob(py, fname);
+        return;
+      }
+    }
+
+    // 2) No folder chosen, but the browser can show a native Save dialog.
+    if (canSaveDialog) {
+      try {
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName: fname,
+          types: [{ description: "Python file", accept: { "text/x-python": [".py"] } }]
+        });
+        const writable = await fileHandle.createWritable();
+        await writable.write(py);
+        await writable.close();
+        showToast("Saved " + fileHandle.name);
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return; // user cancelled
+        // any other error: fall through to plain download
+      }
+    }
+
+    // 3) Plain download fallback.
+    downloadBlob(py, fname);
+  }
+
   input.addEventListener("input", scheduleRecompute);
-  downloadBtn.addEventListener("click", doDownload);
+  downloadBtn.addEventListener("click", doSave);
+  chooseFolderBtn.addEventListener("click", chooseFolder);
+  if (clearFolderBtn) clearFolderBtn.addEventListener("click", forgetFolder);
   clearBtn.addEventListener("click", () => {
     input.value = "";
     recompute();
     input.focus();
   });
 
+  updateFolderInfo();
   recompute();
 })();
 </script>
