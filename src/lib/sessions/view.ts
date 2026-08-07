@@ -33,6 +33,8 @@ export interface PrivilegeView {
   readonly enabled: boolean;
   readonly expiresAt: string | null;
   readonly expiresInSeconds: number | null;
+  /** False when this grant stands until the owner turns it off. */
+  readonly expires: boolean;
   readonly featureEnabled: boolean;
 }
 
@@ -140,6 +142,7 @@ export function buildSessionView(session: SessionRecord, now = Date.now()): Sess
       expiresAt: active ? iso(state.expiresAt) : null,
       expiresInSeconds:
         active && state.expiresAt ? Math.max(0, Math.floor((state.expiresAt - now) / 1000)) : null,
+      expires: store.privilegeTtlMs(name) !== null,
       featureEnabled:
         name === 'mutations'
           ? config.mutationToolsFeatureEnabled

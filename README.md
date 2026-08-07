@@ -59,8 +59,10 @@ server, which is why Clovyre needs a long-lived container rather than serverless
 - **Runtime tools** — players, local player, character, camera, workspace summary, captured logs.
 - **Capability-aware tool surface** — decompile, `getgc`, `getsenv`, `getconnections` and
   `getloadedmodules` tools appear only when the executor genuinely provides them.
-- **Privileged tools off by default** — Luau execution and mutation tools require an explicit,
-  auto-expiring grant made by the session owner in the browser.
+- **Privileged tools off by default** — Luau execution, the remote spy and mutation tools all
+  require an explicit grant made by the session owner in the browser. Execution and hooking grants
+  auto-expire; the mutation grant stands until it is turned off, since it writes local client state
+  only.
 - **Live observation** — install watchers on properties, attributes and children and poll the
   changes they record, instead of re-reading the same instance and missing what happened in between.
 - **Remote spy** — record the RemoteEvent and RemoteFunction calls the client sends, with serialized

@@ -41,6 +41,12 @@ const envSchema = z.object({
   ENABLE_MUTATION_TOOLS_FEATURE: boolFromEnv(true),
   ENABLE_REMOTE_SPY_FEATURE: boolFromEnv(true),
   PRIVILEGE_TTL_MINUTES: intFromEnv(15, 1, 120),
+  /**
+   * Lifetime of the mutation grant. 0 means it stands until the owner turns it
+   * off. Mutation tools write local client state only, so a standing grant is a
+   * far smaller exposure than one for arbitrary Luau execution.
+   */
+  MUTATION_PRIVILEGE_TTL_MINUTES: intFromEnv(0, 0, 24 * 60),
   MAX_SESSIONS: intFromEnv(500, 1, 100_000),
   /** Sessions one address may create per minute. Raised only for test runs. */
   SESSION_CREATE_PER_MINUTE: intFromEnv(12, 1, 10_000),
@@ -70,6 +76,8 @@ export interface ClovyreConfig {
   readonly mutationToolsFeatureEnabled: boolean;
   readonly remoteSpyFeatureEnabled: boolean;
   readonly privilegeTtlMs: number;
+  /** Null when the mutation grant never expires on a timer. */
+  readonly mutationPrivilegeTtlMs: number | null;
   readonly maxSessions: number;
   readonly sessionCreatePerMinute: number;
   /** Null when no operator console credential is configured. */
@@ -119,6 +127,8 @@ function build(): ClovyreConfig {
     mutationToolsFeatureEnabled: env.ENABLE_MUTATION_TOOLS_FEATURE,
     remoteSpyFeatureEnabled: env.ENABLE_REMOTE_SPY_FEATURE,
     privilegeTtlMs: env.PRIVILEGE_TTL_MINUTES * 60_000,
+    mutationPrivilegeTtlMs:
+      env.MUTATION_PRIVILEGE_TTL_MINUTES === 0 ? null : env.MUTATION_PRIVILEGE_TTL_MINUTES * 60_000,
     maxSessions: env.MAX_SESSIONS,
     sessionCreatePerMinute: env.SESSION_CREATE_PER_MINUTE,
     adminToken: env.ADMIN_TOKEN ?? null,
