@@ -30,10 +30,17 @@ const environmentVariables = [
   ['PUBLIC_BASE_URL', 'Canonical public origin. Falls back to the forwarded host when unset.'],
   [
     'SESSION_SECRET',
-    'Salt for address hashing. Generated per boot if unset (sessions reset on restart).',
+    'Salt for address hashing. Generated per boot if unset, which changes the digests on restart.',
   ],
   ['TOKEN_HASH_SECRET', 'HMAC key for credential digests. Generated per boot if unset.'],
-  ['SESSION_TTL_MINUTES', 'Session lifetime. Default 60. Set to 0 for no timed expiry.'],
+  [
+    'DATABASE_URL',
+    'Postgres connection string. Makes sessions durable across restarts. Unset means in-memory only.',
+  ],
+  [
+    'SESSION_TTL_MINUTES',
+    'Session lifetime. Set to 0, the deployment default, for no timed expiry.',
+  ],
   [
     'PRIVILEGE_TTL_MINUTES',
     'Lifetime of the Luau, executor-globals and remote-spy grants. Default 15.',
@@ -80,16 +87,6 @@ const apiRoutes = [
     'POST',
     '/api/sessions/{id}/tools',
     'Runs a Clovyre tool as the owner. Same path MCP clients use.',
-  ],
-  [
-    'POST',
-    '/mcp/connect',
-    'One shared endpoint for every user. Routes by the agent link in the Authorization header.',
-  ],
-  [
-    'POST',
-    '/api/mcp/link/{linkToken}',
-    'Stable MCP endpoint. Resolves to the session currently bound to the link; the URL never changes.',
   ],
   ['POST', '/api/mcp/{id}', 'Remote MCP endpoint. Bearer token authentication.'],
   [
@@ -151,9 +148,12 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
             long-lived container rather than serverless functions.
           </P>
           <P>
-            Session state lives in process memory. That is deliberate for this prototype: nothing
-            about a session is worth persisting past a restart, and it removes an entire class of
-            data-at-rest concerns. It also means a deploy or restart ends every live session.
+            A session is what you configure your agent against, so it is written through to Postgres
+            on every change and reloaded at boot: a restart or a redeploy does not break your MCP
+            configuration. What is deliberately not persisted is anything describing a live
+            connection — the WebSocket, pending commands, observation buffers and the audit trail.
+            Those describe a process that no longer exists, and they rebuild the moment your Roblox
+            client reconnects.
           </P>
         </Section>
 
@@ -301,7 +301,7 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
               'Executor APIs vary widely. Tools that depend on decompile, getgc, getsenv, getconnections or getloadedmodules only appear when your executor actually provides them.',
               'Local mutations do not change server-authoritative state.',
               'Ownership verification is not implemented. Clovyre does not check that you own the experience you connect it to.',
-              'Sessions are temporary and in-memory. A restart or redeploy of the service ends every session.',
+              'A session survives a restart, but the connection to it does not. After a redeploy you rerun the loadstring; your MCP configuration is untouched.',
               'Streamed-out instances lose their references. A ref that pointed at an unstreamed part will report that it is no longer valid.',
             ]}
           />
@@ -475,7 +475,7 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
           />
           <Trouble
             problem="Everything stopped working at once."
-            answer="The session expired, was terminated, or the service restarted. Sessions are in-memory and do not survive a redeploy. Create a new session."
+            answer="The session was terminated, or the deployment runs without DATABASE_URL and lost its sessions on restart. If the session is still listed but tools fail, the Roblox client is simply disconnected — rerun the loadstring."
           />
           <Trouble
             problem="An instance ref stopped resolving."

@@ -92,8 +92,10 @@ These are properties of the design, not bugs:
 - **Ownership verification is not implemented.** Clovyre does not check that you own or are
   authorised to test the experience you connect it to. The architecture has a hook for it; the check
   is not enabled.
-- **Sessions are in-memory.** With `SESSION_TTL_MINUTES=0` they have no timed expiry, but they still
-  do not survive a restart or redeploy. Treat every session as disposable regardless.
+- **A session outlives the process, a connection does not.** Sessions are written through to
+  Postgres, so a restart or redeploy preserves the session and its credentials. The live Roblox
+  WebSocket, pending commands and observation buffers are not restored — rerun the loadstring to
+  reconnect.
 
 ## Live deployment
 
@@ -102,8 +104,10 @@ These are properties of the design, not bugs:
 Running on a Render free instance, which means two things worth knowing before you rely on it:
 
 - The service **spins down after roughly 15 minutes without traffic**, and the first request after
-  that takes ~30 seconds to wake it. Every session dies when it spins down.
-- Sessions are in-memory regardless of instance type, so any restart or redeploy ends them all.
+  that takes ~30 seconds to wake it. Your session survives the spin-down; the Roblox connection does
+  not, so rerun the loadstring afterwards.
+- Sessions live in a free Postgres instance, which Render expires 30 days after creation. When it
+  goes, so does every stored session.
 
 For anything beyond evaluation, move to a paid instance type — `render.yaml` documents the settings.
 
@@ -131,45 +135,21 @@ Running it twice cleans up the previous connection instead of creating a duplica
 
 ## Connecting Claude
 
-Clovyre speaks MCP over **Streamable HTTP**. There are three ways in; pick the one matching your
-client.
+Clovyre speaks MCP over **Streamable HTTP**. A session is the thing you configure your agent
+against, and a session is durable: once `DATABASE_URL` is set, it survives restarts and redeploys.
+So you configure the endpoint **once per session** and it keeps working until you terminate that
+session. Deleting a session and creating a new one means reconfiguring your agent — that is the
+whole contract, and it is deliberate: the URL carries the identity, so a URL that outlived its
+session would be a URL pointing at somebody else's Roblox client.
 
-### One shared endpoint (header-capable clients)
+The Roblox loadstring can be regenerated as often as you like without touching the MCP config.
 
-Identical for every user, nothing per-user in the URL:
-
-```
-POST https://<deployment>/mcp/connect
-Authorization: Bearer <your clk_ link token>
-```
-
-The server routes by the credential, not the path, so one URL serves everybody and each agent
-reaches only its own session. Use this with Claude Code, Codex, or any client that reads a config
-file.
-
-**It requires the header.** A credential-free shared URL cannot route correctly: with no identity in
-the request the server could only hand back the most recently created session, which on a shared
-deployment means giving a stranger someone else's live Roblox client. Clovyre answers `401` instead.
-
-For the claude.ai connector screen, which has no header field, use the per-link URL below.
-
-### Permanent link — recommended
-
-Configure this once and never touch it again:
+### Header-capable clients (Claude Code, Codex)
 
 ```
-https://<deployment>/api/mcp/link/<link token>
+POST https://<deployment>/api/mcp/<sessionId>
+Authorization: Bearer <your cmk_ MCP token>
 ```
-
-The link resolves at request time to whichever session is currently bound to it. Creating a new
-session, regenerating a script, or restarting the service does **not** change the URL, so your agent
-never needs reconfiguring. The Roblox loadstring changes constantly; the MCP endpoint does not.
-
-It is stateless by design — an owner id plus an HMAC keyed by `TOKEN_HASH_SECRET` — because anything
-stored server-side would die with the in-memory session store and break the URL on every restart.
-
-**Trade-off:** a per-session token leaks one session; a link token leaks every session you bind to it
-until you rotate the link. Treat it as a long-lived password.
 
 ### Session-only URL (claude.ai / desktop)
 
@@ -338,17 +318,20 @@ application, written into source, or logged.
 ### Environment variables
 
 See [.env.example](./.env.example) for the full annotated list. Every variable there is actually
-read by the application; there are no unused placeholders and no database or Redis URL, because this
-configuration needs neither.
+read by the application; there are no unused placeholders. `DATABASE_URL` is the one that matters
+most: without it Clovyre still runs, but sessions die with the process and every agent has to be
+reconfigured after each deploy.
 
 ## Production limitations
 
-- Single instance only. A redeploy or restart ends every live session.
-- On the free instance type the service also spins down after ~15 minutes of inactivity, ending
-  every session, and the next request pays a cold-start delay.
-- No durable storage; nothing survives a restart by design.
+- Single instance only. Live connections and pending commands are per-process, so a redeploy drops
+  every Roblox client even though the sessions themselves survive.
+- On the free instance type the service also spins down after ~15 minutes of inactivity, and the
+  next request pays a cold-start delay.
+- `TOKEN_HASH_SECRET` must stay stable. It keys the credential digests, so rotating it invalidates
+  the tokens of every persisted session.
 - No ownership verification.
-- Rate limits and session state are per-process, so they reset with the process.
+- Rate limits are per-process and reset with the process.
 
 ## Repository layout
 

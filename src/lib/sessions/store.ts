@@ -9,6 +9,7 @@ import {
   hashToken,
   verifyToken,
 } from '../security/tokens';
+import { deleteSession, loadSessions, persistSession } from './persistence';
 import {
   createObservations,
   isPrivilegeActive,
@@ -20,12 +21,15 @@ import {
 } from './types';
 
 /**
- * In-memory session store.
+ * Session store.
  *
- * Clovyre sessions are deliberately ephemeral: nothing here survives a process
- * restart, which is documented behaviour for the single-instance deployment. The
- * store owns lifecycle (creation, expiry, termination) and credential checks;
- * command routing lives in the session broker.
+ * The in-memory map is the working set; Postgres is the durable record behind it
+ * (see ./persistence). A session is what a user configures their agent against,
+ * so it has to outlive a restart — otherwise every redeploy silently breaks
+ * every configured MCP endpoint.
+ *
+ * The store owns lifecycle (creation, expiry, termination) and credential
+ * checks; command routing lives in the session broker.
  */
 
 export interface CreatedSession {
@@ -62,9 +66,7 @@ export class SessionStore {
   private sweepTimer: NodeJS.Timeout | null = null;
   private nextSequence = 1;
 
-  create(
-    options: { creatorAddress?: string | null; ownerLinkId?: string | null } = {},
-  ): CreatedSession {
+  create(options: { creatorAddress?: string | null } = {}): CreatedSession {
     const config = getConfig();
     this.sweep();
 
@@ -115,7 +117,6 @@ export class SessionStore {
       audit: new AuditLog(),
       observations: createObservations(),
       creatorAddressHash: hashAddress(options.creatorAddress),
-      ownerLinkId: options.ownerLinkId ?? null,
     };
 
     session.audit.record({
@@ -133,6 +134,7 @@ export class SessionStore {
     });
 
     this.sessions.set(session.id, session);
+    persistSession(session);
     this.ensureSweeper();
 
     return {
@@ -192,6 +194,7 @@ export class SessionStore {
       message: `The ${role} credential was revoked.`,
       detail: { credential: credential.fingerprint },
     });
+    persistSession(session);
     return true;
   }
 
@@ -231,6 +234,7 @@ export class SessionStore {
         newCredential: session.credentials[role].fingerprint,
       },
     });
+    persistSession(session);
     return token;
   }
 
@@ -244,6 +248,7 @@ export class SessionStore {
       severity: 'warn',
       message: `Session terminated: ${reason}`,
     });
+    persistSession(session);
   }
 
   private expire(session: SessionRecord): void {
@@ -297,6 +302,7 @@ export class SessionStore {
         message: `Privileged capability "${privilege}" was disabled.`,
       });
     }
+    persistSession(session);
   }
 
   hasPrivilege(session: SessionRecord, privilege: PrivilegeName, now = Date.now()): boolean {
@@ -318,10 +324,12 @@ export class SessionStore {
 
   updateCapabilities(session: SessionRecord, capabilities: CapabilityMap): void {
     session.capabilities = capabilities;
+    persistSession(session);
   }
 
   updateMetadata(session: SessionRecord, metadata: ClientMetadata): void {
     session.metadata = metadata;
+    persistSession(session);
   }
 
   /** Removes sessions that expired or terminated long enough ago to be useless. */
@@ -334,6 +342,7 @@ export class SessionStore {
       const endedAt = session.terminatedAt ?? session.expiresAt ?? now;
       if (now - endedAt > graceMs) {
         this.sessions.delete(id);
+        deleteSession(id);
         removed += 1;
       } else if (status === 'expired') {
         this.expire(session);
@@ -374,21 +383,24 @@ export class SessionStore {
   }
 
   /**
-   * Resolves the session a persistent agent link currently points at: the most
-   * recently created active session bound to that link.
-   *
-   * Binding by newest rather than tracking a pointer means a fresh session takes
-   * over the link the moment it is created, with no extra bookkeeping and
-   * nothing to go stale when a session ends.
+   * Loads persisted sessions into memory at boot so a restart does not
+   * invalidate every configured MCP endpoint.
    */
-  findActiveByLink(ownerLinkId: string, now = Date.now()): SessionRecord | null {
-    let newest: SessionRecord | null = null;
-    for (const session of this.sessions.values()) {
-      if (session.ownerLinkId !== ownerLinkId) continue;
-      if (sessionStatus(session, now) !== 'active') continue;
-      if (!newest || session.sequence > newest.sequence) newest = session;
+  async hydrate(): Promise<number> {
+    const sessions = await loadSessions();
+    for (const session of sessions) {
+      this.sessions.set(session.id, session);
+      if (session.sequence >= this.nextSequence) {
+        this.nextSequence = session.sequence + 1;
+      }
+      session.audit.record({
+        kind: 'session_created',
+        actor: 'system',
+        message: 'Session restored after a service restart. Live connections were not restored.',
+      });
     }
-    return newest;
+    if (sessions.length > 0) this.ensureSweeper();
+    return sessions.length;
   }
 
   /**

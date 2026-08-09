@@ -156,11 +156,6 @@ export interface SessionRecord {
   /** Populated when the session was created behind a proxy. Hashed, not raw. */
   readonly creatorAddressHash: string;
 
-  /**
-   * Owner id of the persistent agent link this session is bound to, when the
-   * creator supplied one. A stable MCP URL resolves through this.
-   */
-  readonly ownerLinkId: string | null;
 }
 
 export type SessionStatus = 'active' | 'expired' | 'terminated';

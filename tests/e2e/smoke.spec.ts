@@ -120,7 +120,6 @@ test.describe('session lifecycle', () => {
     await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
     const sessionId = page.url().split('/session/')[1]!;
 
-    // The phrase appears in both the permanent-link and session-only blocks.
     await expect(page.getByText('Add custom connector', { exact: false }).first()).toBeVisible();
 
     const connectorUrl = (
@@ -146,96 +145,6 @@ test.describe('session lifecycle', () => {
       data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
     });
     expect(bad.status()).toBe(401);
-  });
-
-  test('the MCP link stays identical across new sessions', async ({ page, request }) => {
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Create session' }).first().click();
-    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
-    const firstSession = page.url().split('/session/')[1]!;
-
-    const firstLink = (
-      await page.locator('pre', { hasText: '/api/mcp/link/' }).first().innerText()
-    ).trim();
-    expect(firstLink).toContain('/api/mcp/link/clk_');
-
-    // The link must authenticate on its own, with no header and no session id.
-    const viaLink = await request.post(firstLink, {
-      headers: { 'content-type': 'application/json' },
-      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-    });
-    expect(viaLink.ok()).toBe(true);
-
-    // Create a second session, exactly as a user would the next day.
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Create session' }).first().click();
-    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
-    const secondSession = page.url().split('/session/')[1]!;
-    expect(secondSession).not.toBe(firstSession);
-
-    const secondLink = (
-      await page.locator('pre', { hasText: '/api/mcp/link/' }).first().innerText()
-    ).trim();
-    // Same URL, different session: nothing to reconfigure in the agent.
-    expect(secondLink).toBe(firstLink);
-
-    const after = await request.post(firstLink, {
-      headers: { 'content-type': 'application/json' },
-      data: {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/call',
-        params: { name: 'clovyre_session_info' },
-      },
-    });
-    const body = await after.json();
-    expect(body.result.structuredContent.data.sessionId).toBe(secondSession);
-
-    // A forged link must not resolve to anything.
-    const forged = await request.post('/api/mcp/link/clk_forged.signature', {
-      headers: { 'content-type': 'application/json' },
-      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-    });
-    expect(forged.status()).toBe(401);
-  });
-
-  test('the shared /mcp/connect endpoint routes by credential', async ({ page, request }) => {
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Create session' }).first().click();
-    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
-    const sessionId = page.url().split('/session/')[1]!;
-
-    const link = await page.evaluate(() => localStorage.getItem('clovyre.agentLink'));
-    expect(link).toMatch(/^clk_/);
-
-    // One fixed URL, no per-user path component.
-    const rpc = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'tools/call',
-      params: { name: 'clovyre_session_info' },
-    };
-
-    const routed = await request.post('/mcp/connect', {
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${link}` },
-      data: rpc,
-    });
-    expect(routed.ok()).toBe(true);
-    expect((await routed.json()).result.structuredContent.data.sessionId).toBe(sessionId);
-
-    // No credential must never fall back to somebody else's live session.
-    const anonymous = await request.post('/mcp/connect', {
-      headers: { 'content-type': 'application/json' },
-      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-    });
-    expect(anonymous.status()).toBe(401);
-    expect((await anonymous.json()).error.message).toContain('bearer token');
-
-    const forged = await request.post('/mcp/connect', {
-      headers: { 'content-type': 'application/json', authorization: 'Bearer clk_forged.sig' },
-      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-    });
-    expect(forged.status()).toBe(401);
   });
 
   test('explorer and scripts explain themselves with no client attached', async ({ page }) => {

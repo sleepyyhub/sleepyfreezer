@@ -20,10 +20,10 @@ export default function PrivacyPage() {
       <div className="mt-12 flex flex-col gap-10">
         <Block title="What a session holds">
           <P>
-            Creating a session allocates an in-memory record containing: a public session id, HMAC
-            digests of four credentials, timestamps, the capability list your executor reported, the
-            place and job identifiers your client sent, your local player name and user id, an
-            abbreviated command history, and a redacted audit trail.
+            Creating a session allocates a record containing: a public session id, HMAC digests of
+            four credentials, timestamps, the capability list your executor reported, the place and
+            job identifiers your client sent, your local player name and user id, an abbreviated
+            command history, and a redacted audit trail.
           </P>
           <P>
             Instance data, script text and tool results pass through the service in transit. They
@@ -48,10 +48,11 @@ export default function PrivacyPage() {
 
         <Block title="How long anything lasts">
           <P>
-            Sessions expire automatically (60 minutes by default) and can be terminated at any time
-            from the dashboard. Expired and terminated sessions are swept from memory shortly
-            afterwards. Because state is held in process memory, restarting or redeploying the
-            service destroys every session immediately.
+            A session lasts until you terminate it, and it is stored in a database so that it
+            survives a restart or a redeploy — that is what lets you configure an agent once.
+            Terminating a session deletes its stored row. The transient parts (live connection,
+            command history, activity log) are held only in process memory and are gone the moment
+            the service restarts.
           </P>
         </Block>
 
