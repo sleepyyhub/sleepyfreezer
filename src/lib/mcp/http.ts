@@ -252,3 +252,69 @@ export async function handleMcpLinkRequest(
 
   return serveMcpForSession(request, session);
 }
+
+/**
+ * The single fixed endpoint: /mcp/connect, identical for every user.
+ *
+ * Routing is by credential rather than by URL. The agent presents its permanent
+ * link token in a header, and the server resolves that to whichever session is
+ * currently bound to it — so one URL serves everybody and each agent still
+ * reaches only its own session.
+ *
+ * There is deliberately no fallback to "the most recently created session" when
+ * no credential is presented. On a shared deployment that would hand whichever
+ * stranger asked first a live Roblox client belonging to someone else, and no
+ * amount of convenience justifies that.
+ */
+export async function handleMcpConnectRequest(request: NextRequest): Promise<Response> {
+  const presented = bearerToken(request);
+
+  if (!presented) {
+    return rpcError(
+      JsonRpcErrorCodes.INVALID_REQUEST,
+      'This endpoint needs your Clovyre agent link as a bearer token: ' +
+        'Authorization: Bearer <clk_ token from your dashboard>. ' +
+        'If your client cannot send headers, use the per-session connector URL the ' +
+        'dashboard also provides.',
+      401,
+    );
+  }
+
+  const ownerId = verifyAgentLink(presented);
+  if (!ownerId) {
+    return rpcError(
+      JsonRpcErrorCodes.INVALID_REQUEST,
+      'That agent link is not valid. Copy the current one from your Clovyre dashboard.',
+      401,
+    );
+  }
+
+  const limit = getRateLimiter().check('mcp_request', `link:${ownerId}`);
+  if (!limit.allowed) {
+    return rpcError(
+      JsonRpcErrorCodes.INTERNAL_ERROR,
+      `Rate limit reached. Retry in ${Math.ceil(limit.retryAfterMs / 1000)} s.`,
+      429,
+    );
+  }
+
+  const session = getSessionStore().findActiveByLink(ownerId);
+  if (!session) {
+    return rpcError(
+      JsonRpcErrorCodes.INVALID_REQUEST,
+      'Your agent link is valid but no Clovyre session is bound to it right now. ' +
+        'Open the dashboard and create a session; this endpoint then works again with ' +
+        'no reconfiguration.',
+      409,
+    );
+  }
+
+  session.audit.record({
+    kind: 'mcp_connected',
+    actor: 'mcp',
+    message: 'An MCP request arrived through the shared /mcp/connect endpoint.',
+    detail: { link: linkFingerprint(ownerId) },
+  });
+
+  return serveMcpForSession(request, session);
+}

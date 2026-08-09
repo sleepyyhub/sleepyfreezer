@@ -83,6 +83,11 @@ const apiRoutes = [
   ],
   [
     'POST',
+    '/mcp/connect',
+    'One shared endpoint for every user. Routes by the agent link in the Authorization header.',
+  ],
+  [
+    'POST',
     '/api/mcp/link/{linkToken}',
     'Stable MCP endpoint. Resolves to the session currently bound to the link; the URL never changes.',
   ],

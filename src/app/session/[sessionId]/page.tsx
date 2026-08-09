@@ -327,6 +327,31 @@ export default function SessionOverviewPage({
                     copyLabel="Copy command"
                   />
                 </div>
+
+                <div className="mt-5 rounded-xl border border-line bg-base-800/40 p-4">
+                  <p className="text-[12.5px] font-medium text-ink">
+                    One shared endpoint, for clients that can send headers
+                  </p>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
+                    This URL is identical for every Clovyre user. Your link travels in the
+                    Authorization header instead of the path, so nothing secret sits in the URL and
+                    the server still routes you to your own session.
+                  </p>
+                  <div className="mt-3">
+                    <CodeBlock
+                      code={agentLink.sharedUrl}
+                      caption="Shared endpoint"
+                      copyLabel="Copy URL"
+                    />
+                  </div>
+                  <div className="mt-3">
+                    <CodeBlock
+                      code={agentLink.sharedRemoteJson}
+                      caption="mcpServers — shared endpoint"
+                      copyLabel="Copy config"
+                    />
+                  </div>
+                </div>
                 <p className="mt-2.5 text-[11.5px] leading-relaxed text-ink-faint">
                   This link resolves to whichever session is currently live. It survives new
                   sessions, regenerated scripts and service restarts. Because it is long-lived,
