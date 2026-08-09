@@ -48,6 +48,11 @@ const envSchema = z.object({
    */
   MUTATION_PRIVILEGE_TTL_MINUTES: intFromEnv(0, 0, 24 * 60),
   MAX_SESSIONS: intFromEnv(500, 1, 100_000),
+  /**
+   * Postgres connection string. When unset the store runs in memory only and
+   * sessions do not survive a restart, which the health endpoint reports.
+   */
+  DATABASE_URL: z.string().min(1).optional(),
   /** Sessions one address may create per minute. Raised only for test runs. */
   SESSION_CREATE_PER_MINUTE: intFromEnv(12, 1, 10_000),
   /**
@@ -79,6 +84,7 @@ export interface ClovyreConfig {
   /** Null when the mutation grant never expires on a timer. */
   readonly mutationPrivilegeTtlMs: number | null;
   readonly maxSessions: number;
+  readonly databaseUrl: string | null;
   readonly sessionCreatePerMinute: number;
   /** Null when no operator console credential is configured. */
   readonly adminToken: string | null;
@@ -130,6 +136,7 @@ function build(): ClovyreConfig {
     mutationPrivilegeTtlMs:
       env.MUTATION_PRIVILEGE_TTL_MINUTES === 0 ? null : env.MUTATION_PRIVILEGE_TTL_MINUTES * 60_000,
     maxSessions: env.MAX_SESSIONS,
+    databaseUrl: env.DATABASE_URL ?? null,
     sessionCreatePerMinute: env.SESSION_CREATE_PER_MINUTE,
     adminToken: env.ADMIN_TOKEN ?? null,
     adminSessionMs: env.ADMIN_SESSION_MINUTES * 60_000,

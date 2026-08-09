@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import next from 'next';
 import { getConfig } from '../src/lib/config';
 import { createRobloxGateway, ROBLOX_WS_PATH } from './websocket-server';
+import { getSessionStore } from '../src/lib/sessions/store';
+import { closePool, initialiseSchema, persistenceEnabled } from '../src/lib/sessions/persistence';
 
 /**
  * Clovyre process entry point.
@@ -18,6 +20,24 @@ async function main(): Promise<void> {
   const app = next({ dev, dir: process.cwd() });
   const handle = app.getRequestHandler();
   await app.prepare();
+
+  // Sessions are what users configure their agents against, so they are restored
+  // before the first request rather than lazily: a request that arrived first
+  // would otherwise be told its perfectly valid session does not exist.
+  if (persistenceEnabled()) {
+    try {
+      await initialiseSchema();
+      const restored = await getSessionStore().hydrate();
+      console.warn(`[clovyre] restored ${restored} persisted session(s).`);
+    } catch (error) {
+      console.error(
+        '[clovyre] session persistence is unavailable; running in memory only:',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  } else {
+    console.warn('[clovyre] DATABASE_URL is not set; sessions will not survive a restart.');
+  }
 
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     handle(request, response).catch((error: unknown) => {
@@ -50,7 +70,10 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string) => {
     console.warn(`[clovyre] ${signal} received, shutting down.`);
-    void gateway.close().finally(() => {
+    void gateway
+      .close()
+      .then(() => closePool())
+      .finally(() => {
       server.close(() => process.exit(0));
       // Do not let a stuck connection block the restart forever.
       setTimeout(() => process.exit(0), 8_000).unref();

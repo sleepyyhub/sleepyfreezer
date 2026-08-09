@@ -4,6 +4,7 @@ import { getSessionBroker } from '@/lib/sessions/broker';
 import { getSessionStore } from '@/lib/sessions/store';
 import { TOOL_DEFINITIONS } from '@/lib/tools/registry';
 import { PROTOCOL_VERSION } from '@/lib/protocol/messages';
+import { persistenceEnabled } from '@/lib/sessions/persistence';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,9 +29,9 @@ export function GET(): Response {
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     dependencies: {
-      // Clovyre's prototype deployment is deliberately single-instance and
-      // in-memory; these flags say so rather than pretending a database exists.
-      sessionStore: { kind: 'memory', status: 'ok', durable: false },
+      sessionStore: persistenceEnabled()
+        ? { kind: 'postgres', status: 'ok', durable: true }
+        : { kind: 'memory', status: 'ok', durable: false },
       websocketGateway: { status: 'ok', connections: broker.connectionCount },
       mcp: { status: 'ok', transport: 'streamable-http', tools: TOOL_DEFINITIONS.length },
     },

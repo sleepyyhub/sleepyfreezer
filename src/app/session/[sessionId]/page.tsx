@@ -73,7 +73,7 @@ export default function SessionOverviewPage({
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingPrivilege, setPendingPrivilege] = useState<string | null>(null);
 
-  const { session, endpoints, secrets, agentLink, mutate, regenerate } = state;
+  const { session, endpoints, secrets, mutate, regenerate } = state;
 
   const [regenerating, setRegenerating] = useState<'roblox' | 'mcp' | null>(null);
   const [confirmRegenerate, setConfirmRegenerate] = useState<'roblox' | 'mcp' | null>(null);
@@ -286,88 +286,17 @@ export default function SessionOverviewPage({
           {/* MCP */}
           <Panel
             title="Connect Claude"
-            description="Use the permanent link and you only ever configure your agent once."
+            description="Configure this once. It keeps working for the life of this session, including across service restarts."
           >
-            {agentLink ? (
-              <div className="mb-6">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="cl-pill border-line-strong text-ink">
-                    Permanent link · configure once
-                  </span>
-                  <span className="text-[11.5px] text-ink-faint">
-                    stays the same across every future session
-                  </span>
-                </div>
-                <ol className="mb-3 flex flex-col gap-1.5">
-                  {[
-                    'Open Settings, then Connectors, then "Add custom connector".',
-                    'Paste the URL below. Leave everything else blank.',
-                    'Never touch it again — new scripts and new sessions reuse this same URL.',
-                  ].map((step, index) => (
-                    <li
-                      key={step}
-                      className="flex gap-2.5 text-[12.5px] leading-relaxed text-ink-muted"
-                    >
-                      <span className="font-mono text-[11px] text-clover-300">
-                        {String(index + 1).padStart(2, '0')}
-                      </span>
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ol>
-                <CodeBlock
-                  code={agentLink.url}
-                  caption="Permanent MCP endpoint"
-                  copyLabel="Copy permanent link"
-                />
-                <div className="mt-3">
-                  <CodeBlock
-                    code={agentLink.claudeCodeCommand}
-                    caption="Claude Code — run once"
-                    copyLabel="Copy command"
-                  />
-                </div>
-
-                <div className="mt-5 rounded-xl border border-line bg-base-800/40 p-4">
-                  <p className="text-[12.5px] font-medium text-ink">
-                    One shared endpoint, for clients that can send headers
-                  </p>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
-                    This URL is identical for every Clovyre user. Your link travels in the
-                    Authorization header instead of the path, so nothing secret sits in the URL and
-                    the server still routes you to your own session.
-                  </p>
-                  <div className="mt-3">
-                    <CodeBlock
-                      code={agentLink.sharedUrl}
-                      caption="Shared endpoint"
-                      copyLabel="Copy URL"
-                    />
-                  </div>
-                  <div className="mt-3">
-                    <CodeBlock
-                      code={agentLink.sharedRemoteJson}
-                      caption="mcpServers — shared endpoint"
-                      copyLabel="Copy config"
-                    />
-                  </div>
-                </div>
-                <p className="mt-2.5 text-[11.5px] leading-relaxed text-ink-faint">
-                  This link resolves to whichever session is currently live. It survives new
-                  sessions, regenerated scripts and service restarts. Because it is long-lived,
-                  treat it like a password: anyone holding it can drive whatever session you have
-                  running.
-                </p>
-              </div>
-            ) : null}
-
             {secrets?.mcpConnectorUrl ? (
               <div className="flex flex-col gap-6">
                 <div>
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="cl-pill">Session-only URL</span>
+                    <span className="cl-pill border-line-strong text-ink">
+                      Claude app · configure once
+                    </span>
                     <span className="text-[11.5px] text-ink-faint">
-                      dies with this session; prefer the permanent link above
+                      valid for as long as this session exists
                     </span>
                     <span className="text-[11.5px] text-ink-faint">
                       claude.ai and the desktop app
