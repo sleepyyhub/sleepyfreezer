@@ -134,6 +134,25 @@ Running it twice cleans up the previous connection instead of creating a duplica
 Clovyre speaks MCP over **Streamable HTTP**. There are three ways in; pick the one matching your
 client.
 
+### One shared endpoint (header-capable clients)
+
+Identical for every user, nothing per-user in the URL:
+
+```
+POST https://<deployment>/mcp/connect
+Authorization: Bearer <your clk_ link token>
+```
+
+The server routes by the credential, not the path, so one URL serves everybody and each agent
+reaches only its own session. Use this with Claude Code, Codex, or any client that reads a config
+file.
+
+**It requires the header.** A credential-free shared URL cannot route correctly: with no identity in
+the request the server could only hand back the most recently created session, which on a shared
+deployment means giving a stranger someone else's live Roblox client. Clovyre answers `401` instead.
+
+For the claude.ai connector screen, which has no header field, use the per-link URL below.
+
 ### Permanent link — recommended
 
 Configure this once and never touch it again:

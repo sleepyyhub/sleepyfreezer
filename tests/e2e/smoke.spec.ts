@@ -199,6 +199,45 @@ test.describe('session lifecycle', () => {
     expect(forged.status()).toBe(401);
   });
 
+  test('the shared /mcp/connect endpoint routes by credential', async ({ page, request }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Create session' }).first().click();
+    await page.waitForURL(/\/session\/cs_/, { timeout: 20_000 });
+    const sessionId = page.url().split('/session/')[1]!;
+
+    const link = await page.evaluate(() => localStorage.getItem('clovyre.agentLink'));
+    expect(link).toMatch(/^clk_/);
+
+    // One fixed URL, no per-user path component.
+    const rpc = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'clovyre_session_info' },
+    };
+
+    const routed = await request.post('/mcp/connect', {
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${link}` },
+      data: rpc,
+    });
+    expect(routed.ok()).toBe(true);
+    expect((await routed.json()).result.structuredContent.data.sessionId).toBe(sessionId);
+
+    // No credential must never fall back to somebody else's live session.
+    const anonymous = await request.post('/mcp/connect', {
+      headers: { 'content-type': 'application/json' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(anonymous.status()).toBe(401);
+    expect((await anonymous.json()).error.message).toContain('bearer token');
+
+    const forged = await request.post('/mcp/connect', {
+      headers: { 'content-type': 'application/json', authorization: 'Bearer clk_forged.sig' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(forged.status()).toBe(401);
+  });
+
   test('explorer and scripts explain themselves with no client attached', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Create session' }).first().click();

@@ -22,6 +22,9 @@ export interface SessionEndpoints {
 export interface AgentLinkView {
   token: string;
   url: string;
+  sharedUrl: string;
+  sharedRemoteJson: string;
+  sharedClaudeCodeCommand: string;
   remoteJson: string;
   proxyJson: string;
   claudeCodeCommand: string;

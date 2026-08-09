@@ -125,3 +125,31 @@ describe('link resolution', () => {
     expect(store.findActiveByLink(link.ownerId)).toBeNull();
   });
 });
+
+describe('the shared /mcp/connect endpoint', () => {
+  beforeEach(() => configure());
+
+  it('routes two different links to their own sessions', () => {
+    const store = new SessionStore();
+    const alice = createAgentLink();
+    const bob = createAgentLink();
+
+    const aliceSession = store.create({ ownerLinkId: alice.ownerId }).session;
+    const bobSession = store.create({ ownerLinkId: bob.ownerId }).session;
+
+    // One URL, two callers, two different sessions — routed purely by credential.
+    expect(store.findActiveByLink(verifyAgentLink(alice.token)!)?.id).toBe(aliceSession.id);
+    expect(store.findActiveByLink(verifyAgentLink(bob.token)!)?.id).toBe(bobSession.id);
+  });
+
+  it('resolves nothing for a link with no session, rather than someone else’s', () => {
+    const store = new SessionStore();
+    const stranger = createAgentLink();
+    const owner = createAgentLink();
+
+    // Somebody else has a live session; the stranger must still get nothing.
+    store.create({ ownerLinkId: owner.ownerId });
+
+    expect(store.findActiveByLink(verifyAgentLink(stranger.token)!)).toBeNull();
+  });
+});
