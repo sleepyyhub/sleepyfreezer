@@ -548,7 +548,19 @@ async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
 # ── background runner ─────────────────────────────────────────────────────
 def _proxy_scrape_runner():
     import concurrent.futures as _cf
+    try:
+        _proxy_scrape_runner_inner(_cf)
+    except Exception as exc:
+        # Crash guard — always push done so the frontend can recover
+        pscrape.push({"type": "log",
+                      "msg":   f"✗ runner crashed: {type(exc).__name__}: {exc}",
+                      "level": "err"})
+        pscrape.push({"type": "done", "found": pscrape.found, "checked": pscrape.checked})
+        pscrape.phase  = "done"
+        pscrape.active = False
 
+
+def _proxy_scrape_runner_inner(_cf):
     # Phase 1 — scrape sources with a bounded thread pool
     all_raw   = set()
     done_c    = [0]

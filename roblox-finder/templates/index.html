@@ -648,13 +648,31 @@ function handleProxyEvent(ev) {
       }
       break;
     case 'ping':
-      // Grace period: need 4 consecutive active:false pings + at least 6s uptime
-      // before auto-stopping — prevents false-stop during startup race
+      // Grace period: 2 consecutive active:false pings + at least 4s uptime
+      // then fetch real status — handles done-event-lost-in-transit cleanly
       if (!d.active && proxyRunning) {
         pingMisses++;
-        if (pingMisses >= 4 && Date.now() - proxyStartTime > 6000) {
-          addPLog('⚠ server reports scraper inactive', 'err');
-          stopProxy(true);
+        if (pingMisses >= 2 && Date.now() - proxyStartTime > 4000) {
+          // Done event was lost — recover via status API
+          fetch('/api/proxies/status').then(r => r.json()).then(s => {
+            if (!proxyRunning) return; // already handled by done event
+            proxyProgressFill.style.width = '100%';
+            pStatFound.textContent   = s.found;
+            pStatChecked.textContent = fmtNum(s.checked);
+            pFoundCount.textContent  = s.found;
+            setBadge(s.found > 0 || s.phase === 'done' ? 'done' : 'idle');
+            setProxyLog('finished — ' + s.found + ' working from ' + fmtNum(s.checked) + ' checked');
+            addPLog((s.found > 0 ? '✓' : '—') + ' done · ' + s.found +
+                    ' working / ' + fmtNum(s.checked) + ' checked', s.found > 0 ? 'ok' : '');
+            if (s.found > 0) {
+              loadProxiesBtn.style.display = '';
+              if (pProxyResults.length > 0) {
+                copyAllBtn.style.display = '';
+                downloadBtn.style.display = '';
+              }
+            }
+            stopProxy(true);
+          }).catch(() => stopProxy(true));
         }
       } else {
         pingMisses = 0;
