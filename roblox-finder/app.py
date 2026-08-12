@@ -4,6 +4,7 @@ import json
 import time
 import queue
 import random
+import socket
 import string
 import asyncio
 import threading
@@ -423,12 +424,14 @@ _SCRAPE_SOURCES = [
     "https://proxylist.geonode.com/api/proxy-list?limit=500&page=2&sort_by=lastChecked&sort_type=desc&protocols=http",
 ]
 
-_SCRAPE_RE  = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
-_CHECK_REQ  = (
-    b"GET http://www.google.com/ HTTP/1.0\r\n"
-    b"Host: www.google.com\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+_SCRAPE_RE      = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
+# Validate via CONNECT tunnel to Roblox — confirms proxy can actually reach roblox.com
+_CHECK_CONNECT  = (
+    b"CONNECT auth.roblox.com:443 HTTP/1.0\r\n"
+    b"Host: auth.roblox.com:443\r\n"
+    b"User-Agent: Mozilla/5.0\r\n"
+    b"\r\n"
 )
-_CHECK_GOOD = {b"200", b"204", b"301", b"302", b"403"}
 
 
 class ProxyScrape:
@@ -470,20 +473,21 @@ class ProxyScrape:
 pscrape = ProxyScrape()
 
 
-# ── async raw-socket check ─────────────────────────────────────────────────
+# ── async raw-socket check (CONNECT tunnel → validates Roblox reachability) ──
 async def _check_async(ip: str, port: int, timeout: float) -> bool:
     writer = None
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port), timeout=timeout
         )
-        writer.write(_CHECK_REQ)
+        writer.write(_CHECK_CONNECT)
         await writer.drain()
-        buf = await asyncio.wait_for(reader.read(48), timeout=timeout)
+        buf = await asyncio.wait_for(reader.read(64), timeout=timeout)
         if not buf.startswith(b"HTTP/"):
             return False
         parts = buf.split()
-        return len(parts) >= 2 and parts[1] in _CHECK_GOOD
+        # 200 = tunnel established (proxy can reach roblox.com:443)
+        return len(parts) >= 2 and parts[1] == b"200"
     except Exception:
         return False
     finally:
@@ -543,6 +547,8 @@ async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
 
 # ── background runner ─────────────────────────────────────────────────────
 def _proxy_scrape_runner():
+    import concurrent.futures as _cf
+
     # Phase 1 — scrape sources with a bounded thread pool
     all_raw   = set()
     done_c    = [0]
@@ -570,8 +576,23 @@ def _proxy_scrape_runner():
             "raw":   len(all_raw),
         })
 
-    with _TPE(max_workers=20) as pool:
-        list(pool.map(fetch_one, _SCRAPE_SOURCES))
+    # socket.setdefaulttimeout cuts OS-level TCP hangs that urlopen(timeout=) can miss
+    old_sock_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(12)
+    try:
+        with _TPE(max_workers=20) as pool:
+            futs = {pool.submit(fetch_one, url): url for url in _SCRAPE_SOURCES}
+            for fut in _cf.as_completed(futs, timeout=90):
+                try:
+                    fut.result(timeout=15)
+                except Exception:
+                    # count this source as done even if it timed out hard
+                    with raw_lock:
+                        done_c[0] = min(done_c[0] + 1, n)
+    except _cf.TimeoutError:
+        pass  # overall 90s wall-clock guard — continue to validation with whatever we got
+    finally:
+        socket.setdefaulttimeout(old_sock_timeout)
 
     if not pscrape.active:
         return
