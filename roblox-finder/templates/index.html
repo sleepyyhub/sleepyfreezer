@@ -9,7 +9,6 @@
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="manifest" href="/static/manifest.json">
   <style>
-    /* ── Tokens ───────────────────────────────────────────── */
     :root {
       --bg:         #0a0b0d;
       --surface:    #111318;
@@ -23,513 +22,304 @@
       --red:        #ff4757;
       --radius:     3px;
     }
-
     @media (prefers-color-scheme: light) {
       :root:not([data-theme="dark"]) {
-        --bg:         #f0f2f5;
-        --surface:    #ffffff;
-        --surface2:   #f7f8fa;
-        --border:     #d4d9e3;
-        --accent:     #00b84a;
-        --accent-dim: rgba(0,184,74,0.08);
-        --accent-glow:rgba(0,184,74,0.20);
-        --text:       #1a1f2e;
-        --text-dim:   #8491a3;
-        --red:        #e53935;
+        --bg:#f0f2f5;--surface:#fff;--surface2:#f7f8fa;--border:#d4d9e3;
+        --accent:#00b84a;--accent-dim:rgba(0,184,74,.08);--accent-glow:rgba(0,184,74,.20);
+        --text:#1a1f2e;--text-dim:#8491a3;--red:#e53935;
       }
     }
     :root[data-theme="light"] {
-      --bg:         #f0f2f5;
-      --surface:    #ffffff;
-      --surface2:   #f7f8fa;
-      --border:     #d4d9e3;
-      --accent:     #00b84a;
-      --accent-dim: rgba(0,184,74,0.08);
-      --accent-glow:rgba(0,184,74,0.20);
-      --text:       #1a1f2e;
-      --text-dim:   #8491a3;
-      --red:        #e53935;
+      --bg:#f0f2f5;--surface:#fff;--surface2:#f7f8fa;--border:#d4d9e3;
+      --accent:#00b84a;--accent-dim:rgba(0,184,74,.08);--accent-glow:rgba(0,184,74,.20);
+      --text:#1a1f2e;--text-dim:#8491a3;--red:#e53935;
     }
     :root[data-theme="dark"] {
-      --bg:         #0a0b0d;
-      --surface:    #111318;
-      --surface2:   #161b22;
-      --border:     #1e2330;
-      --accent:     #39ff85;
-      --accent-dim: rgba(57,255,133,0.10);
-      --accent-glow:rgba(57,255,133,0.25);
-      --text:       #cdd6e0;
-      --text-dim:   #5a6478;
-      --red:        #ff4757;
+      --bg:#0a0b0d;--surface:#111318;--surface2:#161b22;--border:#1e2330;
+      --accent:#39ff85;--accent-dim:rgba(57,255,133,.10);--accent-glow:rgba(57,255,133,.25);
+      --text:#cdd6e0;--text-dim:#5a6478;--red:#ff4757;
     }
 
-    /* ── Reset ────────────────────────────────────────────── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'SF Mono', ui-monospace, 'Cascadia Mono', 'Fira Code',
-                   'Roboto Mono', Menlo, monospace;
-      font-size: 13px;
-      line-height: 1.55;
-      min-height: 100vh;
+      background:var(--bg);color:var(--text);
+      font-family:'SF Mono',ui-monospace,'Cascadia Mono','Fira Code','Roboto Mono',Menlo,monospace;
+      font-size:13px;line-height:1.55;min-height:100vh;
       padding:
-        max(env(safe-area-inset-top), 24px)
-        max(env(safe-area-inset-right), 16px)
-        max(env(safe-area-inset-bottom), 32px)
-        max(env(safe-area-inset-left), 16px);
-      max-width: 520px;
-      margin: 0 auto;
+        max(env(safe-area-inset-top),24px)
+        max(env(safe-area-inset-right),16px)
+        max(env(safe-area-inset-bottom),32px)
+        max(env(safe-area-inset-left),16px);
+      max-width:520px;margin:0 auto;
     }
 
-    /* ── Header ───────────────────────────────────────────── */
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-bottom: 20px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 20px;
-    }
-    .logo {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-    .logo-mark {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--accent);
-      letter-spacing: -0.5px;
-    }
-    .logo-sub {
-      font-size: 11px;
-      color: var(--text-dim);
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-    .status-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--text-dim);
-      transition: background 0.3s;
-    }
-    .status-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
-    .status-dot.offline { background: var(--red); }
+    /* ── Header ── */
+    header{display:flex;align-items:center;justify-content:space-between;
+      padding-bottom:16px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+    .logo{display:flex;align-items:baseline;gap:8px;}
+    .logo-mark{font-size:18px;font-weight:700;color:var(--accent);letter-spacing:-.5px;}
+    .logo-sub{font-size:11px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;}
+    .status-dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);transition:background .3s;}
+    .status-dot.active{background:var(--accent);box-shadow:0 0 6px var(--accent-glow);}
+    .status-dot.offline{background:var(--red);}
 
-    /* ── Cards ────────────────────────────────────────────── */
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 18px;
-      margin-bottom: 12px;
-    }
-    .card-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--text-dim);
-      margin-bottom: 14px;
-    }
+    /* ── Tabs ── */
+    .tab-bar{display:flex;gap:3px;padding:3px;background:var(--surface);
+      border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;}
+    .tab{flex:1;padding:9px 12px;border:none;border-radius:2px;background:transparent;
+      color:var(--text-dim);font-family:inherit;font-size:11px;font-weight:700;
+      letter-spacing:.12em;text-transform:uppercase;cursor:pointer;
+      transition:background .15s,color .15s;-webkit-tap-highlight-color:transparent;}
+    .tab.active{background:var(--accent);color:#000;}
+    .tab-content.hidden{display:none;}
 
-    /* ── Letter count control ─────────────────────────────── */
-    .count-control {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    .count-btn {
-      width: 44px;
-      height: 44px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface2);
-      color: var(--text);
-      font-family: inherit;
-      font-size: 20px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: border-color 0.15s, background 0.15s;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-    }
-    .count-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
-    .count-btn:active { background: var(--accent-dim); }
-    .count-btn:disabled { opacity: 0.3; cursor: default; }
+    /* ── Cards ── */
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+      padding:18px;margin-bottom:12px;}
+    .card-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;
+      color:var(--text-dim);margin-bottom:14px;}
 
-    .count-display {
-      flex: 1;
-      text-align: center;
-    }
-    .count-number {
-      font-size: 48px;
-      font-weight: 700;
-      color: var(--accent);
-      line-height: 1;
-      letter-spacing: -2px;
-      font-variant-numeric: tabular-nums;
-    }
-    .count-meta {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin-top: 4px;
-    }
-    .count-meta span {
-      color: var(--text);
-      font-variant-numeric: tabular-nums;
-    }
+    /* ── Letter count ── */
+    .count-control{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .count-btn{width:44px;height:44px;border:1px solid var(--border);border-radius:var(--radius);
+      background:var(--surface2);color:var(--text);font-family:inherit;font-size:20px;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+      transition:border-color .15s,background .15s;
+      -webkit-tap-highlight-color:transparent;user-select:none;}
+    .count-btn:hover{border-color:var(--accent);background:var(--accent-dim);}
+    .count-btn:disabled{opacity:.3;cursor:default;}
+    .count-display{flex:1;text-align:center;}
+    .count-number{font-size:48px;font-weight:700;color:var(--accent);line-height:1;
+      letter-spacing:-2px;font-variant-numeric:tabular-nums;}
+    .count-meta{font-size:11px;color:var(--text-dim);margin-top:4px;}
+    .count-meta span{color:var(--text);font-variant-numeric:tabular-nums;}
 
-    /* ── Webhook input ────────────────────────────────────── */
-    .field-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--text-dim);
-      margin-bottom: 6px;
-    }
-    input[type="url"], input[type="text"] {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-family: inherit;
-      font-size: 12px;
-      padding: 10px 12px;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    input[type="url"]:focus, input[type="text"]:focus {
-      border-color: var(--accent);
-    }
-    input::placeholder { color: var(--text-dim); }
+    /* ── Input ── */
+    .field-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;
+      color:var(--text-dim);margin-bottom:6px;}
+    input[type="url"],input[type="text"]{width:100%;background:var(--surface2);
+      border:1px solid var(--border);border-radius:var(--radius);color:var(--text);
+      font-family:inherit;font-size:12px;padding:10px 12px;outline:none;transition:border-color .15s;}
+    input:focus{border-color:var(--accent);}
+    input::placeholder{color:var(--text-dim);}
 
-    /* ── Start / Stop ─────────────────────────────────────── */
-    #startBtn {
-      width: 100%;
-      padding: 14px;
-      border: none;
-      border-radius: var(--radius);
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: opacity 0.15s, box-shadow 0.15s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    #startBtn.idle {
-      background: var(--accent);
-      color: #000;
-      box-shadow: 0 0 20px var(--accent-glow);
-    }
-    #startBtn.running {
-      background: transparent;
-      color: var(--red);
-      border: 1px solid var(--red);
-      box-shadow: none;
-    }
-    #startBtn:active { opacity: 0.8; }
+    /* ── Buttons (scan + proxy) ── */
+    .action-btn{width:100%;padding:14px;border:none;border-radius:var(--radius);
+      font-family:inherit;font-size:13px;font-weight:600;letter-spacing:.06em;
+      text-transform:uppercase;cursor:pointer;transition:opacity .15s,box-shadow .15s;
+      -webkit-tap-highlight-color:transparent;}
+    .action-btn.idle{background:var(--accent);color:#000;box-shadow:0 0 20px var(--accent-glow);}
+    .action-btn.running{background:transparent;color:var(--red);
+      border:1px solid var(--red);box-shadow:none;}
+    .action-btn:active{opacity:.8;}
 
-    /* ── Stats ────────────────────────────────────────────── */
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-    }
-    .stat-block {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 12px 10px;
-      text-align: center;
-    }
-    .stat-value {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--text);
-      line-height: 1;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -0.5px;
-    }
-    .stat-value.accent { color: var(--accent); }
-    .stat-label {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--text-dim);
-      margin-top: 4px;
-    }
+    /* ── Stats ── */
+    .stats-row{display:grid;gap:8px;}
+    .stats-row.cols3{grid-template-columns:repeat(3,1fr);}
+    .stats-row.cols4{grid-template-columns:repeat(4,1fr);}
+    .stat-block{background:var(--surface2);border:1px solid var(--border);
+      border-radius:var(--radius);padding:12px 10px;text-align:center;}
+    .stat-value{font-size:22px;font-weight:700;color:var(--text);line-height:1;
+      font-variant-numeric:tabular-nums;letter-spacing:-.5px;}
+    .stat-value.accent{color:var(--accent);}
+    .stat-label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;
+      color:var(--text-dim);margin-top:4px;}
 
-    /* ── Proxy ramp bar ───────────────────────────────────── */
-    .proxy-ramp {
-      margin-top: 10px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .proxy-ramp-bar-wrap {
-      flex: 1;
-      height: 4px;
-      background: var(--border);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .proxy-ramp-fill {
-      height: 100%;
-      background: var(--accent);
-      border-radius: 2px;
-      width: 0%;
-      transition: width 0.4s;
-    }
-    .proxy-ramp-label {
-      font-size: 10px;
-      color: var(--text-dim);
-      white-space: nowrap;
-      font-variant-numeric: tabular-nums;
-      min-width: 56px;
-      text-align: right;
-    }
+    /* ── Proxy ramp bar (sniper tab) ── */
+    .proxy-ramp{margin-top:10px;display:flex;align-items:center;gap:8px;}
+    .proxy-ramp-bar-wrap{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+    .proxy-ramp-fill{height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width .4s;}
+    .proxy-ramp-label{font-size:10px;color:var(--text-dim);white-space:nowrap;
+      font-variant-numeric:tabular-nums;min-width:56px;text-align:right;}
 
-    /* ── Progress bar ─────────────────────────────────────── */
-    .progress-wrap {
-      height: 2px;
-      background: var(--border);
-      border-radius: 1px;
-      overflow: hidden;
-      margin-top: 10px;
-    }
-    .progress-fill {
-      height: 100%;
-      background: var(--accent);
-      border-radius: 1px;
-      width: 0%;
-      transition: width 0.3s;
-    }
+    /* ── Progress bar ── */
+    .progress-wrap{height:2px;background:var(--border);border-radius:1px;overflow:hidden;margin-top:10px;}
+    .progress-fill{height:100%;background:var(--accent);border-radius:1px;width:0%;transition:width .3s;}
 
-    /* ── Results ──────────────────────────────────────────── */
-    .results-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-    .results-count {
-      font-size: 10px;
-      color: var(--text-dim);
-      letter-spacing: 0.08em;
-    }
-    .results-count span { color: var(--accent); font-variant-numeric: tabular-nums; }
-    .clear-btn {
-      font-family: inherit;
-      font-size: 10px;
-      color: var(--text-dim);
-      background: none;
-      border: none;
-      cursor: pointer;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 2px 4px;
-    }
-    .clear-btn:hover { color: var(--text); }
+    /* ── Results ── */
+    .results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+    .results-count{font-size:10px;color:var(--text-dim);letter-spacing:.08em;}
+    .results-count span{color:var(--accent);font-variant-numeric:tabular-nums;}
+    .clear-btn{font-family:inherit;font-size:10px;color:var(--text-dim);background:none;border:none;
+      cursor:pointer;letter-spacing:.06em;text-transform:uppercase;padding:2px 4px;}
+    .clear-btn:hover{color:var(--text);}
+    .results-list{list-style:none;max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;}
+    .results-list::-webkit-scrollbar{width:3px;}
+    .results-list::-webkit-scrollbar-track{background:transparent;}
+    .results-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+    .result-item{display:flex;align-items:center;justify-content:space-between;
+      background:var(--accent-dim);border:1px solid rgba(57,255,133,.15);
+      border-radius:var(--radius);padding:9px 12px;animation:slideIn .2s ease;}
+    @keyframes slideIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+    .result-name{color:var(--accent);font-size:14px;font-weight:600;letter-spacing:.02em;}
+    .result-name.mono{font-size:12px;}
+    .result-actions{display:flex;gap:8px;align-items:center;}
+    .copy-btn{font-family:inherit;font-size:10px;color:var(--text-dim);background:none;
+      border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
+      padding:3px 8px;letter-spacing:.06em;text-transform:uppercase;transition:color .15s,border-color .15s;}
+    .copy-btn:hover{color:var(--accent);border-color:var(--accent);}
+    .copy-btn.copied{color:var(--accent);border-color:var(--accent);}
+    .load-btn{font-family:inherit;font-size:10px;background:none;border:1px solid var(--accent);
+      border-radius:var(--radius);color:var(--accent);cursor:pointer;padding:4px 10px;
+      letter-spacing:.06em;text-transform:uppercase;transition:opacity .15s;}
+    .load-btn:active{opacity:.7;}
+    .empty-state{text-align:center;padding:28px 0;color:var(--text-dim);font-size:12px;}
+    .empty-state::before{content:'//';display:block;font-size:20px;margin-bottom:8px;color:var(--border);}
 
-    #resultsList {
-      list-style: none;
-      max-height: 280px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    #resultsList::-webkit-scrollbar { width: 3px; }
-    #resultsList::-webkit-scrollbar-track { background: transparent; }
-    #resultsList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    /* ── Misc ── */
+    #offlineBanner{display:none;background:var(--red);color:#fff;font-size:11px;
+      text-align:center;padding:6px;border-radius:var(--radius);margin-bottom:12px;letter-spacing:.06em;}
+    .log-line{font-size:11px;color:var(--text-dim);margin-top:8px;min-height:16px;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .phase-badge{display:inline-block;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+      padding:2px 6px;border-radius:2px;background:var(--surface2);
+      border:1px solid var(--border);color:var(--text-dim);margin-left:6px;vertical-align:middle;}
+    .phase-badge.scraping{border-color:var(--accent);color:var(--accent);}
+    .phase-badge.validating{border-color:#ffd700;color:#ffd700;}
+    .phase-badge.done{border-color:var(--accent);color:var(--accent);}
 
-    .result-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: var(--accent-dim);
-      border: 1px solid rgba(57,255,133,0.15);
-      border-radius: var(--radius);
-      padding: 9px 12px;
-      animation: slideIn 0.2s ease;
-    }
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .result-name {
-      color: var(--accent);
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-    .result-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .copy-btn {
-      font-family: inherit;
-      font-size: 10px;
-      color: var(--text-dim);
-      background: none;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      cursor: pointer;
-      padding: 3px 8px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
-    .copy-btn.copied { color: var(--accent); border-color: var(--accent); }
-
-    .empty-state {
-      text-align: center;
-      padding: 28px 0;
-      color: var(--text-dim);
-      font-size: 12px;
-    }
-    .empty-state::before {
-      content: '//';
-      display: block;
-      font-size: 20px;
-      margin-bottom: 8px;
-      color: var(--border);
-    }
-
-    /* ── Offline banner ───────────────────────────────────── */
-    #offlineBanner {
-      display: none;
-      background: var(--red);
-      color: #fff;
-      font-size: 11px;
-      text-align: center;
-      padding: 6px;
-      border-radius: var(--radius);
-      margin-bottom: 12px;
-      letter-spacing: 0.06em;
-    }
-
-    /* ── Log line ─────────────────────────────────────────── */
-    #logLine {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin-top: 8px;
-      min-height: 16px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    @media (prefers-reduced-motion:reduce){
+      *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;}
     }
   </style>
 </head>
 <body>
 
-<div id="offlineBanner">OFFLINE — ui cached, scanning unavailable</div>
+<div id="offlineBanner">OFFLINE — scanning unavailable</div>
 
 <header>
   <div class="logo">
     <span class="logo-mark">AXIOM</span>
-    <span class="logo-sub">roblox finder</span>
+    <span class="logo-sub">finder</span>
   </div>
   <div id="statusDot" class="status-dot"></div>
 </header>
 
-<!-- Config -->
-<div class="card">
-  <div class="card-label">Letter count</div>
-  <div class="count-control">
-    <button class="count-btn" id="decBtn" aria-label="decrease">−</button>
-    <div class="count-display">
-      <div class="count-number" id="countDisplay">4</div>
-      <div class="count-meta">
-        <span id="comboCount">456,976</span> combos
+<!-- Tab nav -->
+<nav class="tab-bar" role="tablist">
+  <button class="tab active" data-tab="sniper" role="tab">Sniper</button>
+  <button class="tab"        data-tab="proxies" role="tab">Proxies</button>
+</nav>
+
+<!-- ════════════════════════ SNIPER TAB ════════════════════════ -->
+<div id="tab-sniper" class="tab-content">
+
+  <div class="card">
+    <div class="card-label">Letter count</div>
+    <div class="count-control">
+      <button class="count-btn" id="decBtn" aria-label="decrease">−</button>
+      <div class="count-display">
+        <div class="count-number" id="countDisplay">4</div>
+        <div class="count-meta"><span id="comboCount">456,976</span> combos</div>
+      </div>
+      <button class="count-btn" id="incBtn" aria-label="increase">+</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="field-label">Webhook URL <span style="color:var(--text-dim)">(optional)</span></div>
+    <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/...">
+  </div>
+
+  <button id="startBtn" class="action-btn idle">Start scan</button>
+  <div id="logLine" class="log-line"></div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="stats-row cols4">
+      <div class="stat-block"><div class="stat-value" id="statChecked">0</div><div class="stat-label">Checked</div></div>
+      <div class="stat-block"><div class="stat-value accent" id="statFound">0</div><div class="stat-label">Found</div></div>
+      <div class="stat-block"><div class="stat-value" id="statCPS">0</div><div class="stat-label">/ sec</div></div>
+      <div class="stat-block"><div class="stat-value" id="statAlive">0</div><div class="stat-label">Proxies</div></div>
+    </div>
+    <div class="proxy-ramp">
+      <div class="proxy-ramp-bar-wrap"><div class="proxy-ramp-fill" id="proxyRampFill"></div></div>
+      <div class="proxy-ramp-label" id="proxyRampLabel">0 / —</div>
+    </div>
+    <div class="progress-wrap"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="results-header">
+      <div class="card-label" style="margin:0">Results</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="results-count">found: <span id="foundCount">0</span></span>
+        <button class="clear-btn" id="clearBtn">clear</button>
       </div>
     </div>
-    <button class="count-btn" id="incBtn" aria-label="increase">+</button>
-  </div>
-</div>
-
-<!-- Webhook -->
-<div class="card">
-  <div class="field-label">Webhook URL <span style="color:var(--text-dim)">(optional)</span></div>
-  <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/...">
-</div>
-
-<!-- Action -->
-<button id="startBtn" class="idle">Start scan</button>
-<div id="logLine"></div>
-
-<!-- Stats -->
-<div class="card" style="margin-top:12px">
-  <div class="stats-row">
-    <div class="stat-block">
-      <div class="stat-value" id="statChecked">0</div>
-      <div class="stat-label">Checked</div>
-    </div>
-    <div class="stat-block">
-      <div class="stat-value accent" id="statFound">0</div>
-      <div class="stat-label">Found</div>
-    </div>
-    <div class="stat-block">
-      <div class="stat-value" id="statCPS">0</div>
-      <div class="stat-label">/ sec</div>
-    </div>
-    <div class="stat-block">
-      <div class="stat-value" id="statAlive">0</div>
-      <div class="stat-label">Proxies</div>
-    </div>
+    <ul class="results-list" id="resultsList">
+      <li class="empty-state" id="emptyState">nothing yet — start a scan</li>
+    </ul>
   </div>
 
-  <!-- Proxy ramp indicator -->
-  <div class="proxy-ramp">
-    <div class="proxy-ramp-bar-wrap">
-      <div class="proxy-ramp-fill" id="proxyRampFill"></div>
+</div><!-- /tab-sniper -->
+
+<!-- ════════════════════════ PROXIES TAB ════════════════════════ -->
+<div id="tab-proxies" class="tab-content hidden">
+
+  <div class="card">
+    <div class="card-label">Proxy scraper
+      <span id="phaseBadge" class="phase-badge" style="display:none"></span>
     </div>
-    <div class="proxy-ramp-label" id="proxyRampLabel">0 / 100</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px;line-height:1.7;">
+      Scrapes 31 sources then validates each proxy using async sockets.
+      Hit <strong style="color:var(--text)">Load into Scanner</strong> when done
+      to swap the live proxy pool.
+    </div>
+    <button id="proxyBtn" class="action-btn idle">Scrape &amp; Validate</button>
+    <div id="proxyLog" class="log-line"></div>
   </div>
 
-  <div class="progress-wrap">
-    <div class="progress-fill" id="progressFill"></div>
-  </div>
-</div>
-
-<!-- Results -->
-<div class="card">
-  <div class="results-header">
-    <div class="card-label" style="margin:0">Results</div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <span class="results-count">found: <span id="foundCount">0</span></span>
-      <button class="clear-btn" id="clearBtn">clear</button>
+  <div class="card">
+    <div class="stats-row cols4">
+      <div class="stat-block"><div class="stat-value" id="pStatRaw">0</div><div class="stat-label">Scraped</div></div>
+      <div class="stat-block"><div class="stat-value" id="pStatChecked">0</div><div class="stat-label">Checked</div></div>
+      <div class="stat-block"><div class="stat-value accent" id="pStatFound">0</div><div class="stat-label">Working</div></div>
+      <div class="stat-block"><div class="stat-value" id="pStatCPS">0</div><div class="stat-label">/ sec</div></div>
     </div>
+    <div class="progress-wrap"><div class="progress-fill" id="proxyProgressFill"></div></div>
   </div>
-  <ul id="resultsList">
-    <li class="empty-state" id="emptyState">nothing yet — start a scan</li>
-  </ul>
-</div>
+
+  <div class="card">
+    <div class="results-header">
+      <div class="card-label" style="margin:0">Working proxies</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="results-count">found: <span id="pFoundCount">0</span></span>
+        <button id="loadProxiesBtn" class="load-btn" style="display:none">load into scanner</button>
+      </div>
+    </div>
+    <ul class="results-list" id="proxyList">
+      <li class="empty-state" id="proxyEmptyState">start a scrape to find proxies</li>
+    </ul>
+  </div>
+
+</div><!-- /tab-proxies -->
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
-let letterCount = 4;
-let running     = false;
-let results     = [];
-let evtSource   = null;   // EventSource
-let totalProxies = 100;   // updated from server on connect
+// ════════════════════════════════════════════════════════════════
+//  Shared helpers
+// ════════════════════════════════════════════════════════════════
+function fmtNum(n) { return Number(n).toLocaleString(); }
+function totalCombos(len) { return Math.pow(26, len); }
 
-// ── Elements ───────────────────────────────────────────────────────────────
+// ── Tab switching ────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+//  SNIPER TAB
+// ════════════════════════════════════════════════════════════════
+let letterCount  = 4;
+let running      = false;
+let evtSource    = null;
+let results      = [];
+let totalProxies = 100;
+
 const countDisplay    = document.getElementById('countDisplay');
 const comboCount      = document.getElementById('comboCount');
 const decBtn          = document.getElementById('decBtn');
@@ -543,7 +333,6 @@ const proxyRampFill   = document.getElementById('proxyRampFill');
 const proxyRampLabel  = document.getElementById('proxyRampLabel');
 const progressFill    = document.getElementById('progressFill');
 const resultsList     = document.getElementById('resultsList');
-const emptyState      = document.getElementById('emptyState');
 const foundCount      = document.getElementById('foundCount');
 const logLine         = document.getElementById('logLine');
 const statusDot       = document.getElementById('statusDot');
@@ -551,9 +340,7 @@ const webhookUrl      = document.getElementById('webhookUrl');
 const offlineBanner   = document.getElementById('offlineBanner');
 const clearBtn        = document.getElementById('clearBtn');
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function fmtNum(n) { return Number(n).toLocaleString(); }
-function totalCombos(len) { return Math.pow(26, len); }
+function setLog(msg) { logLine.textContent = msg; }
 
 function updateCountUI() {
   countDisplay.textContent = letterCount;
@@ -562,8 +349,6 @@ function updateCountUI() {
   incBtn.disabled = letterCount >= 6;
 }
 
-function setLog(msg) { logLine.textContent = msg; }
-
 function updateProxyRamp(alive) {
   const pct = Math.min(100, (alive / totalProxies) * 100);
   proxyRampFill.style.width = pct.toFixed(1) + '%';
@@ -571,96 +356,70 @@ function updateProxyRamp(alive) {
   statAlive.textContent = alive;
 }
 
-// ── Webhook ────────────────────────────────────────────────────────────────
 async function fireWebhook(username) {
   const url = webhookUrl.value.trim();
   if (!url) return;
-  const payload = {
-    username: 'Axiom Finder',
-    embeds: [{
-      title: '🎯 Roblox Username Available!',
-      description: '**`' + username + '`** is free to register.',
-      color: 0x39ff85,
-      fields: [
-        { name: 'Username', value: '`' + username + '`', inline: true },
-        { name: 'Length',   value: '`' + username.length + '`', inline: true },
-        { name: 'Claim',    value: 'https://www.roblox.com/account/signupredir', inline: false },
-      ],
-      footer: { text: 'Axiom Finder • roblox username scanner' }
-    }]
-  };
   try {
     await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'Axiom Finder',
+        embeds: [{ title: '🎯 Username Available!',
+          description: '**`' + username + '`** is free.',
+          color: 0x39ff85,
+          fields: [
+            { name: 'Username', value: '`' + username + '`', inline: true },
+            { name: 'Length',   value: '`' + username.length + '`', inline: true },
+            { name: 'Claim',    value: 'https://www.roblox.com/account/signupredir', inline: false },
+          ],
+          footer: { text: 'Axiom Finder' }
+        }]
+      })
     });
   } catch (_) {}
 }
 
-// ── Add result ─────────────────────────────────────────────────────────────
 function addResult(username) {
   results.push(username);
   const es = document.getElementById('emptyState');
   if (es) es.remove();
-
   const li = document.createElement('li');
   li.className = 'result-item';
-  li.innerHTML =
-    '<span class="result-name">' + username + '</span>' +
-    '<div class="result-actions">' +
-      '<button class="copy-btn" data-name="' + username + '">copy</button>' +
-    '</div>';
-  resultsList.prepend(li);
-
+  li.innerHTML = '<span class="result-name">' + username + '</span>' +
+    '<div class="result-actions"><button class="copy-btn" data-val="' + username + '">copy</button></div>';
   li.querySelector('.copy-btn').addEventListener('click', function() {
-    navigator.clipboard.writeText(this.dataset.name).then(() => {
-      this.textContent = 'copied';
-      this.classList.add('copied');
+    navigator.clipboard.writeText(this.dataset.val).then(() => {
+      this.textContent = 'copied'; this.classList.add('copied');
       setTimeout(() => { this.textContent = 'copy'; this.classList.remove('copied'); }, 1500);
     });
   });
+  resultsList.prepend(li);
 }
 
-// ── SSE event handler ──────────────────────────────────────────────────────
-function handleEvent(ev) {
-  let d;
-  try { d = JSON.parse(ev.data); } catch (_) { return; }
-
+function handleScanEvent(ev) {
+  let d; try { d = JSON.parse(ev.data); } catch { return; }
   switch (d.type) {
-
     case 'connected':
       totalProxies = d.proxies || 100;
       updateProxyRamp(0);
-      setLog('connected — ramping ' + totalProxies + ' proxies over ' + (totalProxies * 0.2).toFixed(0) + 's…');
+      proxyRampLabel.textContent = '0 / ' + totalProxies;
+      setLog('connected — ramping ' + totalProxies + ' proxies…');
       break;
-
     case 'proxy_up':
       updateProxyRamp(d.alive);
-      if (d.alive === totalProxies) setLog('all ' + totalProxies + ' proxies online — scanning at full speed');
-      else setLog('proxy ' + (d.idx + 1) + ' online (' + d.alive + '/' + totalProxies + ' active)');
+      if (d.alive === totalProxies) setLog('all ' + totalProxies + ' proxies online');
+      else setLog('proxy ' + (d.idx + 1) + ' online (' + d.alive + '/' + totalProxies + ')');
       break;
-
-    case 'proxy_down':
-      updateProxyRamp(d.alive);
-      break;
-
+    case 'proxy_down': updateProxyRamp(d.alive); break;
     case 'stat':
       statChecked.textContent = fmtNum(d.checked);
       statFound.textContent   = d.found;
       foundCount.textContent  = d.found;
       statCPS.textContent     = d.cps;
-      statAlive.textContent   = d.alive;
       updateProxyRamp(d.alive);
-      if (d.pct > 0) {
-        progressFill.style.width = Math.min(100, d.pct).toFixed(2) + '%';
-      }
-      // If server says not active anymore, treat as finished
-      if (!d.active && running) {
-        finishScan('scan complete');
-      }
+      if (d.pct > 0) progressFill.style.width = Math.min(100, d.pct).toFixed(2) + '%';
+      if (!d.active && running) finishScan('scan complete');
       break;
-
     case 'hit':
       statChecked.textContent = fmtNum(d.checked);
       statFound.textContent   = d.found;
@@ -670,81 +429,50 @@ function handleEvent(ev) {
       fireWebhook(d.username);
       setLog('✓ found: ' + d.username);
       break;
-
     case 'ping':
-      // heartbeat — check if server stopped
-      if (!d.active && running) {
-        finishScan('scan complete');
-      }
+      if (!d.active && running) finishScan('scan complete');
       break;
   }
 }
 
-// ── Open SSE stream ────────────────────────────────────────────────────────
 function openStream() {
   if (evtSource) { evtSource.close(); evtSource = null; }
   evtSource = new EventSource('/api/scan/stream');
-  evtSource.onmessage = handleEvent;
-  evtSource.onerror = () => {
-    if (!running) return;
-    setLog('stream error — reconnecting…');
-  };
+  evtSource.onmessage = handleScanEvent;
+  evtSource.onerror   = () => { if (running) setLog('stream error — reconnecting…'); };
 }
 
-// ── Start ──────────────────────────────────────────────────────────────────
 async function startScan() {
-  if (!navigator.onLine) { setLog('⚠ offline — cannot reach roblox api'); return; }
+  if (!navigator.onLine) { setLog('⚠ offline'); return; }
+  statChecked.textContent = '0'; statFound.textContent = '0';
+  statCPS.textContent = '0'; foundCount.textContent = '0';
+  progressFill.style.width = '0%'; updateProxyRamp(0);
 
-  // Reset UI
-  statChecked.textContent = '0';
-  statFound.textContent   = '0';
-  statCPS.textContent     = '0';
-  foundCount.textContent  = '0';
-  progressFill.style.width = '0%';
-  updateProxyRamp(0);
+  const resp = await fetch('/api/scan/start', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ length: letterCount }),
+  }).catch(() => null);
 
-  let resp;
-  try {
-    resp = await fetch('/api/scan/start', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ length: letterCount }),
-    });
-  } catch (e) {
-    setLog('⚠ could not reach server');
+  if (!resp || !resp.ok) {
+    const err = resp ? await resp.json().catch(() => ({})) : {};
+    setLog('⚠ ' + (err.error || 'server error'));
     return;
   }
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    setLog('⚠ ' + (err.error || resp.status));
-    return;
-  }
-
   running = true;
-  startBtn.className   = 'running';
+  startBtn.className = 'action-btn running';
   startBtn.textContent = 'Stop scan';
-  statusDot.className  = 'status-dot active';
-  decBtn.disabled = true;
-  incBtn.disabled = true;
+  statusDot.className = 'status-dot active';
+  decBtn.disabled = incBtn.disabled = true;
   setLog('starting scan…');
-
   openStream();
 }
 
-// ── Stop ───────────────────────────────────────────────────────────────────
 async function stopScan() {
   running = false;
   if (evtSource) { evtSource.close(); evtSource = null; }
-
-  try {
-    await fetch('/api/scan/stop', { method: 'POST' });
-  } catch (_) {}
-
-  startBtn.className   = 'idle';
-  startBtn.textContent = 'Start scan';
-  statusDot.className  = 'status-dot';
-  updateCountUI();
+  await fetch('/api/scan/stop', { method: 'POST' }).catch(() => {});
+  startBtn.className = 'action-btn idle'; startBtn.textContent = 'Start scan';
+  statusDot.className = 'status-dot'; updateCountUI();
   setLog('stopped at ' + statChecked.textContent + ' checked');
 }
 
@@ -752,34 +480,175 @@ function finishScan(msg) {
   if (!running) return;
   running = false;
   if (evtSource) { evtSource.close(); evtSource = null; }
-  startBtn.className   = 'idle';
-  startBtn.textContent = 'Start scan';
-  statusDot.className  = 'status-dot';
-  updateCountUI();
-  setLog(msg + ' — ' + statFound.textContent + ' found in ' + statChecked.textContent + ' checked');
+  startBtn.className = 'action-btn idle'; startBtn.textContent = 'Start scan';
+  statusDot.className = 'status-dot'; updateCountUI();
+  setLog(msg + ' — ' + statFound.textContent + ' found');
 }
 
-// ── Event listeners ────────────────────────────────────────────────────────
-decBtn.addEventListener('click', () => {
-  if (letterCount > 2) { letterCount--; updateCountUI(); }
-});
-incBtn.addEventListener('click', () => {
-  if (letterCount < 6) { letterCount++; updateCountUI(); }
-});
-
-startBtn.addEventListener('click', () => {
-  if (running) stopScan();
-  else startScan();
-});
-
+decBtn.addEventListener('click', () => { if (letterCount > 2) { letterCount--; updateCountUI(); } });
+incBtn.addEventListener('click', () => { if (letterCount < 6) { letterCount++; updateCountUI(); } });
+startBtn.addEventListener('click', () => { running ? stopScan() : startScan(); });
 clearBtn.addEventListener('click', () => {
-  results = [];
+  results = []; statFound.textContent = '0'; foundCount.textContent = '0';
   resultsList.innerHTML = '<li class="empty-state" id="emptyState">nothing yet — start a scan</li>';
-  statFound.textContent  = '0';
-  foundCount.textContent = '0';
 });
 
-// ── Offline detection ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+//  PROXIES TAB
+// ════════════════════════════════════════════════════════════════
+let proxyRunning  = false;
+let proxyEvtSrc   = null;
+let pProxyResults = [];
+
+const proxyBtn          = document.getElementById('proxyBtn');
+const proxyLog          = document.getElementById('proxyLog');
+const phaseBadge        = document.getElementById('phaseBadge');
+const pStatRaw          = document.getElementById('pStatRaw');
+const pStatChecked      = document.getElementById('pStatChecked');
+const pStatFound        = document.getElementById('pStatFound');
+const pStatCPS          = document.getElementById('pStatCPS');
+const proxyProgressFill = document.getElementById('proxyProgressFill');
+const pFoundCount       = document.getElementById('pFoundCount');
+const proxyList         = document.getElementById('proxyList');
+const loadProxiesBtn    = document.getElementById('loadProxiesBtn');
+
+function setProxyLog(msg) { proxyLog.textContent = msg; }
+
+function setBadge(phase) {
+  if (!phase || phase === 'idle') { phaseBadge.style.display = 'none'; return; }
+  phaseBadge.className = 'phase-badge ' + phase;
+  phaseBadge.textContent = phase;
+  phaseBadge.style.display = '';
+}
+
+function addProxyResult(proxy) {
+  pProxyResults.push(proxy);
+  const es = document.getElementById('proxyEmptyState');
+  if (es) es.remove();
+  const li = document.createElement('li');
+  li.className = 'result-item';
+  li.innerHTML = '<span class="result-name mono">' + proxy + '</span>' +
+    '<div class="result-actions"><button class="copy-btn" data-val="' + proxy + '">copy</button></div>';
+  li.querySelector('.copy-btn').addEventListener('click', function() {
+    navigator.clipboard.writeText(this.dataset.val).then(() => {
+      this.textContent = 'copied'; this.classList.add('copied');
+      setTimeout(() => { this.textContent = 'copy'; this.classList.remove('copied'); }, 1500);
+    });
+  });
+  proxyList.prepend(li);
+  // cap DOM nodes to avoid jank
+  while (proxyList.children.length > 300) proxyList.removeChild(proxyList.lastChild);
+}
+
+function handleProxyEvent(ev) {
+  let d; try { d = JSON.parse(ev.data); } catch { return; }
+  switch (d.type) {
+    case 'connected':
+      setProxyLog('connected — scraping sources…');
+      setBadge('scraping');
+      break;
+    case 'scrape_progress':
+      pStatRaw.textContent = fmtNum(d.raw);
+      proxyProgressFill.style.width = (d.done / d.total * 10).toFixed(1) + '%';
+      setProxyLog('scraping ' + d.done + '/' + d.total + ' sources · ' + fmtNum(d.raw) + ' raw');
+      break;
+    case 'phase':
+      if (d.phase === 'validating') {
+        setBadge('validating');
+        setProxyLog('validating ' + fmtNum(d.total) + ' proxies with async sockets…');
+      }
+      break;
+    case 'validate_stat':
+      pStatChecked.textContent = fmtNum(d.checked);
+      pStatFound.textContent   = d.found;
+      pStatCPS.textContent     = d.cps;
+      pFoundCount.textContent  = d.found;
+      proxyProgressFill.style.width = Math.min(100, 10 + d.pct * 0.9).toFixed(1) + '%';
+      setProxyLog('validating ' + fmtNum(d.checked) + '/' + fmtNum(d.total) +
+                  ' · ' + d.cps + '/s · ' + d.found + ' working');
+      break;
+    case 'proxy_found':
+      pStatFound.textContent  = d.found;
+      pFoundCount.textContent = d.found;
+      addProxyResult(d.proxy);
+      if (d.found === 1) loadProxiesBtn.style.display = '';
+      break;
+    case 'done':
+      proxyProgressFill.style.width = '100%';
+      setBadge('done');
+      setProxyLog('done — ' + d.found + ' working proxies found from ' + fmtNum(d.checked) + ' checked');
+      stopProxy(true);
+      if (d.found > 0) loadProxiesBtn.style.display = '';
+      break;
+    case 'ping':
+      if (!d.active && proxyRunning) stopProxy(true);
+      break;
+  }
+}
+
+async function startProxy() {
+  pStatRaw.textContent = '0'; pStatChecked.textContent = '0';
+  pStatFound.textContent = '0'; pStatCPS.textContent = '0';
+  pFoundCount.textContent = '0'; proxyProgressFill.style.width = '0%';
+  pProxyResults = [];
+  proxyList.innerHTML = '<li class="empty-state" id="proxyEmptyState">scraping sources…</li>';
+  loadProxiesBtn.style.display = 'none';
+  setBadge('scraping');
+
+  const resp = await fetch('/api/proxies/start', { method: 'POST' }).catch(() => null);
+  if (!resp || !resp.ok) {
+    const err = resp ? await resp.json().catch(() => ({})) : {};
+    setProxyLog('⚠ ' + (err.error || 'server error'));
+    setBadge('idle');
+    return;
+  }
+
+  proxyRunning = true;
+  proxyBtn.className = 'action-btn running';
+  proxyBtn.textContent = 'Stop';
+  setProxyLog('starting…');
+
+  if (proxyEvtSrc) { proxyEvtSrc.close(); proxyEvtSrc = null; }
+  proxyEvtSrc = new EventSource('/api/proxies/stream');
+  proxyEvtSrc.onmessage = handleProxyEvent;
+  proxyEvtSrc.onerror   = () => { if (proxyRunning) setProxyLog('stream reconnecting…'); };
+}
+
+function stopProxy(finished = false) {
+  proxyRunning = false;
+  if (proxyEvtSrc) { proxyEvtSrc.close(); proxyEvtSrc = null; }
+  if (!finished) fetch('/api/proxies/stop', { method: 'POST' }).catch(() => {});
+  proxyBtn.className = 'action-btn idle';
+  proxyBtn.textContent = 'Scrape & Validate';
+  if (!finished) setProxyLog('stopped — ' + pStatFound.textContent + ' working found');
+  if (!finished) setBadge('idle');
+}
+
+proxyBtn.addEventListener('click', () => { proxyRunning ? stopProxy(false) : startProxy(); });
+
+loadProxiesBtn.addEventListener('click', async () => {
+  loadProxiesBtn.textContent = 'loading…';
+  loadProxiesBtn.disabled = true;
+  const resp = await fetch('/api/proxies/activate', { method: 'POST' }).catch(() => null);
+  const data = resp ? await resp.json().catch(() => ({})) : {};
+  if (resp && resp.ok) {
+    loadProxiesBtn.textContent = '✓ ' + data.count + ' loaded';
+    loadProxiesBtn.style.color = 'var(--accent)';
+    setTimeout(() => {
+      loadProxiesBtn.textContent = 'load into scanner';
+      loadProxiesBtn.style.color = '';
+      loadProxiesBtn.disabled = false;
+    }, 3000);
+  } else {
+    setProxyLog('⚠ ' + (data.error || 'failed'));
+    loadProxiesBtn.textContent = 'load into scanner';
+    loadProxiesBtn.disabled = false;
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+//  Offline + Service Worker
+// ════════════════════════════════════════════════════════════════
 function updateOnlineStatus() {
   if (!navigator.onLine) {
     offlineBanner.style.display = 'block';
@@ -794,12 +663,10 @@ window.addEventListener('online',  updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();
 
-// ── Service worker ─────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/static/sw.js').catch(() => {});
 }
 
-// ── Init ───────────────────────────────────────────────────────────────────
 updateCountUI();
 </script>
 </body>

@@ -1,12 +1,16 @@
 import os
+import re
 import json
 import time
 import queue
 import random
 import string
+import asyncio
 import threading
 import itertools
 import requests
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor as _TPE
 from flask import (
     Flask, jsonify, request,
     render_template, send_from_directory,
@@ -382,6 +386,285 @@ def scan_status():
 @app.route("/static/<path:filename>")
 def static_files(filename):
     return send_from_directory("static", filename)
+
+
+# ── Proxy Scraper ──────────────────────────────────────────────────────────
+_SCRAPE_SOURCES = [
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/http.txt",
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/https.txt",
+    "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
+    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt",
+    "https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt",
+    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTP_RAW.txt",
+    "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/http/http.txt",
+    "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt",
+    "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/http.txt",
+    "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/HTTP.txt",
+    "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/http.txt",
+    "https://raw.githubusercontent.com/casals-ar/proxy-list/main/http.txt",
+    "https://raw.githubusercontent.com/caliphdev/Proxy-List/master/http.txt",
+    "https://raw.githubusercontent.com/zloi-user/hideip.me/main/http.txt",
+    "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/http.txt",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt",
+    "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/http.txt",
+    "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt",
+    "https://raw.githubusercontent.com/HyperBeats/proxy-list/main/http.txt",
+    "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt",
+    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all",
+    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=https&timeout=5000&country=all",
+    "https://www.proxy-list.download/api/v1/get?type=http",
+    "https://api.openproxylist.xyz/http.txt",
+    "https://multiproxy.org/txt_all/proxy.txt",
+    "https://spys.me/proxy.txt",
+    "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&protocols=http",
+    "https://proxylist.geonode.com/api/proxy-list?limit=500&page=2&sort_by=lastChecked&sort_type=desc&protocols=http",
+]
+
+_SCRAPE_RE  = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
+_CHECK_REQ  = (
+    b"GET http://www.google.com/ HTTP/1.0\r\n"
+    b"Host: www.google.com\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+)
+_CHECK_GOOD = {b"200", b"204", b"301", b"302", b"403"}
+
+
+class ProxyScrape:
+    def __init__(self):
+        self.active   = False
+        self.phase    = "idle"   # idle / scraping / validating / done
+        self.event_q  = queue.Queue(maxsize=3000)
+        self.lock     = threading.Lock()
+        self.raw      = 0
+        self.checked  = 0
+        self.found    = 0
+        self.total    = 0
+        self.start_t  = 0.0
+        self.proxies  = []       # working ip:port strings
+
+    def reset(self):
+        self.active  = False
+        self.phase   = "idle"
+        self.raw     = 0
+        self.checked = 0
+        self.found   = 0
+        self.total   = 0
+        self.start_t = 0.0
+        self.proxies = []
+        while not self.event_q.empty():
+            try:   self.event_q.get_nowait()
+            except queue.Empty: break
+
+    def push(self, ev):
+        try:   self.event_q.put_nowait(ev)
+        except queue.Full: pass
+
+    @property
+    def cps(self):
+        el = time.time() - self.start_t
+        return round(self.checked / el, 1) if el > 0 and self.checked else 0.0
+
+
+pscrape = ProxyScrape()
+
+
+# ── async raw-socket check ─────────────────────────────────────────────────
+async def _check_async(ip: str, port: int, timeout: float) -> bool:
+    writer = None
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port), timeout=timeout
+        )
+        writer.write(_CHECK_REQ)
+        await writer.drain()
+        buf = await asyncio.wait_for(reader.read(48), timeout=timeout)
+        if not buf.startswith(b"HTTP/"):
+            return False
+        parts = buf.split()
+        return len(parts) >= 2 and parts[1] in _CHECK_GOOD
+    except Exception:
+        return False
+    finally:
+        if writer:
+            try: writer.close()
+            except Exception: pass
+
+
+async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
+                                   concurrency: int = 500):
+    sem     = asyncio.Semaphore(concurrency)
+    total   = len(proxies)
+    start_t = time.time()
+
+    async def do_one(proxy: str):
+        try:
+            ip, port_s = proxy.rsplit(":", 1)
+            port = int(port_s)
+            if not (1 <= port <= 65535):
+                raise ValueError
+        except Exception:
+            with pscrape.lock:
+                pscrape.checked += 1
+            return
+
+        async with sem:
+            ok = await _check_async(ip, port, timeout)
+
+        with pscrape.lock:
+            pscrape.checked += 1
+            c = pscrape.checked
+            if ok:
+                pscrape.found  += 1
+                pscrape.proxies.append(proxy)
+
+        if ok:
+            pscrape.push({
+                "type":    "proxy_found",
+                "proxy":   proxy,
+                "found":   pscrape.found,
+                "checked": pscrape.checked,
+            })
+
+        if c % 500 == 0 or ok:
+            elapsed = max(time.time() - start_t, 0.001)
+            pscrape.push({
+                "type":    "validate_stat",
+                "checked": c,
+                "total":   total,
+                "found":   pscrape.found,
+                "cps":     round(c / elapsed, 1),
+                "pct":     round(c / total * 100, 2),
+            })
+
+    await asyncio.gather(*[do_one(p) for p in proxies])
+
+
+# ── background runner ─────────────────────────────────────────────────────
+def _proxy_scrape_runner():
+    # Phase 1 — scrape sources with a bounded thread pool
+    all_raw   = set()
+    done_c    = [0]
+    raw_lock  = threading.Lock()
+    n         = len(_SCRAPE_SOURCES)
+
+    def fetch_one(url):
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0 (ProxyScraper)"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                text = r.read().decode("utf-8", errors="ignore")
+            found = [f"{ip}:{port}" for ip, port in _SCRAPE_RE.findall(text)]
+        except Exception:
+            found = []
+        with raw_lock:
+            all_raw.update(found)
+            done_c[0] += 1
+            pscrape.raw = len(all_raw)
+        pscrape.push({
+            "type":  "scrape_progress",
+            "done":  done_c[0],
+            "total": n,
+            "raw":   len(all_raw),
+        })
+
+    with _TPE(max_workers=20) as pool:
+        list(pool.map(fetch_one, _SCRAPE_SOURCES))
+
+    if not pscrape.active:
+        return
+
+    # Cap to avoid OOM on Render free tier
+    proxies = list(all_raw)
+    if len(proxies) > 60_000:
+        random.shuffle(proxies)
+        proxies = proxies[:60_000]
+
+    pscrape.total = len(proxies)
+    pscrape.phase = "validating"
+    pscrape.push({"type": "phase", "phase": "validating", "total": len(proxies)})
+
+    # Phase 2 — async validation (own event loop in this thread)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_validate_proxies_async(proxies))
+    finally:
+        loop.close()
+
+    pscrape.phase  = "done"
+    pscrape.active = False
+    pscrape.push({"type": "done", "found": pscrape.found, "checked": pscrape.checked})
+
+
+# ── proxy scraper routes ──────────────────────────────────────────────────
+@app.route("/api/proxies/start", methods=["POST"])
+def proxies_start():
+    if pscrape.active:
+        return jsonify({"error": "already running"}), 400
+    pscrape.reset()
+    pscrape.active  = True
+    pscrape.phase   = "scraping"
+    pscrape.start_t = time.time()
+    threading.Thread(target=_proxy_scrape_runner, daemon=True).start()
+    return jsonify({"status": "started", "sources": len(_SCRAPE_SOURCES)})
+
+
+@app.route("/api/proxies/stop", methods=["POST"])
+def proxies_stop():
+    pscrape.active = False
+    pscrape.phase  = "idle"
+    return jsonify({"status": "stopped"})
+
+
+@app.route("/api/proxies/stream")
+def proxies_stream():
+    def generate():
+        yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+        while True:
+            try:
+                ev = pscrape.event_q.get(timeout=1.5)
+                yield f"data: {json.dumps(ev)}\n\n"
+                if ev.get("type") == "done":
+                    return
+            except queue.Empty:
+                yield f"data: {json.dumps({'type':'ping','phase':pscrape.phase,'active':pscrape.active})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                 "Connection": "keep-alive"},
+    )
+
+
+@app.route("/api/proxies/activate", methods=["POST"])
+def proxies_activate():
+    if scan.active:
+        return jsonify({"error": "stop the scanner first"}), 400
+    if not pscrape.proxies:
+        return jsonify({"error": "no working proxies found yet"}), 400
+    new_pool = [{"http": f"http://{p}", "https": f"http://{p}"}
+                for p in pscrape.proxies]
+    PROXY_POOL.clear()
+    PROXY_POOL.extend(new_pool)
+    return jsonify({"status": "loaded", "count": len(new_pool)})
+
+
+@app.route("/api/proxies/status")
+def proxies_status():
+    return jsonify({
+        "active":   pscrape.active,
+        "phase":    pscrape.phase,
+        "raw":      pscrape.raw,
+        "checked":  pscrape.checked,
+        "found":    pscrape.found,
+        "total":    pscrape.total,
+        "cps":      pscrape.cps,
+        "loaded":   len(PROXY_POOL),
+    })
 
 
 if __name__ == "__main__":
