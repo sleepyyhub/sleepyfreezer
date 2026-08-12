@@ -59,10 +59,10 @@ server, which is why Clovyre needs a long-lived container rather than serverless
 - **Runtime tools** — players, local player, character, camera, workspace summary, captured logs.
 - **Capability-aware tool surface** — decompile, `getgc`, `getsenv`, `getconnections` and
   `getloadedmodules` tools appear only when the executor genuinely provides them.
-- **Privileged tools off by default** — Luau execution, the remote spy and mutation tools all
-  require an explicit grant made by the session owner in the browser. Execution and hooking grants
-  auto-expire; the mutation grant stands until it is turned off, since it writes local client state
-  only.
+- **Privileged tools off by default** — Luau execution, executor globals, the remote spy and
+  mutation tools all require an explicit grant made by the session owner in the browser. A grant
+  then stands until the owner turns it off: enable it once and the agent keeps working. Set
+  `PRIVILEGE_TTL_MINUTES` above 0 if you want grants to clear themselves instead.
 - **Live observation** — install watchers on properties, attributes and children and poll the
   changes they record, instead of re-reading the same instance and missing what happened in between.
 - **Remote spy** — record the RemoteEvent and RemoteFunction calls the client sends, with serialized
@@ -245,6 +245,10 @@ something is currently connected with it.
 
 Privileged tools are hidden from `tools/list` until the session owner grants them in the browser, so
 an agent cannot even attempt to call them.
+
+Once granted, a privilege stays granted — there is no timer to re-arm. Revoking is a single toggle in
+the dashboard and takes effect on the next tool call, and a banner stays visible for as long as any
+privilege is live so a standing grant is never silent.
 
 ## Security considerations
 

@@ -133,6 +133,14 @@ export function buildSessionView(session: SessionRecord, now = Date.now()): Sess
     };
   };
 
+  // Each privilege answers to its own deployment kill switch. Executor globals
+  // only matter alongside Luau execution, so they follow that switch.
+  const privilegeFeatureEnabled = (name: PrivilegeName): boolean => {
+    if (name === 'mutations') return config.mutationToolsFeatureEnabled;
+    if (name === 'remote_spy') return config.remoteSpyFeatureEnabled;
+    return config.executeLuauFeatureEnabled;
+  };
+
   const privilege = (name: PrivilegeName): PrivilegeView => {
     const state = session.privileges[name];
     const active = store.hasPrivilege(session, name, now);
@@ -143,10 +151,7 @@ export function buildSessionView(session: SessionRecord, now = Date.now()): Sess
       expiresInSeconds:
         active && state.expiresAt ? Math.max(0, Math.floor((state.expiresAt - now) / 1000)) : null,
       expires: store.privilegeTtlMs(name) !== null,
-      featureEnabled:
-        name === 'mutations'
-          ? config.mutationToolsFeatureEnabled
-          : config.executeLuauFeatureEnabled,
+      featureEnabled: privilegeFeatureEnabled(name),
     };
   };
 

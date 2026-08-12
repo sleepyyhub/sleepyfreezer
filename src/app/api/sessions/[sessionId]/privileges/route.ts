@@ -26,8 +26,9 @@ interface RouteContext {
 /**
  * POST /api/sessions/[sessionId]/privileges
  *
- * Grants or revokes a privileged capability. Owner-only, CSRF-protected, and
- * every grant expires automatically after PRIVILEGE_TTL_MINUTES.
+ * Grants or revokes a privileged capability. Owner-only and CSRF-protected. A
+ * grant lasts as long as its configured TTL, or until the owner turns it off
+ * when that TTL is 0.
  */
 export async function POST(request: NextRequest, context: RouteContext): Promise<Response> {
   const { sessionId } = await context.params;
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   }
 
   const store = getSessionStore();
+  const ttlMs = store.privilegeTtlMs(privilege);
   store.setPrivilege(auth.session, privilege, enabled, 'owner');
 
   if (parsed.data.acknowledgement && enabled) {
@@ -84,7 +86,8 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   return jsonResponse({
     privilege,
     enabled,
-    ttlMinutes: Math.round(config.privilegeTtlMs / 60_000),
+    ttlMinutes: ttlMs === null ? null : Math.round(ttlMs / 60_000),
+    expires: ttlMs !== null,
     session: buildSessionView(auth.session),
   });
 }
