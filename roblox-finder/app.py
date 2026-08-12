@@ -556,6 +556,7 @@ def _proxy_scrape_runner():
     n         = len(_SCRAPE_SOURCES)
 
     def fetch_one(url):
+        src = url.split("/")[2]  # domain only for display
         try:
             req = urllib.request.Request(
                 url, headers={"User-Agent": "Mozilla/5.0 (ProxyScraper)"}
@@ -563,8 +564,15 @@ def _proxy_scrape_runner():
             with urllib.request.urlopen(req, timeout=10) as r:
                 text = r.read().decode("utf-8", errors="ignore")
             found = [f"{ip}:{port}" for ip, port in _SCRAPE_RE.findall(text)]
-        except Exception:
+            level = "ok" if found else ""
+            pscrape.push({"type": "log",
+                          "msg":   f"✓ {src} — {len(found)} proxies",
+                          "level": level})
+        except Exception as exc:
             found = []
+            pscrape.push({"type": "log",
+                          "msg":   f"✗ {src} — {type(exc).__name__}",
+                          "level": "err"})
         with raw_lock:
             all_raw.update(found)
             done_c[0] += 1
@@ -579,22 +587,28 @@ def _proxy_scrape_runner():
     # socket.setdefaulttimeout cuts OS-level TCP hangs that urlopen(timeout=) can miss
     old_sock_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(12)
+    pool = _TPE(max_workers=20)
     try:
-        with _TPE(max_workers=20) as pool:
-            futs = {pool.submit(fetch_one, url): url for url in _SCRAPE_SOURCES}
-            for fut in _cf.as_completed(futs, timeout=90):
-                try:
-                    fut.result(timeout=15)
-                except Exception:
-                    # count this source as done even if it timed out hard
-                    with raw_lock:
-                        done_c[0] = min(done_c[0] + 1, n)
+        futs = [pool.submit(fetch_one, url) for url in _SCRAPE_SOURCES]
+        for fut in _cf.as_completed(futs, timeout=90):
+            try:
+                fut.result()  # already completed, no extra timeout needed
+            except Exception:
+                pass
     except _cf.TimeoutError:
-        pass  # overall 90s wall-clock guard — continue to validation with whatever we got
+        pscrape.push({"type": "log", "msg": "⚠ scraping timed out — continuing with partial results", "level": "err"})
     finally:
+        pool.shutdown(wait=False)  # don't hang on any stuck futures
         socket.setdefaulttimeout(old_sock_timeout)
 
     if not pscrape.active:
+        return
+
+    if not all_raw:
+        pscrape.push({"type": "log", "msg": "✗ scraped 0 proxies — check server network", "level": "err"})
+        pscrape.push({"type": "done", "found": 0, "checked": 0})
+        pscrape.phase  = "done"
+        pscrape.active = False
         return
 
     # Cap to avoid OOM on Render free tier
@@ -602,6 +616,8 @@ def _proxy_scrape_runner():
     if len(proxies) > 60_000:
         random.shuffle(proxies)
         proxies = proxies[:60_000]
+
+    pscrape.push({"type": "log", "msg": f"→ {len(proxies)} unique proxies queued for CONNECT validation", "level": "info"})
 
     pscrape.total = len(proxies)
     pscrape.phase = "validating"
@@ -615,9 +631,9 @@ def _proxy_scrape_runner():
     finally:
         loop.close()
 
+    pscrape.push({"type": "done", "found": pscrape.found, "checked": pscrape.checked})
     pscrape.phase  = "done"
     pscrape.active = False
-    pscrape.push({"type": "done", "found": pscrape.found, "checked": pscrape.checked})
 
 
 # ── proxy scraper routes ──────────────────────────────────────────────────
