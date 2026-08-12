@@ -424,14 +424,26 @@ _SCRAPE_SOURCES = [
     "https://proxylist.geonode.com/api/proxy-list?limit=500&page=2&sort_by=lastChecked&sort_type=desc&protocols=http",
 ]
 
-_SCRAPE_RE      = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
-# Validate via CONNECT tunnel to Roblox — confirms proxy can actually reach roblox.com
-_CHECK_CONNECT  = (
+_SCRAPE_RE     = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
+
+# Mode: "connect" — CONNECT tunnel to roblox.com:443 (fast TCP reachability check)
+_CHECK_CONNECT = (
     b"CONNECT auth.roblox.com:443 HTTP/1.0\r\n"
     b"Host: auth.roblox.com:443\r\n"
     b"User-Agent: Mozilla/5.0\r\n"
     b"\r\n"
 )
+
+# Mode: "roblox" — plain HTTP GET through the proxy; actually hits Roblox servers
+# Roblox replies 301→https (or 200/403); any of these proves the proxy routes traffic there
+_ROBLOX_REQ  = (
+    b"GET http://www.roblox.com/ HTTP/1.0\r\n"
+    b"Host: www.roblox.com\r\n"
+    b"User-Agent: Mozilla/5.0 (compatible; RobloxCheck/1.0)\r\n"
+    b"Connection: close\r\n"
+    b"\r\n"
+)
+_ROBLOX_GOOD = {b"200", b"301", b"302", b"403"}
 
 
 class ProxyScrape:
@@ -473,21 +485,32 @@ class ProxyScrape:
 pscrape = ProxyScrape()
 
 
-# ── async raw-socket check (CONNECT tunnel → validates Roblox reachability) ──
-async def _check_async(ip: str, port: int, timeout: float) -> bool:
+# ── async raw-socket check ────────────────────────────────────────────────
+async def _check_async(ip: str, port: int, timeout: float,
+                        mode: str = "connect") -> bool:
     writer = None
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port), timeout=timeout
         )
-        writer.write(_CHECK_CONNECT)
-        await writer.drain()
-        buf = await asyncio.wait_for(reader.read(64), timeout=timeout)
-        if not buf.startswith(b"HTTP/"):
-            return False
-        parts = buf.split()
-        # 200 = tunnel established (proxy can reach roblox.com:443)
-        return len(parts) >= 2 and parts[1] == b"200"
+        if mode == "roblox":
+            # Plain HTTP GET through proxy → actually reaches Roblox servers
+            writer.write(_ROBLOX_REQ)
+            await writer.drain()
+            buf = await asyncio.wait_for(reader.read(48), timeout=timeout)
+            if not buf.startswith(b"HTTP/"):
+                return False
+            parts = buf.split()
+            return len(parts) >= 2 and parts[1] in _ROBLOX_GOOD
+        else:
+            # CONNECT tunnel — fast TCP reachability to roblox.com:443
+            writer.write(_CHECK_CONNECT)
+            await writer.drain()
+            buf = await asyncio.wait_for(reader.read(64), timeout=timeout)
+            if not buf.startswith(b"HTTP/"):
+                return False
+            parts = buf.split()
+            return len(parts) >= 2 and parts[1] == b"200"
     except Exception:
         return False
     finally:
@@ -497,7 +520,7 @@ async def _check_async(ip: str, port: int, timeout: float) -> bool:
 
 
 async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
-                                   concurrency: int = 500):
+                                   concurrency: int = 500, mode: str = "connect"):
     sem     = asyncio.Semaphore(concurrency)
     total   = len(proxies)
     start_t = time.time()
@@ -514,7 +537,7 @@ async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
             return
 
         async with sem:
-            ok = await _check_async(ip, port, timeout)
+            ok = await _check_async(ip, port, timeout, mode)
 
         with pscrape.lock:
             pscrape.checked += 1
@@ -546,10 +569,10 @@ async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
 
 
 # ── background runner ─────────────────────────────────────────────────────
-def _proxy_scrape_runner():
+def _proxy_scrape_runner(mode="connect"):
     import concurrent.futures as _cf
     try:
-        _proxy_scrape_runner_inner(_cf)
+        _proxy_scrape_runner_inner(_cf, mode)
     except Exception as exc:
         # Crash guard — always push done so the frontend can recover
         pscrape.push({"type": "log",
@@ -560,7 +583,7 @@ def _proxy_scrape_runner():
         pscrape.active = False
 
 
-def _proxy_scrape_runner_inner(_cf):
+def _proxy_scrape_runner_inner(_cf, mode="connect"):
     # Phase 1 — scrape sources with a bounded thread pool
     all_raw   = set()
     done_c    = [0]
@@ -629,7 +652,10 @@ def _proxy_scrape_runner_inner(_cf):
         random.shuffle(proxies)
         proxies = proxies[:60_000]
 
-    pscrape.push({"type": "log", "msg": f"→ {len(proxies)} unique proxies queued for CONNECT validation", "level": "info"})
+    mode_label = "Roblox HTTP" if mode == "roblox" else "CONNECT tunnel"
+    pscrape.push({"type": "log",
+                  "msg":   f"→ {len(proxies)} unique proxies → {mode_label} validation",
+                  "level": "info"})
 
     pscrape.total = len(proxies)
     pscrape.phase = "validating"
@@ -639,7 +665,7 @@ def _proxy_scrape_runner_inner(_cf):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_validate_proxies_async(proxies))
+        loop.run_until_complete(_validate_proxies_async(proxies, mode=mode))
     finally:
         loop.close()
 
@@ -653,12 +679,16 @@ def _proxy_scrape_runner_inner(_cf):
 def proxies_start():
     if pscrape.active:
         return jsonify({"error": "already running"}), 400
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "connect")
+    if mode not in ("connect", "roblox"):
+        mode = "connect"
     pscrape.reset()
     pscrape.active  = True
     pscrape.phase   = "scraping"
     pscrape.start_t = time.time()
-    threading.Thread(target=_proxy_scrape_runner, daemon=True).start()
-    return jsonify({"status": "started", "sources": len(_SCRAPE_SOURCES)})
+    threading.Thread(target=_proxy_scrape_runner, args=(mode,), daemon=True).start()
+    return jsonify({"status": "started", "sources": len(_SCRAPE_SOURCES), "mode": mode})
 
 
 @app.route("/api/proxies/stop", methods=["POST"])
