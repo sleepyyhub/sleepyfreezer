@@ -17,6 +17,7 @@ Pure stdlib. Zero installs. Python 3.10+
 import sys
 import re
 import time
+import socket
 import asyncio
 import threading
 import urllib.request
@@ -82,12 +83,14 @@ SOURCES = [
     "https://proxylist.geonode.com/api/proxy-list?limit=500&page=3&sort_by=lastChecked&sort_type=desc&protocols=http",
 ]
 
-_PROXY_RE  = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
-_HTTP_REQ  = (
-    b"GET http://www.google.com/ HTTP/1.0\r\n"
-    b"Host: www.google.com\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+_PROXY_RE      = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
+# CONNECT tunnel to Roblox validates the proxy can actually reach roblox.com:443
+_CONNECT_REQ   = (
+    b"CONNECT auth.roblox.com:443 HTTP/1.0\r\n"
+    b"Host: auth.roblox.com:443\r\n"
+    b"User-Agent: Mozilla/5.0\r\n"
+    b"\r\n"
 )
-_GOOD_CODE = {b"200", b"204", b"301", b"302", b"403"}
 
 
 # ── Scrape (thread pool, bounded) ─────────────────────────────────────────
@@ -120,8 +123,16 @@ def scrape_all(sources, pool_size):
                 end="", flush=True,
             )
 
-    with ThreadPoolExecutor(max_workers=min(pool_size, n)) as pool:
-        list(pool.map(task, sources))
+    # setdefaulttimeout ensures TCP-level hangs are killed even if urlopen timeout misses them
+    old_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(12)
+    try:
+        with ThreadPoolExecutor(max_workers=min(pool_size, n)) as pool:
+            list(pool.map(task, sources, timeout=n * 2 + 30))
+    except Exception:
+        pass  # partial results are fine — continue to validation
+    finally:
+        socket.setdefaulttimeout(old_timeout)
 
     print()
     return set(collected)
@@ -129,19 +140,19 @@ def scrape_all(sources, pool_size):
 
 # ── Async validation (raw sockets, no threads) ────────────────────────────
 async def _check(ip, port, timeout):
-    """Open a raw socket through the proxy, send minimal HTTP, check status."""
+    """CONNECT tunnel to auth.roblox.com:443 — proxy is usable if it returns 200."""
     writer = None
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port), timeout=timeout
         )
-        writer.write(_HTTP_REQ)
+        writer.write(_CONNECT_REQ)
         await writer.drain()
-        buf = await asyncio.wait_for(reader.read(48), timeout=timeout)
+        buf = await asyncio.wait_for(reader.read(64), timeout=timeout)
         if not buf.startswith(b"HTTP/"):
             return False
         parts = buf.split()
-        return len(parts) >= 2 and parts[1] in _GOOD_CODE
+        return len(parts) >= 2 and parts[1] == b"200"
     except Exception:
         return False
     finally:
@@ -237,18 +248,28 @@ def main():
         print(RED("  ✗ Nothing scraped — check internet."))
         sys.exit(1)
 
-    # 2. Validate (asyncio)
+    # 2. Validate (asyncio) — Ctrl+C stops cleanly and shows partial results
     eta = len(raw) / max(args.concurrency, 1) * args.timeout
     print(f"  {BLD('[2/2]')} Async validation  "
           f"{DIM(f'{args.concurrency} concurrent · {args.timeout}s timeout · ~{eta:.0f}s ETA')}")
-    working = asyncio.run(
-        validate_async(list(raw), args.timeout, args.concurrency, args.out)
-    )
+    print(DIM("  (Ctrl+C to stop early and keep what was found)"))
+    working = []
+    try:
+        working = asyncio.run(
+            validate_async(list(raw), args.timeout, args.concurrency, args.out)
+        )
+    except KeyboardInterrupt:
+        print(f"\n  {RED('⚡')} Stopped early — reading results from {args.out}…")
+        try:
+            with open(args.out) as fh:
+                working = [ln.strip() for ln in fh if ln.strip()]
+        except FileNotFoundError:
+            working = []
 
     # 3. Results
     print()
     if working:
-        rate = len(working) / len(raw) * 100
+        rate = len(working) / len(raw) * 100 if raw else 0
         print(f"  {GRN('✓')} {BLD(str(len(working)))} working  "
               f"{DIM(f'({rate:.1f}% · saved to {args.out})')}")
         print()

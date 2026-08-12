@@ -282,8 +282,10 @@
   <div class="card">
     <div class="results-header">
       <div class="card-label" style="margin:0">Working proxies</div>
-      <div style="display:flex;align-items:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="results-count">found: <span id="pFoundCount">0</span></span>
+        <button id="copyAllBtn"   class="load-btn" style="display:none">copy all</button>
+        <button id="downloadBtn"  class="load-btn" style="display:none">download</button>
         <button id="loadProxiesBtn" class="load-btn" style="display:none">load into scanner</button>
       </div>
     </div>
@@ -511,6 +513,8 @@ const proxyProgressFill = document.getElementById('proxyProgressFill');
 const pFoundCount       = document.getElementById('pFoundCount');
 const proxyList         = document.getElementById('proxyList');
 const loadProxiesBtn    = document.getElementById('loadProxiesBtn');
+const copyAllBtn        = document.getElementById('copyAllBtn');
+const downloadBtn       = document.getElementById('downloadBtn');
 
 function setProxyLog(msg) { proxyLog.textContent = msg; }
 
@@ -571,14 +575,22 @@ function handleProxyEvent(ev) {
       pStatFound.textContent  = d.found;
       pFoundCount.textContent = d.found;
       addProxyResult(d.proxy);
-      if (d.found === 1) loadProxiesBtn.style.display = '';
+      if (d.found === 1) {
+        loadProxiesBtn.style.display = '';
+        copyAllBtn.style.display = '';
+        downloadBtn.style.display = '';
+      }
       break;
     case 'done':
       proxyProgressFill.style.width = '100%';
       setBadge('done');
       setProxyLog('done — ' + d.found + ' working proxies found from ' + fmtNum(d.checked) + ' checked');
       stopProxy(true);
-      if (d.found > 0) loadProxiesBtn.style.display = '';
+      if (d.found > 0) {
+        loadProxiesBtn.style.display = '';
+        copyAllBtn.style.display = '';
+        downloadBtn.style.display = '';
+      }
       break;
     case 'ping':
       if (!d.active && proxyRunning) stopProxy(true);
@@ -593,6 +605,8 @@ async function startProxy() {
   pProxyResults = [];
   proxyList.innerHTML = '<li class="empty-state" id="proxyEmptyState">scraping sources…</li>';
   loadProxiesBtn.style.display = 'none';
+  copyAllBtn.style.display = 'none';
+  downloadBtn.style.display = 'none';
   setBadge('scraping');
 
   const resp = await fetch('/api/proxies/start', { method: 'POST' }).catch(() => null);
@@ -644,6 +658,28 @@ loadProxiesBtn.addEventListener('click', async () => {
     loadProxiesBtn.textContent = 'load into scanner';
     loadProxiesBtn.disabled = false;
   }
+});
+
+copyAllBtn.addEventListener('click', async () => {
+  if (!pProxyResults.length) return;
+  try {
+    await navigator.clipboard.writeText(pProxyResults.join('\n'));
+    const orig = copyAllBtn.textContent;
+    copyAllBtn.textContent = '✓ copied';
+    copyAllBtn.style.color = 'var(--accent)';
+    setTimeout(() => { copyAllBtn.textContent = orig; copyAllBtn.style.color = ''; }, 1800);
+  } catch {
+    setProxyLog('⚠ clipboard not available');
+  }
+});
+
+downloadBtn.addEventListener('click', () => {
+  if (!pProxyResults.length) return;
+  const blob = new Blob([pProxyResults.join('\n') + '\n'], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'proxies.txt'; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 });
 
 // ════════════════════════════════════════════════════════════════
