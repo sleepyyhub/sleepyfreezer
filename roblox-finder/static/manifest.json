@@ -1,0 +1,17 @@
+{
+  "name": "Axiom Roblox Finder",
+  "short_name": "AxiomFinder",
+  "description": "Roblox username availability scanner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0b0d",
+  "theme_color": "#0a0b0d",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%230a0b0d'/><text y='320' x='50' font-size='300' font-family='monospace' fill='%2339ff85'>A</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

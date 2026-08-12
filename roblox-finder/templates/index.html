@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Axiom Finder</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/static/manifest.json">
+  <style>
+    /* ── Tokens ───────────────────────────────────────────── */
+    :root {
+      --bg:         #0a0b0d;
+      --surface:    #111318;
+      --surface2:   #161b22;
+      --border:     #1e2330;
+      --accent:     #39ff85;
+      --accent-dim: rgba(57,255,133,0.10);
+      --accent-glow:rgba(57,255,133,0.25);
+      --text:       #cdd6e0;
+      --text-dim:   #5a6478;
+      --red:        #ff4757;
+      --radius:     3px;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg:         #f0f2f5;
+        --surface:    #ffffff;
+        --surface2:   #f7f8fa;
+        --border:     #d4d9e3;
+        --accent:     #00b84a;
+        --accent-dim: rgba(0,184,74,0.08);
+        --accent-glow:rgba(0,184,74,0.20);
+        --text:       #1a1f2e;
+        --text-dim:   #8491a3;
+        --red:        #e53935;
+      }
+    }
+    :root[data-theme="light"] {
+      --bg:         #f0f2f5;
+      --surface:    #ffffff;
+      --surface2:   #f7f8fa;
+      --border:     #d4d9e3;
+      --accent:     #00b84a;
+      --accent-dim: rgba(0,184,74,0.08);
+      --accent-glow:rgba(0,184,74,0.20);
+      --text:       #1a1f2e;
+      --text-dim:   #8491a3;
+      --red:        #e53935;
+    }
+    :root[data-theme="dark"] {
+      --bg:         #0a0b0d;
+      --surface:    #111318;
+      --surface2:   #161b22;
+      --border:     #1e2330;
+      --accent:     #39ff85;
+      --accent-dim: rgba(57,255,133,0.10);
+      --accent-glow:rgba(57,255,133,0.25);
+      --text:       #cdd6e0;
+      --text-dim:   #5a6478;
+      --red:        #ff4757;
+    }
+
+    /* ── Reset ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', ui-monospace, 'Cascadia Mono', 'Fira Code',
+                   'Roboto Mono', Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      min-height: 100vh;
+      padding:
+        max(env(safe-area-inset-top), 24px)
+        max(env(safe-area-inset-right), 16px)
+        max(env(safe-area-inset-bottom), 32px)
+        max(env(safe-area-inset-left), 16px);
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .logo-mark {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+    .logo-sub {
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: background 0.3s;
+    }
+    .status-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+    .status-dot.offline { background: var(--red); }
+
+    /* ── Cards ────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+    .card-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+    }
+
+    /* ── Letter count control ─────────────────────────────── */
+    .count-control {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .count-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .count-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
+    .count-btn:active { background: var(--accent-dim); }
+    .count-btn:disabled { opacity: 0.3; cursor: default; }
+
+    .count-display {
+      flex: 1;
+      text-align: center;
+    }
+    .count-number {
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      letter-spacing: -2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .count-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+    .count-meta span {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Webhook input ────────────────────────────────────── */
+    .field-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    input[type="url"], input[type="text"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="url"]:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    input::placeholder { color: var(--text-dim); }
+
+    /* ── Start / Stop ─────────────────────────────────────── */
+    #startBtn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: opacity 0.15s, box-shadow 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #startBtn.idle {
+      background: var(--accent);
+      color: #000;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    #startBtn.running {
+      background: transparent;
+      color: var(--red);
+      border: 1px solid var(--red);
+      box-shadow: none;
+    }
+    #startBtn:active { opacity: 0.8; }
+
+    /* ── Stats ────────────────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .stat-block {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 10px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.5px;
+    }
+    .stat-value.accent { color: var(--accent); }
+    .stat-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* ── Progress bar ─────────────────────────────────────── */
+    .progress-wrap {
+      height: 2px;
+      background: var(--border);
+      border-radius: 1px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 1px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    /* ── Results ──────────────────────────────────────────── */
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .results-count {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+    }
+    .results-count span { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .clear-btn {
+      font-family: inherit;
+      font-size: 10px;
+      color: var(--text-dim);
+      background: none;
+      border: none;
+      cursor: pointer;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 4px;
+    }
+    .clear-btn:hover { color: var(--text); }
+
+    #resultsList {
+      list-style: none;
+      max-height: 280px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #resultsList::-webkit-scrollbar { width: 3px; }
+    #resultsList::-webkit-scrollbar-track { background: transparent; }
+    #resultsList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--accent-dim);
+      border: 1px solid rgba(57,255,133,0.15);
+      border-radius: var(--radius);
+      padding: 9px 12px;
+      animation: slideIn 0.2s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .result-name {
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .result-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .copy-btn {
+      font-family: inherit;
+      font-size: 10px;
+      color: var(--text-dim);
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      padding: 3px 8px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .copy-btn.copied { color: var(--accent); border-color: var(--accent); }
+
+    .empty-state {
+      text-align: center;
+      padding: 28px 0;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .empty-state::before {
+      content: '//';
+      display: block;
+      font-size: 20px;
+      margin-bottom: 8px;
+      color: var(--border);
+    }
+
+    /* ── Offline banner ───────────────────────────────────── */
+    #offlineBanner {
+      display: none;
+      background: var(--red);
+      color: #fff;
+      font-size: 11px;
+      text-align: center;
+      padding: 6px;
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Log line ─────────────────────────────────────────── */
+    #logLine {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 8px;
+      min-height: 16px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="offlineBanner">OFFLINE — ui cached, scanning unavailable</div>
+
+<header>
+  <div class="logo">
+    <span class="logo-mark">AXIOM</span>
+    <span class="logo-sub">roblox finder</span>
+  </div>
+  <div id="statusDot" class="status-dot"></div>
+</header>
+
+<!-- Config -->
+<div class="card">
+  <div class="card-label">Letter count</div>
+  <div class="count-control">
+    <button class="count-btn" id="decBtn" aria-label="decrease">−</button>
+    <div class="count-display">
+      <div class="count-number" id="countDisplay">4</div>
+      <div class="count-meta">
+        <span id="comboCount">456,976</span> combos
+      </div>
+    </div>
+    <button class="count-btn" id="incBtn" aria-label="increase">+</button>
+  </div>
+</div>
+
+<!-- Webhook -->
+<div class="card">
+  <div class="field-label">Webhook URL <span style="color:var(--text-dim)">(optional)</span></div>
+  <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/...">
+</div>
+
+<!-- Action -->
+<button id="startBtn" class="idle">Start scan</button>
+<div id="logLine"></div>
+
+<!-- Stats -->
+<div class="card" style="margin-top:12px">
+  <div class="stats-row">
+    <div class="stat-block">
+      <div class="stat-value" id="statChecked">0</div>
+      <div class="stat-label">Checked</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-value accent" id="statFound">0</div>
+      <div class="stat-label">Found</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-value" id="statCPS">0</div>
+      <div class="stat-label">/ sec</div>
+    </div>
+  </div>
+  <div class="progress-wrap">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+</div>
+
+<!-- Results -->
+<div class="card">
+  <div class="results-header">
+    <div class="card-label" style="margin:0">Results</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="results-count">found: <span id="foundCount">0</span></span>
+      <button class="clear-btn" id="clearBtn">clear</button>
+    </div>
+  </div>
+  <ul id="resultsList">
+    <li class="empty-state" id="emptyState">nothing yet — start a scan</li>
+  </ul>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let letterCount  = 4;
+let running      = false;
+let checked      = 0;
+let found        = 0;
+let startTime    = 0;
+let scanAbort    = null;  // AbortController
+let results      = [];
+
+const ALPHA = 'abcdefghijklmnopqrstuvwxyz';
+const CONCURRENCY = 8;
+
+// ── Elements ───────────────────────────────────────────────────────────────
+const countDisplay  = document.getElementById('countDisplay');
+const comboCount    = document.getElementById('comboCount');
+const decBtn        = document.getElementById('decBtn');
+const incBtn        = document.getElementById('incBtn');
+const startBtn      = document.getElementById('startBtn');
+const statChecked   = document.getElementById('statChecked');
+const statFound     = document.getElementById('statFound');
+const statCPS       = document.getElementById('statCPS');
+const progressFill  = document.getElementById('progressFill');
+const resultsList   = document.getElementById('resultsList');
+const emptyState    = document.getElementById('emptyState');
+const foundCount    = document.getElementById('foundCount');
+const logLine       = document.getElementById('logLine');
+const statusDot     = document.getElementById('statusDot');
+const webhookUrl    = document.getElementById('webhookUrl');
+const offlineBanner = document.getElementById('offlineBanner');
+const clearBtn      = document.getElementById('clearBtn');
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function fmtNum(n) {
+  return n.toLocaleString();
+}
+
+function totalCombos(len) {
+  return Math.pow(26, len);
+}
+
+function updateCountUI() {
+  countDisplay.textContent = letterCount;
+  comboCount.textContent   = fmtNum(totalCombos(letterCount));
+  decBtn.disabled = letterCount <= 2;
+  incBtn.disabled = letterCount >= 6;
+}
+
+function setLog(msg) {
+  logLine.textContent = msg;
+}
+
+function updateStats() {
+  statChecked.textContent = fmtNum(checked);
+  statFound.textContent   = found;
+  foundCount.textContent  = found;
+  const elapsed = (Date.now() - startTime) / 1000;
+  const cps     = elapsed > 0 ? (checked / elapsed).toFixed(1) : '0';
+  statCPS.textContent = cps;
+  const total = totalCombos(letterCount);
+  progressFill.style.width = Math.min(100, (checked / total) * 100).toFixed(2) + '%';
+}
+
+// ── Combo generator ────────────────────────────────────────────────────────
+function* generateCombos(len) {
+  // Yield all letter combos of given length in random order
+  const total = totalCombos(len);
+  // Fisher-Yates on index range for memory efficiency (up to len=4)
+  // For len>=5 just stream sequentially (456k+ too big to shuffle all at once)
+  if (total <= 500000) {
+    const combos = [];
+    function build(prefix, remaining) {
+      if (remaining === 0) { combos.push(prefix); return; }
+      for (const c of ALPHA) build(prefix + c, remaining - 1);
+    }
+    build('', len);
+    // shuffle
+    for (let i = combos.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [combos[i], combos[j]] = [combos[j], combos[i]];
+    }
+    yield* combos;
+  } else {
+    // Streaming for large sets — shuffle starting point
+    const offset = Math.floor(Math.random() * total);
+    function indexToCombo(idx, len) {
+      let s = '';
+      for (let i = 0; i < len; i++) {
+        s = ALPHA[idx % 26] + s;
+        idx = Math.floor(idx / 26);
+      }
+      return s;
+    }
+    for (let i = 0; i < total; i++) {
+      yield indexToCombo((i + offset) % total, len);
+    }
+  }
+}
+
+// ── API check ──────────────────────────────────────────────────────────────
+async function checkUsername(username, signal) {
+  try {
+    const r = await fetch(`/api/check?username=${encodeURIComponent(username)}`, {
+      signal,
+      headers: { 'Accept': 'application/json' }
+    });
+    const data = await r.json();
+    return data.code === 0;  // 0 = available
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    return null;  // network error — skip
+  }
+}
+
+// ── Webhook ────────────────────────────────────────────────────────────────
+async function fireWebhook(username) {
+  const url = webhookUrl.value.trim();
+  if (!url) return;
+  const payload = {
+    username: 'Axiom Finder',
+    embeds: [{
+      title: '🎯 Roblox Username Available!',
+      description: `**\`${username}\`** is free to register.`,
+      color: 0x39ff85,
+      fields: [
+        { name: 'Username',  value: `\`${username}\``, inline: true },
+        { name: 'Length',    value: `\`${username.length}\``, inline: true },
+        { name: 'Claim',     value: 'https://www.roblox.com/account/signupredir', inline: false },
+      ],
+      footer: { text: 'Axiom Finder • roblox username scanner' }
+    }]
+  };
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (_) {}
+}
+
+// ── Add result ─────────────────────────────────────────────────────────────
+function addResult(username) {
+  results.push(username);
+  if (emptyState) emptyState.remove();
+
+  const li = document.createElement('li');
+  li.className = 'result-item';
+  li.innerHTML = `
+    <span class="result-name">${username}</span>
+    <div class="result-actions">
+      <button class="copy-btn" data-name="${username}">copy</button>
+    </div>`;
+  resultsList.prepend(li);
+
+  li.querySelector('.copy-btn').addEventListener('click', function() {
+    navigator.clipboard.writeText(this.dataset.name).then(() => {
+      this.textContent = 'copied';
+      this.classList.add('copied');
+      setTimeout(() => { this.textContent = 'copy'; this.classList.remove('copied'); }, 1500);
+    });
+  });
+}
+
+// ── Scan engine ────────────────────────────────────────────────────────────
+async function runScan() {
+  const controller = new AbortController();
+  scanAbort = controller;
+  const gen = generateCombos(letterCount);
+
+  checked = 0; found = 0; startTime = Date.now();
+  updateStats();
+
+  const statsInterval = setInterval(updateStats, 250);
+
+  const worker = async () => {
+    for (const username of gen) {
+      if (!running) break;
+      try {
+        const available = await checkUsername(username, controller.signal);
+        checked++;
+        if (available === true) {
+          found++;
+          addResult(username);
+          fireWebhook(username);
+          setLog(`✓ found: ${username}`);
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') break;
+      }
+    }
+  };
+
+  const workers = Array.from({ length: CONCURRENCY }, () => worker());
+  await Promise.all(workers);
+
+  clearInterval(statsInterval);
+  updateStats();
+  stopScan(true);
+}
+
+// ── Start / Stop ───────────────────────────────────────────────────────────
+function startScan() {
+  if (!navigator.onLine) {
+    setLog('⚠ offline — cannot reach roblox api');
+    return;
+  }
+  running = true;
+  startBtn.className = 'running';
+  startBtn.textContent = 'Stop scan';
+  statusDot.className = 'status-dot active';
+  decBtn.disabled = true;
+  incBtn.disabled = true;
+  setLog(`scanning ${fmtNum(totalCombos(letterCount))} combos...`);
+  runScan();
+}
+
+function stopScan(finished = false) {
+  running = false;
+  if (scanAbort) { scanAbort.abort(); scanAbort = null; }
+  startBtn.className = 'idle';
+  startBtn.textContent = 'Start scan';
+  statusDot.className = 'status-dot';
+  updateCountUI();
+  if (finished) setLog(`scan complete — ${found} found in ${fmtNum(checked)} checked`);
+  else setLog(`stopped at ${fmtNum(checked)} checked`);
+}
+
+// ── Event listeners ────────────────────────────────────────────────────────
+decBtn.addEventListener('click', () => {
+  if (letterCount > 2) { letterCount--; updateCountUI(); }
+});
+incBtn.addEventListener('click', () => {
+  if (letterCount < 6) { letterCount++; updateCountUI(); }
+});
+
+startBtn.addEventListener('click', () => {
+  if (running) stopScan(false);
+  else startScan();
+});
+
+clearBtn.addEventListener('click', () => {
+  results = [];
+  found = 0;
+  statFound.textContent = '0';
+  foundCount.textContent = '0';
+  resultsList.innerHTML = '<li class="empty-state" id="emptyState">nothing yet — start a scan</li>';
+});
+
+// ── Offline detection ──────────────────────────────────────────────────────
+function updateOnlineStatus() {
+  if (!navigator.onLine) {
+    offlineBanner.style.display = 'block';
+    statusDot.className = 'status-dot offline';
+    if (running) { stopScan(false); setLog('connection lost — scan stopped'); }
+  } else {
+    offlineBanner.style.display = 'none';
+    if (!running) statusDot.className = 'status-dot';
+  }
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// ── Service worker ─────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js')
+    .catch(() => {});
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+updateCountUI();
+</script>
+</body>
+</html>
