@@ -178,6 +178,16 @@
     .phase-badge.validating{border-color:#ffd700;color:#ffd700;}
     .phase-badge.done{border-color:var(--accent);color:var(--accent);}
 
+    /* ── Proxy options row ── */
+    .opt-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .opt-chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.06em;
+      text-transform:uppercase;cursor:pointer;padding:4px 9px;border:1px solid var(--border);
+      border-radius:2px;color:var(--text-dim);transition:border-color .15s,color .15s;user-select:none;}
+    .opt-chip input{display:none;}
+    .opt-chip.active{border-color:var(--accent);color:var(--accent);}
+    /* hide-errors mode: collapse err rows in the log panel */
+    .plog-panel.hide-errors .plog-row.err{display:none;}
+
     /* ── Proxy activity log panel ── */
     .plog-panel{max-height:190px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;
       scroll-behavior:smooth;}
@@ -281,6 +291,14 @@
     </div>
     <button id="proxyBtn" class="action-btn idle">Scrape &amp; Validate</button>
     <div id="proxyLog" class="log-line"></div>
+    <div class="opt-row">
+      <label class="opt-chip" id="chipHideErrors">
+        <input type="checkbox" id="optHideErrors"> hide errors
+      </label>
+      <label class="opt-chip" id="chipRoblox">
+        <input type="checkbox" id="optRoblox"> roblox validate
+      </label>
+    </div>
   </div>
 
   <div class="card">
@@ -545,6 +563,21 @@ const downloadBtn       = document.getElementById('downloadBtn');
 const logPanelCard      = document.getElementById('logPanelCard');
 const plogPanel         = document.getElementById('plogPanel');
 const clearLogBtn       = document.getElementById('clearLogBtn');
+const optHideErrors     = document.getElementById('optHideErrors');
+const chipHideErrors    = document.getElementById('chipHideErrors');
+const optRoblox         = document.getElementById('optRoblox');
+const chipRoblox        = document.getElementById('chipRoblox');
+
+// Hide-errors toggle
+optHideErrors.addEventListener('change', () => {
+  plogPanel.classList.toggle('hide-errors', optHideErrors.checked);
+  chipHideErrors.classList.toggle('active', optHideErrors.checked);
+});
+
+// Roblox validate toggle (visual only; mode is read at start time)
+optRoblox.addEventListener('change', () => {
+  chipRoblox.classList.toggle('active', optRoblox.checked);
+});
 
 function setProxyLog(msg) { proxyLog.textContent = msg; }
 
@@ -696,7 +729,12 @@ async function startProxy() {
   logPanelCard.style.display = 'none';
   setBadge('scraping');
 
-  const resp = await fetch('/api/proxies/start', { method: 'POST' }).catch(() => null);
+  const mode = optRoblox.checked ? 'roblox' : 'connect';
+  const resp = await fetch('/api/proxies/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode })
+  }).catch(() => null);
   if (!resp || !resp.ok) {
     const err = resp ? await resp.json().catch(() => ({})) : {};
     setProxyLog('⚠ ' + (err.error || 'server error'));
@@ -710,7 +748,7 @@ async function startProxy() {
   proxyBtn.className = 'action-btn running';
   proxyBtn.textContent = 'Stop';
   setProxyLog('starting…');
-  addPLog('scraper started', 'info');
+  addPLog('scraper started · mode: ' + mode + (mode === 'roblox' ? ' (slower, more accurate)' : ' (fast TCP)'), 'info');
 
   if (proxyEvtSrc) { proxyEvtSrc.close(); proxyEvtSrc = null; }
   proxyEvtSrc = new EventSource('/api/proxies/stream');
