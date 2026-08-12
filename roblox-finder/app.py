@@ -519,7 +519,7 @@ async def _check_async(ip: str, port: int, timeout: float,
             except Exception: pass
 
 
-async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
+async def _validate_proxies_async(proxies: list, timeout: float = 2.0,
                                    concurrency: int = 200, mode: str = "connect"):
     """Chunked validation — processes CHUNK proxies at a time so memory stays
     bounded on Render's free tier (512 MB) regardless of total proxy count."""
@@ -654,11 +654,11 @@ def _proxy_scrape_runner_inner(_cf, mode="connect"):
         pscrape.active = False
         return
 
-    # Cap to avoid OOM on Render free tier (512 MB RAM)
+    # Cap to keep validation fast enough to finish before SSE drops
     proxies = list(all_raw)
-    if len(proxies) > 25_000:
+    if len(proxies) > 15_000:
         random.shuffle(proxies)
-        proxies = proxies[:25_000]
+        proxies = proxies[:15_000]
 
     mode_label = "Roblox HTTP" if mode == "roblox" else "CONNECT tunnel"
     pscrape.push({"type": "log",

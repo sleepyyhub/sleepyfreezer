@@ -628,10 +628,43 @@ function handleProxyEvent(ev) {
   let d; try { d = JSON.parse(ev.data); } catch { return; }
   switch (d.type) {
     case 'connected':
-      setProxyLog('connected — scraping sources…');
-      addPLog('stream connected — scraping in progress', 'info');
-      setBadge('scraping');
       pingMisses = 0;
+      // Immediately sync with server — avoids waiting for pings after a reconnect
+      fetch('/api/proxies/status').then(r => r.json()).then(s => {
+        if (!proxyRunning) return;
+        if (!s.active && s.phase === 'done') {
+          // Scraper already finished while SSE was down — recover right away
+          proxyProgressFill.style.width = '100%';
+          pStatFound.textContent   = s.found;
+          pStatChecked.textContent = fmtNum(s.checked);
+          pFoundCount.textContent  = s.found;
+          setBadge('done');
+          setProxyLog('finished — ' + s.found + ' working from ' + fmtNum(s.checked) + ' checked');
+          addPLog('↑ reconnected · done · ' + s.found + ' working / ' + fmtNum(s.checked) + ' checked',
+                  s.found > 0 ? 'ok' : '');
+          if (s.found > 0) {
+            loadProxiesBtn.style.display = '';
+            if (pProxyResults.length > 0) {
+              copyAllBtn.style.display = '';
+              downloadBtn.style.display = '';
+            }
+          }
+          stopProxy(true);
+        } else {
+          // Still running — show correct phase + live counts
+          setBadge(s.active ? s.phase : 'idle');
+          setProxyLog((s.active ? 'reconnected — ' + s.phase : 'reconnected — idle') +
+                      (s.checked ? ' · ' + fmtNum(s.checked) + ' checked' : ''));
+          addPLog('↑ reconnected · ' + (s.active ? s.phase : 'idle') +
+                  ' · ' + fmtNum(s.checked) + ' checked · ' + s.found + ' working', 'info');
+          pStatFound.textContent   = s.found;
+          pStatChecked.textContent = fmtNum(s.checked);
+          pFoundCount.textContent  = s.found;
+        }
+      }).catch(() => {
+        setBadge('scraping');
+        addPLog('↑ SSE reconnected', 'info');
+      });
       break;
     case 'log':
       addPLog(d.msg, d.level || '');
