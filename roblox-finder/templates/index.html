@@ -178,6 +178,20 @@
     .phase-badge.validating{border-color:#ffd700;color:#ffd700;}
     .phase-badge.done{border-color:var(--accent);color:var(--accent);}
 
+    /* ── Proxy activity log panel ── */
+    .plog-panel{max-height:190px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;
+      scroll-behavior:smooth;}
+    .plog-panel::-webkit-scrollbar{width:3px;}
+    .plog-panel::-webkit-scrollbar-track{background:transparent;}
+    .plog-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+    .plog-row{display:flex;gap:8px;font-size:10.5px;line-height:1.55;font-family:inherit;}
+    .plog-ts{color:var(--text-dim);opacity:.5;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums;}
+    .plog-msg{color:var(--text-dim);}
+    .plog-row.ok  .plog-msg{color:var(--accent);}
+    .plog-row.err .plog-msg{color:var(--red);}
+    .plog-row.info .plog-msg{color:var(--text);}
+    .plog-empty{color:var(--text-dim);font-size:11px;padding:6px 0;opacity:.5;}
+
     @media (prefers-reduced-motion:reduce){
       *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;}
     }
@@ -277,6 +291,16 @@
       <div class="stat-block"><div class="stat-value" id="pStatCPS">0</div><div class="stat-label">/ sec</div></div>
     </div>
     <div class="progress-wrap"><div class="progress-fill" id="proxyProgressFill"></div></div>
+  </div>
+
+  <div class="card" id="logPanelCard" style="display:none">
+    <div class="results-header" style="margin-bottom:8px">
+      <div class="card-label" style="margin:0">Activity log</div>
+      <button class="clear-btn" id="clearLogBtn">clear</button>
+    </div>
+    <div class="plog-panel" id="plogPanel">
+      <div class="plog-empty" id="plogEmpty">no activity yet</div>
+    </div>
   </div>
 
   <div class="card">
@@ -498,9 +522,12 @@ clearBtn.addEventListener('click', () => {
 // ════════════════════════════════════════════════════════════════
 //  PROXIES TAB
 // ════════════════════════════════════════════════════════════════
-let proxyRunning  = false;
-let proxyEvtSrc   = null;
-let pProxyResults = [];
+let proxyRunning      = false;
+let proxyEvtSrc       = null;
+let pProxyResults     = [];
+let proxyStartTime    = 0;
+let pingMisses        = 0;  // consecutive pings with active:false
+const plogScrapeTotal = 31; // number of sources (shown in connected log)
 
 const proxyBtn          = document.getElementById('proxyBtn');
 const proxyLog          = document.getElementById('proxyLog');
@@ -515,8 +542,28 @@ const proxyList         = document.getElementById('proxyList');
 const loadProxiesBtn    = document.getElementById('loadProxiesBtn');
 const copyAllBtn        = document.getElementById('copyAllBtn');
 const downloadBtn       = document.getElementById('downloadBtn');
+const logPanelCard      = document.getElementById('logPanelCard');
+const plogPanel         = document.getElementById('plogPanel');
+const clearLogBtn       = document.getElementById('clearLogBtn');
 
 function setProxyLog(msg) { proxyLog.textContent = msg; }
+
+function addPLog(msg, cls = '') {
+  logPanelCard.style.display = '';
+  const empty = document.getElementById('plogEmpty');
+  if (empty) empty.remove();
+  const row = document.createElement('div');
+  row.className = 'plog-row' + (cls ? ' ' + cls : '');
+  const ts = new Date().toTimeString().slice(0, 8);
+  row.innerHTML = `<span class="plog-ts">${ts}</span><span class="plog-msg">${msg}</span>`;
+  plogPanel.appendChild(row);
+  while (plogPanel.children.length > 400) plogPanel.removeChild(plogPanel.firstChild);
+  plogPanel.scrollTop = plogPanel.scrollHeight;
+}
+
+clearLogBtn.addEventListener('click', () => {
+  plogPanel.innerHTML = '<div class="plog-empty" id="plogEmpty">cleared</div>';
+});
 
 function setBadge(phase) {
   if (!phase || phase === 'idle') { phaseBadge.style.display = 'none'; return; }
@@ -549,7 +596,12 @@ function handleProxyEvent(ev) {
   switch (d.type) {
     case 'connected':
       setProxyLog('connected — scraping sources…');
+      addPLog('stream connected — scraping in progress', 'info');
       setBadge('scraping');
+      pingMisses = 0;
+      break;
+    case 'log':
+      addPLog(d.msg, d.level || '');
       break;
     case 'scrape_progress':
       pStatRaw.textContent = fmtNum(d.raw);
@@ -560,6 +612,7 @@ function handleProxyEvent(ev) {
       if (d.phase === 'validating') {
         setBadge('validating');
         setProxyLog('validating ' + fmtNum(d.total) + ' proxies with async sockets…');
+        addPLog('→ switching to validation · ' + fmtNum(d.total) + ' unique proxies', 'info');
       }
       break;
     case 'validate_stat':
@@ -575,6 +628,7 @@ function handleProxyEvent(ev) {
       pStatFound.textContent  = d.found;
       pFoundCount.textContent = d.found;
       addProxyResult(d.proxy);
+      addPLog('✓ ' + d.proxy, 'ok');
       if (d.found === 1) {
         loadProxiesBtn.style.display = '';
         copyAllBtn.style.display = '';
@@ -585,6 +639,7 @@ function handleProxyEvent(ev) {
       proxyProgressFill.style.width = '100%';
       setBadge('done');
       setProxyLog('done — ' + d.found + ' working proxies found from ' + fmtNum(d.checked) + ' checked');
+      addPLog('done · ' + d.found + ' working / ' + fmtNum(d.checked) + ' checked', d.found > 0 ? 'ok' : 'err');
       stopProxy(true);
       if (d.found > 0) {
         loadProxiesBtn.style.display = '';
@@ -593,7 +648,17 @@ function handleProxyEvent(ev) {
       }
       break;
     case 'ping':
-      if (!d.active && proxyRunning) stopProxy(true);
+      // Grace period: need 4 consecutive active:false pings + at least 6s uptime
+      // before auto-stopping — prevents false-stop during startup race
+      if (!d.active && proxyRunning) {
+        pingMisses++;
+        if (pingMisses >= 4 && Date.now() - proxyStartTime > 6000) {
+          addPLog('⚠ server reports scraper inactive', 'err');
+          stopProxy(true);
+        }
+      } else {
+        pingMisses = 0;
+      }
       break;
   }
 }
@@ -603,39 +668,55 @@ async function startProxy() {
   pStatFound.textContent = '0'; pStatCPS.textContent = '0';
   pFoundCount.textContent = '0'; proxyProgressFill.style.width = '0%';
   pProxyResults = [];
+  pingMisses = 0;
   proxyList.innerHTML = '<li class="empty-state" id="proxyEmptyState">scraping sources…</li>';
   loadProxiesBtn.style.display = 'none';
   copyAllBtn.style.display = 'none';
   downloadBtn.style.display = 'none';
+  // reset log panel
+  plogPanel.innerHTML = '<div class="plog-empty" id="plogEmpty">no activity yet</div>';
+  logPanelCard.style.display = 'none';
   setBadge('scraping');
 
   const resp = await fetch('/api/proxies/start', { method: 'POST' }).catch(() => null);
   if (!resp || !resp.ok) {
     const err = resp ? await resp.json().catch(() => ({})) : {};
     setProxyLog('⚠ ' + (err.error || 'server error'));
+    addPLog('✗ start failed: ' + (err.error || 'server error'), 'err');
     setBadge('idle');
     return;
   }
 
-  proxyRunning = true;
+  proxyRunning  = true;
+  proxyStartTime = Date.now();
   proxyBtn.className = 'action-btn running';
   proxyBtn.textContent = 'Stop';
   setProxyLog('starting…');
+  addPLog('scraper started', 'info');
 
   if (proxyEvtSrc) { proxyEvtSrc.close(); proxyEvtSrc = null; }
   proxyEvtSrc = new EventSource('/api/proxies/stream');
   proxyEvtSrc.onmessage = handleProxyEvent;
-  proxyEvtSrc.onerror   = () => { if (proxyRunning) setProxyLog('stream reconnecting…'); };
+  proxyEvtSrc.onerror   = () => {
+    if (proxyRunning) {
+      setProxyLog('stream reconnecting…');
+      addPLog('⚠ SSE connection dropped — reconnecting', 'err');
+    }
+  };
 }
 
 function stopProxy(finished = false) {
   proxyRunning = false;
+  pingMisses   = 0;
   if (proxyEvtSrc) { proxyEvtSrc.close(); proxyEvtSrc = null; }
-  if (!finished) fetch('/api/proxies/stop', { method: 'POST' }).catch(() => {});
+  if (!finished) {
+    fetch('/api/proxies/stop', { method: 'POST' }).catch(() => {});
+    setProxyLog('stopped — ' + pStatFound.textContent + ' working found');
+    addPLog('stopped by user · ' + pStatFound.textContent + ' working found', '');
+    setBadge('idle');
+  }
   proxyBtn.className = 'action-btn idle';
   proxyBtn.textContent = 'Scrape & Validate';
-  if (!finished) setProxyLog('stopped — ' + pStatFound.textContent + ' working found');
-  if (!finished) setBadge('idle');
 }
 
 proxyBtn.addEventListener('click', () => { proxyRunning ? stopProxy(false) : startProxy(); });
