@@ -37,8 +37,9 @@ services:
         fromDatabase:
           name: clovyre-db
           property: connectionString
+      # 0 means privileged grants stand until the owner turns them off.
       - key: PRIVILEGE_TTL_MINUTES
-        value: '15'
+        value: '0'
       - key: MAX_WS_PAYLOAD_BYTES
         value: '524288'
       - key: MAX_COMMAND_TIMEOUT_MS

@@ -43,7 +43,7 @@ const environmentVariables = [
   ],
   [
     'PRIVILEGE_TTL_MINUTES',
-    'Lifetime of the Luau, executor-globals and remote-spy grants. Default 15.',
+    'Lifetime of the Luau, executor-globals and remote-spy grants. Default 0, meaning they stand until turned off.',
   ],
   [
     'MUTATION_PRIVILEGE_TTL_MINUTES',
@@ -273,8 +273,12 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
             </P>
           </Callout>
           <P>
-            Grants expire automatically (15 minutes by default), can be revoked instantly, produce
-            audit events, and display a persistent banner in the dashboard while they are live.
+            On this deployment a grant stands until the owner turns it off, so an agent mid-task is
+            never cut off by a timer. Revoking is instant and takes effect on the next tool call.
+            Every grant and revocation produces an audit event, and a persistent banner stays in the
+            dashboard for as long as any privilege is live — the banner is the reminder that a timer
+            would otherwise have been. Set a non-zero PRIVILEGE_TTL_MINUTES to get self-clearing
+            grants back.
           </P>
           <P>
             A second toggle controls whether executed code sees executor-specific globals. It

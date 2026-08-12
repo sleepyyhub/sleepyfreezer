@@ -189,25 +189,34 @@ describe('privileges', () => {
     expect(store.hasPrivilege(session, 'mutations')).toBe(false);
   });
 
-  it('grants a privilege with an expiry and revokes it on demand', () => {
+  it('grants a privilege and revokes it on demand', () => {
     const { session } = store.create();
     store.setPrivilege(session, 'execute_luau', true, 'owner');
 
     expect(store.hasPrivilege(session, 'execute_luau')).toBe(true);
-    expect(session.privileges.execute_luau.expiresAt).toBeGreaterThan(Date.now());
+    expect(session.privileges.execute_luau.enabledAt).not.toBeNull();
 
     store.setPrivilege(session, 'execute_luau', false, 'owner');
     expect(store.hasPrivilege(session, 'execute_luau')).toBe(false);
   });
 
-  it('lets a grant lapse automatically and records the expiry', () => {
-    const { session } = store.create();
-    store.setPrivilege(session, 'execute_luau', true, 'owner');
+  it('lets a grant lapse automatically and records the expiry when a TTL is set', () => {
+    process.env.PRIVILEGE_TTL_MINUTES = '15';
+    resetConfigForTests();
+    const timed = new SessionStore();
+    const { session } = timed.create();
+    timed.setPrivilege(session, 'execute_luau', true, 'owner');
 
-    const later = Date.now() + getConfig().privilegeTtlMs + 1000;
-    expect(store.hasPrivilege(session, 'execute_luau', later)).toBe(false);
+    const ttlMs = timed.privilegeTtlMs('execute_luau');
+    expect(ttlMs).not.toBeNull();
+
+    const later = Date.now() + (ttlMs ?? 0) + 1000;
+    expect(timed.hasPrivilege(session, 'execute_luau', later)).toBe(false);
     expect(session.privileges.execute_luau.enabled).toBe(false);
     expect(session.audit.list().some((event) => event.kind === 'privilege_expired')).toBe(true);
+
+    delete process.env.PRIVILEGE_TTL_MINUTES;
+    resetConfigForTests();
   });
 });
 
@@ -372,16 +381,41 @@ describe('per-privilege grant lifetimes', () => {
     expect(session.privileges.mutations.expiresAt).toBeNull();
   });
 
-  it('leaves execution and hooking on a short timer', () => {
+  it('lets every privilege stand until it is turned off by default', () => {
     const { session } = store.create();
-    for (const privilege of ['execute_luau', 'remote_spy'] as const) {
-      store.setPrivilege(session, privilege, true, 'owner');
-      expect(store.privilegeTtlMs(privilege)).toBe(getConfig().privilegeTtlMs);
-      expect(session.privileges[privilege].expiresAt).not.toBeNull();
+    const privileges = ['execute_luau', 'executor_globals', 'mutations', 'remote_spy'] as const;
 
-      const later = Date.now() + getConfig().privilegeTtlMs + 1000;
-      expect(store.hasPrivilege(session, privilege, later)).toBe(false);
+    for (const privilege of privileges) {
+      expect(store.privilegeTtlMs(privilege)).toBeNull();
+      store.setPrivilege(session, privilege, true, 'owner');
+      expect(session.privileges[privilege].expiresAt).toBeNull();
+
+      // A year on, an untouched grant is still live.
+      const muchLater = Date.now() + 365 * 24 * 60 * 60_000;
+      expect(store.hasPrivilege(session, privilege, muchLater)).toBe(true);
     }
+
+    // Turning one off still works, and is the only thing that ends a grant.
+    store.setPrivilege(session, 'execute_luau', false, 'owner');
+    expect(store.hasPrivilege(session, 'execute_luau')).toBe(false);
+    expect(store.hasPrivilege(session, 'remote_spy')).toBe(true);
+  });
+
+  it('honours a configured lifetime for execution and hooking when one is set', () => {
+    process.env.PRIVILEGE_TTL_MINUTES = '15';
+    resetConfigForTests();
+    const timed = new SessionStore();
+    const { session } = timed.create();
+
+    for (const privilege of ['execute_luau', 'remote_spy'] as const) {
+      timed.setPrivilege(session, privilege, true, 'owner');
+      expect(timed.privilegeTtlMs(privilege)).toBe(15 * 60_000);
+      expect(session.privileges[privilege].expiresAt).not.toBeNull();
+      expect(timed.hasPrivilege(session, privilege, Date.now() + 16 * 60_000)).toBe(false);
+    }
+
+    delete process.env.PRIVILEGE_TTL_MINUTES;
+    resetConfigForTests();
   });
 
   it('never treats a disabled privilege as standing', () => {

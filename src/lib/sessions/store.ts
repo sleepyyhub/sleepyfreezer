@@ -262,9 +262,10 @@ export class SessionStore {
   }
 
   /**
-   * How long a grant lasts, per privilege. Mutations write local client state
-   * only and are configured to stand by default; execution and hooking are far
-   * more dangerous and keep a short, self-clearing lifetime.
+   * How long a grant lasts, per privilege. Null means the grant stands until the
+   * owner turns it off, which is how every privilege is configured by default:
+   * a grant that lapses mid-task strands the agent, and revoking is one tap in
+   * the dashboard. Set a non-zero TTL to get self-clearing grants back.
    */
   privilegeTtlMs(privilege: PrivilegeName): number | null {
     const config = getConfig();

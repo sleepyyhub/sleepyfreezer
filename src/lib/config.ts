@@ -40,12 +40,14 @@ const envSchema = z.object({
   ENABLE_EXECUTE_LUAU_FEATURE: boolFromEnv(true),
   ENABLE_MUTATION_TOOLS_FEATURE: boolFromEnv(true),
   ENABLE_REMOTE_SPY_FEATURE: boolFromEnv(true),
-  PRIVILEGE_TTL_MINUTES: intFromEnv(15, 1, 120),
   /**
-   * Lifetime of the mutation grant. 0 means it stands until the owner turns it
-   * off. Mutation tools write local client state only, so a standing grant is a
-   * far smaller exposure than one for arbitrary Luau execution.
+   * Lifetime of the Luau, executor-globals and remote-spy grants. 0 means a
+   * grant stands until the owner turns it off, which is the deployment default:
+   * a grant that lapses mid-task is a support problem, and the owner can revoke
+   * from the dashboard at any time.
    */
+  PRIVILEGE_TTL_MINUTES: intFromEnv(0, 0, 120),
+  /** Lifetime of the mutation grant. 0 means it stands until turned off. */
   MUTATION_PRIVILEGE_TTL_MINUTES: intFromEnv(0, 0, 24 * 60),
   MAX_SESSIONS: intFromEnv(500, 1, 100_000),
   /**
@@ -80,7 +82,8 @@ export interface ClovyreConfig {
   readonly executeLuauFeatureEnabled: boolean;
   readonly mutationToolsFeatureEnabled: boolean;
   readonly remoteSpyFeatureEnabled: boolean;
-  readonly privilegeTtlMs: number;
+  /** Null when these grants never expire on a timer. */
+  readonly privilegeTtlMs: number | null;
   /** Null when the mutation grant never expires on a timer. */
   readonly mutationPrivilegeTtlMs: number | null;
   readonly maxSessions: number;
@@ -132,7 +135,7 @@ function build(): ClovyreConfig {
     executeLuauFeatureEnabled: env.ENABLE_EXECUTE_LUAU_FEATURE,
     mutationToolsFeatureEnabled: env.ENABLE_MUTATION_TOOLS_FEATURE,
     remoteSpyFeatureEnabled: env.ENABLE_REMOTE_SPY_FEATURE,
-    privilegeTtlMs: env.PRIVILEGE_TTL_MINUTES * 60_000,
+    privilegeTtlMs: env.PRIVILEGE_TTL_MINUTES === 0 ? null : env.PRIVILEGE_TTL_MINUTES * 60_000,
     mutationPrivilegeTtlMs:
       env.MUTATION_PRIVILEGE_TTL_MINUTES === 0 ? null : env.MUTATION_PRIVILEGE_TTL_MINUTES * 60_000,
     maxSessions: env.MAX_SESSIONS,
