@@ -520,7 +520,10 @@ async def _check_async(ip: str, port: int, timeout: float,
 
 
 async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
-                                   concurrency: int = 500, mode: str = "connect"):
+                                   concurrency: int = 200, mode: str = "connect"):
+    """Chunked validation — processes CHUNK proxies at a time so memory stays
+    bounded on Render's free tier (512 MB) regardless of total proxy count."""
+    CHUNK   = 2000
     sem     = asyncio.Semaphore(concurrency)
     total   = len(proxies)
     start_t = time.time()
@@ -554,7 +557,7 @@ async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
                 "checked": pscrape.checked,
             })
 
-        if c % 500 == 0 or ok:
+        if c % 200 == 0 or ok:
             elapsed = max(time.time() - start_t, 0.001)
             pscrape.push({
                 "type":    "validate_stat",
@@ -565,7 +568,12 @@ async def _validate_proxies_async(proxies: list, timeout: float = 3.0,
                 "pct":     round(c / total * 100, 2),
             })
 
-    await asyncio.gather(*[do_one(p) for p in proxies])
+    # Process in chunks — each chunk's coroutines are GC'd before the next starts
+    for i in range(0, total, CHUNK):
+        if not pscrape.active:
+            break
+        chunk = proxies[i:i + CHUNK]
+        await asyncio.gather(*[do_one(p) for p in chunk])
 
 
 # ── background runner ─────────────────────────────────────────────────────
@@ -646,11 +654,11 @@ def _proxy_scrape_runner_inner(_cf, mode="connect"):
         pscrape.active = False
         return
 
-    # Cap to avoid OOM on Render free tier
+    # Cap to avoid OOM on Render free tier (512 MB RAM)
     proxies = list(all_raw)
-    if len(proxies) > 60_000:
+    if len(proxies) > 25_000:
         random.shuffle(proxies)
-        proxies = proxies[:60_000]
+        proxies = proxies[:25_000]
 
     mode_label = "Roblox HTTP" if mode == "roblox" else "CONNECT tunnel"
     pscrape.push({"type": "log",
