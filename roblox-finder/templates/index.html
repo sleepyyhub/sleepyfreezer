@@ -241,7 +241,7 @@
     /* ── Stats ────────────────────────────────────────────── */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
     }
     .stat-block {
@@ -266,6 +266,36 @@
       letter-spacing: 0.1em;
       color: var(--text-dim);
       margin-top: 4px;
+    }
+
+    /* ── Proxy ramp bar ───────────────────────────────────── */
+    .proxy-ramp {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .proxy-ramp-bar-wrap {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .proxy-ramp-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.4s;
+    }
+    .proxy-ramp-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      min-width: 56px;
+      text-align: right;
     }
 
     /* ── Progress bar ─────────────────────────────────────── */
@@ -458,7 +488,20 @@
       <div class="stat-value" id="statCPS">0</div>
       <div class="stat-label">/ sec</div>
     </div>
+    <div class="stat-block">
+      <div class="stat-value" id="statAlive">0</div>
+      <div class="stat-label">Proxies</div>
+    </div>
   </div>
+
+  <!-- Proxy ramp indicator -->
+  <div class="proxy-ramp">
+    <div class="proxy-ramp-bar-wrap">
+      <div class="proxy-ramp-fill" id="proxyRampFill"></div>
+    </div>
+    <div class="proxy-ramp-label" id="proxyRampLabel">0 / 100</div>
+  </div>
+
   <div class="progress-wrap">
     <div class="progress-fill" id="progressFill"></div>
   </div>
@@ -480,44 +523,37 @@
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
-let letterCount  = 4;
-let running      = false;
-let checked      = 0;
-let found        = 0;
-let startTime    = 0;
-let scanAbort    = null;  // AbortController
-let results      = [];
-
-const ALPHA = 'abcdefghijklmnopqrstuvwxyz';
-const CONCURRENCY = 50;
+let letterCount = 4;
+let running     = false;
+let results     = [];
+let evtSource   = null;   // EventSource
+let totalProxies = 100;   // updated from server on connect
 
 // ── Elements ───────────────────────────────────────────────────────────────
-const countDisplay  = document.getElementById('countDisplay');
-const comboCount    = document.getElementById('comboCount');
-const decBtn        = document.getElementById('decBtn');
-const incBtn        = document.getElementById('incBtn');
-const startBtn      = document.getElementById('startBtn');
-const statChecked   = document.getElementById('statChecked');
-const statFound     = document.getElementById('statFound');
-const statCPS       = document.getElementById('statCPS');
-const progressFill  = document.getElementById('progressFill');
-const resultsList   = document.getElementById('resultsList');
-const emptyState    = document.getElementById('emptyState');
-const foundCount    = document.getElementById('foundCount');
-const logLine       = document.getElementById('logLine');
-const statusDot     = document.getElementById('statusDot');
-const webhookUrl    = document.getElementById('webhookUrl');
-const offlineBanner = document.getElementById('offlineBanner');
-const clearBtn      = document.getElementById('clearBtn');
+const countDisplay    = document.getElementById('countDisplay');
+const comboCount      = document.getElementById('comboCount');
+const decBtn          = document.getElementById('decBtn');
+const incBtn          = document.getElementById('incBtn');
+const startBtn        = document.getElementById('startBtn');
+const statChecked     = document.getElementById('statChecked');
+const statFound       = document.getElementById('statFound');
+const statCPS         = document.getElementById('statCPS');
+const statAlive       = document.getElementById('statAlive');
+const proxyRampFill   = document.getElementById('proxyRampFill');
+const proxyRampLabel  = document.getElementById('proxyRampLabel');
+const progressFill    = document.getElementById('progressFill');
+const resultsList     = document.getElementById('resultsList');
+const emptyState      = document.getElementById('emptyState');
+const foundCount      = document.getElementById('foundCount');
+const logLine         = document.getElementById('logLine');
+const statusDot       = document.getElementById('statusDot');
+const webhookUrl      = document.getElementById('webhookUrl');
+const offlineBanner   = document.getElementById('offlineBanner');
+const clearBtn        = document.getElementById('clearBtn');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function fmtNum(n) {
-  return n.toLocaleString();
-}
-
-function totalCombos(len) {
-  return Math.pow(26, len);
-}
+function fmtNum(n) { return Number(n).toLocaleString(); }
+function totalCombos(len) { return Math.pow(26, len); }
 
 function updateCountUI() {
   countDisplay.textContent = letterCount;
@@ -526,70 +562,13 @@ function updateCountUI() {
   incBtn.disabled = letterCount >= 6;
 }
 
-function setLog(msg) {
-  logLine.textContent = msg;
-}
+function setLog(msg) { logLine.textContent = msg; }
 
-function updateStats() {
-  statChecked.textContent = fmtNum(checked);
-  statFound.textContent   = found;
-  foundCount.textContent  = found;
-  const elapsed = (Date.now() - startTime) / 1000;
-  const cps     = elapsed > 0 ? (checked / elapsed).toFixed(1) : '0';
-  statCPS.textContent = cps;
-  const total = totalCombos(letterCount);
-  progressFill.style.width = Math.min(100, (checked / total) * 100).toFixed(2) + '%';
-}
-
-// ── Combo generator ────────────────────────────────────────────────────────
-function* generateCombos(len) {
-  // Yield all letter combos of given length in random order
-  const total = totalCombos(len);
-  // Fisher-Yates on index range for memory efficiency (up to len=4)
-  // For len>=5 just stream sequentially (456k+ too big to shuffle all at once)
-  if (total <= 500000) {
-    const combos = [];
-    function build(prefix, remaining) {
-      if (remaining === 0) { combos.push(prefix); return; }
-      for (const c of ALPHA) build(prefix + c, remaining - 1);
-    }
-    build('', len);
-    // shuffle
-    for (let i = combos.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [combos[i], combos[j]] = [combos[j], combos[i]];
-    }
-    yield* combos;
-  } else {
-    // Streaming for large sets — shuffle starting point
-    const offset = Math.floor(Math.random() * total);
-    function indexToCombo(idx, len) {
-      let s = '';
-      for (let i = 0; i < len; i++) {
-        s = ALPHA[idx % 26] + s;
-        idx = Math.floor(idx / 26);
-      }
-      return s;
-    }
-    for (let i = 0; i < total; i++) {
-      yield indexToCombo((i + offset) % total, len);
-    }
-  }
-}
-
-// ── API check ──────────────────────────────────────────────────────────────
-async function checkUsername(username, signal) {
-  try {
-    const r = await fetch(`/api/check?username=${encodeURIComponent(username)}`, {
-      signal,
-      headers: { 'Accept': 'application/json' }
-    });
-    const data = await r.json();
-    return data.code === 0;  // 0 = available
-  } catch (e) {
-    if (e.name === 'AbortError') throw e;
-    return null;  // network error — skip
-  }
+function updateProxyRamp(alive) {
+  const pct = Math.min(100, (alive / totalProxies) * 100);
+  proxyRampFill.style.width = pct.toFixed(1) + '%';
+  proxyRampLabel.textContent = alive + ' / ' + totalProxies;
+  statAlive.textContent = alive;
 }
 
 // ── Webhook ────────────────────────────────────────────────────────────────
@@ -600,12 +579,12 @@ async function fireWebhook(username) {
     username: 'Axiom Finder',
     embeds: [{
       title: '🎯 Roblox Username Available!',
-      description: `**\`${username}\`** is free to register.`,
+      description: '**`' + username + '`** is free to register.',
       color: 0x39ff85,
       fields: [
-        { name: 'Username',  value: `\`${username}\``, inline: true },
-        { name: 'Length',    value: `\`${username.length}\``, inline: true },
-        { name: 'Claim',     value: 'https://www.roblox.com/account/signupredir', inline: false },
+        { name: 'Username', value: '`' + username + '`', inline: true },
+        { name: 'Length',   value: '`' + username.length + '`', inline: true },
+        { name: 'Claim',    value: 'https://www.roblox.com/account/signupredir', inline: false },
       ],
       footer: { text: 'Axiom Finder • roblox username scanner' }
     }]
@@ -622,15 +601,16 @@ async function fireWebhook(username) {
 // ── Add result ─────────────────────────────────────────────────────────────
 function addResult(username) {
   results.push(username);
-  if (emptyState) emptyState.remove();
+  const es = document.getElementById('emptyState');
+  if (es) es.remove();
 
   const li = document.createElement('li');
   li.className = 'result-item';
-  li.innerHTML = `
-    <span class="result-name">${username}</span>
-    <div class="result-actions">
-      <button class="copy-btn" data-name="${username}">copy</button>
-    </div>`;
+  li.innerHTML =
+    '<span class="result-name">' + username + '</span>' +
+    '<div class="result-actions">' +
+      '<button class="copy-btn" data-name="' + username + '">copy</button>' +
+    '</div>';
   resultsList.prepend(li);
 
   li.querySelector('.copy-btn').addEventListener('click', function() {
@@ -642,68 +622,141 @@ function addResult(username) {
   });
 }
 
-// ── Scan engine ────────────────────────────────────────────────────────────
-async function runScan() {
-  const controller = new AbortController();
-  scanAbort = controller;
-  const gen = generateCombos(letterCount);
+// ── SSE event handler ──────────────────────────────────────────────────────
+function handleEvent(ev) {
+  let d;
+  try { d = JSON.parse(ev.data); } catch (_) { return; }
 
-  checked = 0; found = 0; startTime = Date.now();
-  updateStats();
+  switch (d.type) {
 
-  const statsInterval = setInterval(updateStats, 250);
+    case 'connected':
+      totalProxies = d.proxies || 100;
+      updateProxyRamp(0);
+      setLog('connected — ramping ' + totalProxies + ' proxies over ' + (totalProxies * 0.2).toFixed(0) + 's…');
+      break;
 
-  const worker = async () => {
-    for (const username of gen) {
-      if (!running) break;
-      try {
-        const available = await checkUsername(username, controller.signal);
-        checked++;
-        if (available === true) {
-          found++;
-          addResult(username);
-          fireWebhook(username);
-          setLog(`✓ found: ${username}`);
-        }
-      } catch (e) {
-        if (e.name === 'AbortError') break;
+    case 'proxy_up':
+      updateProxyRamp(d.alive);
+      if (d.alive === totalProxies) setLog('all ' + totalProxies + ' proxies online — scanning at full speed');
+      else setLog('proxy ' + (d.idx + 1) + ' online (' + d.alive + '/' + totalProxies + ' active)');
+      break;
+
+    case 'proxy_down':
+      updateProxyRamp(d.alive);
+      break;
+
+    case 'stat':
+      statChecked.textContent = fmtNum(d.checked);
+      statFound.textContent   = d.found;
+      foundCount.textContent  = d.found;
+      statCPS.textContent     = d.cps;
+      statAlive.textContent   = d.alive;
+      updateProxyRamp(d.alive);
+      if (d.pct > 0) {
+        progressFill.style.width = Math.min(100, d.pct).toFixed(2) + '%';
       }
-    }
-  };
+      // If server says not active anymore, treat as finished
+      if (!d.active && running) {
+        finishScan('scan complete');
+      }
+      break;
 
-  const workers = Array.from({ length: CONCURRENCY }, () => worker());
-  await Promise.all(workers);
+    case 'hit':
+      statChecked.textContent = fmtNum(d.checked);
+      statFound.textContent   = d.found;
+      foundCount.textContent  = d.found;
+      statCPS.textContent     = d.cps;
+      addResult(d.username);
+      fireWebhook(d.username);
+      setLog('✓ found: ' + d.username);
+      break;
 
-  clearInterval(statsInterval);
-  updateStats();
-  stopScan(true);
+    case 'ping':
+      // heartbeat — check if server stopped
+      if (!d.active && running) {
+        finishScan('scan complete');
+      }
+      break;
+  }
 }
 
-// ── Start / Stop ───────────────────────────────────────────────────────────
-function startScan() {
-  if (!navigator.onLine) {
-    setLog('⚠ offline — cannot reach roblox api');
+// ── Open SSE stream ────────────────────────────────────────────────────────
+function openStream() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  evtSource = new EventSource('/api/scan/stream');
+  evtSource.onmessage = handleEvent;
+  evtSource.onerror = () => {
+    if (!running) return;
+    setLog('stream error — reconnecting…');
+  };
+}
+
+// ── Start ──────────────────────────────────────────────────────────────────
+async function startScan() {
+  if (!navigator.onLine) { setLog('⚠ offline — cannot reach roblox api'); return; }
+
+  // Reset UI
+  statChecked.textContent = '0';
+  statFound.textContent   = '0';
+  statCPS.textContent     = '0';
+  foundCount.textContent  = '0';
+  progressFill.style.width = '0%';
+  updateProxyRamp(0);
+
+  let resp;
+  try {
+    resp = await fetch('/api/scan/start', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ length: letterCount }),
+    });
+  } catch (e) {
+    setLog('⚠ could not reach server');
     return;
   }
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    setLog('⚠ ' + (err.error || resp.status));
+    return;
+  }
+
   running = true;
-  startBtn.className = 'running';
+  startBtn.className   = 'running';
   startBtn.textContent = 'Stop scan';
-  statusDot.className = 'status-dot active';
+  statusDot.className  = 'status-dot active';
   decBtn.disabled = true;
   incBtn.disabled = true;
-  setLog(`scanning ${fmtNum(totalCombos(letterCount))} combos...`);
-  runScan();
+  setLog('starting scan…');
+
+  openStream();
 }
 
-function stopScan(finished = false) {
+// ── Stop ───────────────────────────────────────────────────────────────────
+async function stopScan() {
   running = false;
-  if (scanAbort) { scanAbort.abort(); scanAbort = null; }
-  startBtn.className = 'idle';
+  if (evtSource) { evtSource.close(); evtSource = null; }
+
+  try {
+    await fetch('/api/scan/stop', { method: 'POST' });
+  } catch (_) {}
+
+  startBtn.className   = 'idle';
   startBtn.textContent = 'Start scan';
-  statusDot.className = 'status-dot';
+  statusDot.className  = 'status-dot';
   updateCountUI();
-  if (finished) setLog(`scan complete — ${found} found in ${fmtNum(checked)} checked`);
-  else setLog(`stopped at ${fmtNum(checked)} checked`);
+  setLog('stopped at ' + statChecked.textContent + ' checked');
+}
+
+function finishScan(msg) {
+  if (!running) return;
+  running = false;
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  startBtn.className   = 'idle';
+  startBtn.textContent = 'Start scan';
+  statusDot.className  = 'status-dot';
+  updateCountUI();
+  setLog(msg + ' — ' + statFound.textContent + ' found in ' + statChecked.textContent + ' checked');
 }
 
 // ── Event listeners ────────────────────────────────────────────────────────
@@ -715,16 +768,15 @@ incBtn.addEventListener('click', () => {
 });
 
 startBtn.addEventListener('click', () => {
-  if (running) stopScan(false);
+  if (running) stopScan();
   else startScan();
 });
 
 clearBtn.addEventListener('click', () => {
   results = [];
-  found = 0;
-  statFound.textContent = '0';
-  foundCount.textContent = '0';
   resultsList.innerHTML = '<li class="empty-state" id="emptyState">nothing yet — start a scan</li>';
+  statFound.textContent  = '0';
+  foundCount.textContent = '0';
 });
 
 // ── Offline detection ──────────────────────────────────────────────────────
@@ -732,20 +784,19 @@ function updateOnlineStatus() {
   if (!navigator.onLine) {
     offlineBanner.style.display = 'block';
     statusDot.className = 'status-dot offline';
-    if (running) { stopScan(false); setLog('connection lost — scan stopped'); }
+    if (running) { stopScan(); setLog('connection lost — scan stopped'); }
   } else {
     offlineBanner.style.display = 'none';
     if (!running) statusDot.className = 'status-dot';
   }
 }
-window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('online',  updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();
 
 // ── Service worker ─────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/static/sw.js')
-    .catch(() => {});
+  navigator.serviceWorker.register('/static/sw.js').catch(() => {});
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
