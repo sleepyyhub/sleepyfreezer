@@ -1,11 +1,16 @@
 """
-scraper.py — scrapes 50+ sources, validates with raw sockets (no urllib overhead)
+scraper.py — scrapes 50+ sources, validates with raw sockets
+
+A-Shell safe: uses ThreadPoolExecutor (fixed pool, never spawns more
+threads than --threads). Default is 40 — raise carefully on A-Shell.
 
 Usage:
-    python scraper.py                  # default: 300 threads, 3s timeout
-    python scraper.py --threads 100    # lower if A-Shell struggles
-    python scraper.py --timeout 5      # more lenient timeout
-    python scraper.py --out out.txt    # custom output file
+    python scraper.py                   # 40 threads, 4s timeout
+    python scraper.py --threads 20      # if A-Shell still crashes
+    python scraper.py --threads 60      # if you want more speed
+    python scraper.py --timeout 6       # more lenient
+    python scraper.py --out out.txt     # custom output
+    python scraper.py --test-url URL    # validate against custom URL
 
 Pure stdlib. Zero installs.
 """
@@ -13,24 +18,24 @@ Pure stdlib. Zero installs.
 import sys
 import re
 import time
-import queue
 import socket
 import threading
 import urllib.request
+import urllib.parse
 import argparse
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ── Colours ───────────────────────────────────────────────────────────────
 def _c(code, t): return f"\033[{code}m{t}\033[0m"
-GRN  = lambda t: _c("32;1", t)
-RED  = lambda t: _c("31",   t)
-CYN  = lambda t: _c("36",   t)
-DIM  = lambda t: _c("2",    t)
-BLD  = lambda t: _c("1",    t)
+GRN = lambda t: _c("32;1", t)
+RED = lambda t: _c("31",   t)
+CYN = lambda t: _c("36",   t)
+DIM = lambda t: _c("2",    t)
+BLD = lambda t: _c("1",    t)
 
-# ── 50 sources ────────────────────────────────────────────────────────────
+# ── 53 sources ────────────────────────────────────────────────────────────
 SOURCES = [
-    # ── GitHub raw lists ──────────────────────────────────────────────────
     "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
     "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
     "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
@@ -74,7 +79,6 @@ SOURCES = [
     "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Lists/main/cnfree.txt",
     "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt",
     "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt",
-    # ── API endpoints ──────────────────────────────────────────────────────
     "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all",
     "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=https&timeout=5000&country=all&ssl=all&anonymity=all",
     "https://www.proxy-list.download/api/v1/get?type=http",
@@ -87,18 +91,8 @@ SOURCES = [
     "https://proxylist.geonode.com/api/proxy-list?limit=500&page=3&sort_by=lastChecked&sort_type=desc&protocols=http",
 ]
 
-_PROXY_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
-
-# ── HTTP request bytes sent through each proxy ────────────────────────────
-# google.com — globally reachable, fast CDN, proves traffic routes correctly
-_HTTP_REQ = (
-    b"GET http://www.google.com/ HTTP/1.0\r\n"
-    b"Host: www.google.com\r\n"
-    b"User-Agent: Mozilla/5.0\r\n"
-    b"Connection: close\r\n\r\n"
-)
-# We accept any of these as "proxy works"
-_GOOD_STATUS = {b"200", b"204", b"301", b"302", b"403"}
+_PROXY_RE   = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b")
+_GOOD_CODES = {b"200", b"204", b"301", b"302", b"403"}
 
 
 # ── Scrape ────────────────────────────────────────────────────────────────
@@ -114,36 +108,37 @@ def _fetch_source(url):
         return []
 
 
-def scrape_all(sources):
+def scrape_all(sources, pool_size):
     collected = []
     done      = [0]
     lock      = threading.Lock()
+    n         = len(sources)
 
-    def task(url):
-        found = _fetch_source(url)
-        with lock:
-            collected.extend(found)
-            done[0] += 1
-            print(
-                f"\r  {CYN('scraping')}  "
-                f"{done[0]:>2}/{len(sources)} sources  "
-                f"{GRN(str(len(collected)))} raw   ",
-                end="", flush=True,
-            )
+    # Cap scrape pool at pool_size but never more than source count
+    workers = min(pool_size, n)
 
-    threads = [threading.Thread(target=task, args=(u,), daemon=True) for u in sources]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(_fetch_source, u): u for u in sources}
+        for fut in as_completed(futs):
+            found = fut.result()
+            with lock:
+                collected.extend(found)
+                done[0] += 1
+                print(
+                    f"\r  {CYN('scraping')}  {done[0]:>2}/{n}  "
+                    f"{GRN(str(len(collected)))} raw  ",
+                    end="", flush=True,
+                )
+
     print()
     return set(collected)
 
 
-# ── Validate (raw socket — no urllib overhead) ────────────────────────────
-def _validate(proxy, timeout):
+# ── Validate — raw socket (fast path) ────────────────────────────────────
+def _validate_socket(proxy, timeout):
     """
-    Open a raw TCP socket to the proxy, send an HTTP GET through it,
-    read the first 48 bytes of the response, check the status code.
-    Much faster than urllib: no handler/opener allocation, reads minimal bytes.
+    Direct TCP + minimal HTTP GET through the proxy.
+    Only reads the first 48 bytes — just enough to check the status code.
     """
     try:
         ip, port_s = proxy.rsplit(":", 1)
@@ -158,9 +153,12 @@ def _validate(proxy, timeout):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         sock.connect((ip, port))
-        sock.sendall(_HTTP_REQ)
-
-        # read just enough to see the status line
+        sock.sendall(
+            b"GET http://www.google.com/ HTTP/1.0\r\n"
+            b"Host: www.google.com\r\n"
+            b"User-Agent: Mozilla/5.0\r\n"
+            b"Connection: close\r\n\r\n"
+        )
         buf = b""
         while len(buf) < 48:
             chunk = sock.recv(48 - len(buf))
@@ -168,11 +166,10 @@ def _validate(proxy, timeout):
                 break
             buf += chunk
 
-        # buf looks like: b"HTTP/1.0 200 OK\r\n..."
         if not buf.startswith(b"HTTP/"):
             return False
         parts = buf.split()
-        return len(parts) >= 2 and parts[1] in _GOOD_STATUS
+        return len(parts) >= 2 and parts[1] in _GOOD_CODES
 
     except Exception:
         return False
@@ -182,26 +179,49 @@ def _validate(proxy, timeout):
             except Exception: pass
 
 
-def validate_all(proxies, timeout, workers, out_file):
+# ── Validate — urllib (custom URL path) ──────────────────────────────────
+def _validate_urllib(proxy, test_url, timeout):
+    proxy_url = f"http://{proxy}"
+    handler   = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+    opener    = urllib.request.build_opener(handler)
+    try:
+        req = urllib.request.Request(
+            test_url,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        with opener.open(req, timeout=timeout) as r:
+            # any response (even error codes) means the proxy routed traffic
+            return r.status < 600
+    except urllib.error.HTTPError as e:
+        # proxy worked, target returned an HTTP error — still a live proxy
+        return e.code < 600
+    except Exception:
+        return False
+
+
+def _validate(proxy, timeout, test_url):
+    if test_url:
+        return _validate_urllib(proxy, test_url, timeout)
+    return _validate_socket(proxy, timeout)
+
+
+# ── Validate pool ─────────────────────────────────────────────────────────
+def validate_all(proxies, timeout, pool_size, out_file, test_url):
     proxy_list = list(proxies)
     total      = len(proxy_list)
-    work_q     = queue.Queue()
-    for p in proxy_list:
-        work_q.put(p)
+    working    = []
+    checked    = [0]
+    lock       = threading.Lock()
+    start_t    = time.time()
+    out_fh     = open(out_file, "w")
 
-    working = []
-    checked = [0]
-    lock    = threading.Lock()
-    start_t = time.time()
-    out_fh  = open(out_file, "w")
+    pad = len(str(total))
 
-    def worker():
-        while True:
-            try:
-                proxy = work_q.get(timeout=0.5)
-            except queue.Empty:
-                break
-            ok = _validate(proxy, timeout)
+    with ThreadPoolExecutor(max_workers=min(pool_size, total or 1)) as pool:
+        futs = {pool.submit(_validate, p, timeout, test_url): p for p in proxy_list}
+        for fut in as_completed(futs):
+            proxy = futs[fut]
+            ok    = fut.result()
             with lock:
                 checked[0] += 1
                 elapsed = max(time.time() - start_t, 0.001)
@@ -213,44 +233,46 @@ def validate_all(proxies, timeout, workers, out_file):
                     out_fh.flush()
                 print(
                     f"\r  {CYN('validating')}  "
-                    f"{checked[0]:>{len(str(total))}}/{total}  "
+                    f"{checked[0]:>{pad}}/{total}  "
                     f"{DIM(f'{pct:5.1f}%')}  "
                     f"{GRN(str(len(working)))} working  "
                     f"{DIM(f'{cps:6.1f}/s')}  ",
                     end="", flush=True,
                 )
-            work_q.task_done()
 
-    pool = [threading.Thread(target=worker, daemon=True)
-            for _ in range(min(workers, total or 1))]
-    for t in pool: t.start()
-    for t in pool: t.join()
     print()
-
     out_fh.close()
     return working
 
 
-# ── Entry point ───────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────
 def main():
-    ap = argparse.ArgumentParser(description="Axiom proxy scraper")
-    ap.add_argument("--threads", type=int, default=300,
-                    help="Validation threads (default 300; try 100 on A-Shell)")
-    ap.add_argument("--timeout", type=float, default=3,
-                    help="Socket timeout per proxy in seconds (default 3)")
-    ap.add_argument("--out",     type=str,   default="proxies.txt",
+    ap = argparse.ArgumentParser(description="Axiom proxy scraper — A-Shell safe")
+    ap.add_argument("--threads",  type=int,   default=40,
+                    help="Thread pool size for both scrape+validate (default 40)")
+    ap.add_argument("--timeout",  type=float, default=4,
+                    help="Socket timeout per proxy in seconds (default 4)")
+    ap.add_argument("--out",      type=str,   default="proxies.txt",
                     help="Output file (default proxies.txt)")
+    ap.add_argument("--test-url", type=str,   default=None,
+                    help="Custom URL to test through each proxy (optional)")
     args = ap.parse_args()
 
     print()
     print(BLD("  AXIOM PROXY SCRAPER"))
-    print(DIM(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  "
-              f"{len(SOURCES)} sources  raw-socket validator"))
+    print(DIM(
+        f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  "
+        f"{len(SOURCES)} sources  "
+        f"{args.threads} threads  "
+        f"{args.timeout}s timeout"
+    ))
     print()
 
-    # 1. Scrape
-    print(f"  {BLD('[1/2]')} Scraping {len(SOURCES)} sources simultaneously…")
-    raw = scrape_all(SOURCES)
+    # 1. Scrape — cap at threads so we never exceed A-Shell limit
+    scrape_workers = min(args.threads, len(SOURCES))
+    print(f"  {BLD('[1/2]')} Scraping {len(SOURCES)} sources  "
+          f"{DIM(f'({scrape_workers} threads)')}")
+    raw = scrape_all(SOURCES, scrape_workers)
     print(f"  {GRN('→')} {len(raw):,} unique proxies")
     print()
 
@@ -258,18 +280,19 @@ def main():
         print(RED("  ✗ Nothing scraped — check internet."))
         sys.exit(1)
 
-    # 2. Validate
-    eta_s = len(raw) / args.threads * args.timeout
-    print(f"  {BLD('[2/2]')} Validating  "
-          f"{DIM(f'{args.threads} threads · {args.timeout}s timeout · ~{eta_s:.0f}s ETA')}")
-    working = validate_all(raw, args.timeout, args.threads, args.out)
+    # ETA estimate
+    eta = len(raw) / max(args.threads, 1) * args.timeout
+    mode = f"urllib → {args.test_url}" if args.test_url else "raw socket → google.com"
+    print(f"  {BLD('[2/2]')} Validating  {DIM(f'{mode}  ~{eta:.0f}s ETA')}")
 
-    # 3. Summary
+    working = validate_all(raw, args.timeout, args.threads, args.out, args.test_url)
+
+    # 3. Results
     print()
     if working:
         rate = len(working) / len(raw) * 100
         print(f"  {GRN('✓')} {BLD(str(len(working)))} working  "
-              f"{DIM(f'({rate:.1f}% hit rate · saved to {args.out})')}")
+              f"{DIM(f'({rate:.1f}% · saved to {args.out})')}")
         print()
         cap = min(15, len(working))
         print(DIM(f"  first {cap}:"))
@@ -278,8 +301,8 @@ def main():
         if len(working) > cap:
             print(DIM(f"    … and {len(working) - cap} more in {args.out}"))
     else:
-        print(RED("  ✗ No working proxies."))
-        print(DIM("    Try --timeout 5 or --timeout 8"))
+        print(RED("  ✗ No working proxies found."))
+        print(DIM("    Try --timeout 8 or --threads 20"))
     print()
 
 
