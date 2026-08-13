@@ -174,6 +174,29 @@ describe('connection snippets', () => {
     expect(loadstring).toContain('RobloxToken = "crx_secret"');
     expect(loadstring).toContain('https://example.test/client.lua');
   });
+
+  it('builds a bootstrap that parses and survives a missing loadstring or HttpGet', async () => {
+    const { parse } = await import('luaparse');
+    const { buildLoadstring } = await import('../../src/lib/sessions/snippets');
+    const bootstrap = buildLoadstring('https://example.test', 'cs_ABC', 'crx_secret');
+
+    // A bootstrap that does not parse is a session nobody can start.
+    expect(() => parse(bootstrap, { luaVersion: '5.1' })).not.toThrow();
+
+    // Both globals are resolved rather than assumed. Executors that expose only
+    // `load`, or only a `request` function, must still be able to start.
+    expect(bootstrap).toContain('loadstring or load');
+    expect(bootstrap).toMatch(/http_request|syn\.request/);
+
+    // The failure modes name the missing global instead of throwing "attempt to
+    // call a nil value" from a line the user cannot interpret.
+    expect(bootstrap).toContain('neither loadstring nor load');
+    expect(bootstrap).toContain('no usable HTTP function');
+
+    // Nothing may call either global unguarded.
+    expect(bootstrap).not.toMatch(/^\s*loadstring\(/m);
+    expect(bootstrap).not.toContain('loadstring(game:HttpGet');
+  });
 });
 
 describe('MCP JSON-RPC surface', () => {

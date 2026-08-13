@@ -6,7 +6,19 @@
  * and is never reconstructed from anything persisted in the browser.
  */
 
-/** The loadstring a user pastes into their executor. */
+/**
+ * The bootstrap a user pastes into their executor.
+ *
+ * The obvious one-liner — `loadstring(game:HttpGet(url))()` — assumes two
+ * globals that a good number of executors do not provide. `loadstring` is absent
+ * wherever the Lua 5.2+ name `load` is used instead, and `game:HttpGet` is absent
+ * on executors that expose only a `request`-style function. Either gap surfaces
+ * as "attempt to call a nil value" on the bootstrap line, which tells the user
+ * nothing about which global was missing.
+ *
+ * So the bootstrap resolves both at runtime and fails with a sentence naming the
+ * thing that was not there.
+ */
 export function buildLoadstring(baseUrl: string, sessionId: string, robloxToken: string): string {
   return [
     'getgenv().ClovyreConfig = {',
@@ -14,7 +26,28 @@ export function buildLoadstring(baseUrl: string, sessionId: string, robloxToken:
     `    SessionId = "${sessionId}",`,
     `    RobloxToken = "${robloxToken}"`,
     '}',
-    `loadstring(game:HttpGet("${baseUrl}/client.lua"))()`,
+    '',
+    `local url = "${baseUrl}/client.lua"`,
+    'local compile = loadstring or load',
+    'assert(compile, "Clovyre: this executor provides neither loadstring nor load.")',
+    '',
+    'local function fetch()',
+    '    local ok, body = pcall(function() return game:HttpGet(url) end)',
+    '    if ok and type(body) == "string" and #body > 0 then return body end',
+    '    local req = (syn and syn.request) or http_request or request',
+    '    if req then',
+    '        local res = req({ Url = url, Method = "GET" })',
+    '        return res and (res.Body or res.body)',
+    '    end',
+    '    error("Clovyre: this executor exposes no usable HTTP function (tried game:HttpGet and request).")',
+    'end',
+    '',
+    'local source = fetch()',
+    'assert(type(source) == "string" and #source > 0, "Clovyre: the bridge script came back empty.")',
+    '',
+    'local chunk, err = compile(source, "=clovyre")',
+    'assert(chunk, "Clovyre: the bridge script failed to compile: " .. tostring(err))',
+    'chunk()',
   ].join('\n');
 }
 
