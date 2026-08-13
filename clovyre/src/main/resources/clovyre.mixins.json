@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "dev.clovyre.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "client": [
+    "MinecraftClientMixin",
+    "KeyboardMixin",
+    "InGameHudMixin"
+  ]
+}

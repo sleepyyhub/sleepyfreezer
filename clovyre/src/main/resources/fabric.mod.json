@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "clovyre",
+  "version": "${version}",
+  "name": "Clovyre",
+  "description": "Clovyre — a DonutSMP-oriented Minecraft utility client.",
+  "authors": ["Larpbase"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.clovyre.Clovyre"]
+  },
+  "mixins": ["clovyre.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
