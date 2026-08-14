@@ -11,11 +11,13 @@ import type { CommandRecord, SessionRecord } from './types';
 import { sessionStatus } from './types';
 
 /**
- * Session broker: owns the live Roblox transport per session and the registry of
- * commands awaiting a result.
+ * Session broker: owns the live Roblox transports for each session and the
+ * registry of commands awaiting a result.
  *
- * A command is only ever resolved through the transport that owns its session, so
- * a result arriving on session A can never satisfy a pending command on session B.
+ * A session may hold several clients at once, so transports are keyed by session
+ * and then by clientId, and every dispatch names the client it is for. A command
+ * is only ever resolved through the session that owns it, so a result arriving on
+ * session A can never satisfy a pending command on session B.
  */
 
 export interface RobloxTransport {
@@ -26,6 +28,7 @@ export interface RobloxTransport {
 
 interface PendingCommand {
   readonly sessionId: string;
+  readonly clientId: string;
   readonly record: CommandRecord;
   readonly timer: NodeJS.Timeout;
   resolve(outcome: CommandOutcome): void;
@@ -39,41 +42,64 @@ const MAX_COMMAND_HISTORY = 200;
 const MAX_CONCURRENT_COMMANDS = 16;
 
 export class SessionBroker {
-  private readonly transports = new Map<string, RobloxTransport>();
+  private readonly transports = new Map<string, Map<string, RobloxTransport>>();
   private readonly pending = new Map<string, PendingCommand>();
 
-  attachRoblox(sessionId: string, transport: RobloxTransport): void {
-    const existing = this.transports.get(sessionId);
-    if (existing && existing.connectionId !== transport.connectionId) {
-      // A second live client would double-answer every command; the older one goes.
-      existing.close(4004, 'Replaced by a newer Clovyre connection.');
+  /**
+   * Registers a client. Re-attaching the same clientId replaces that client's
+   * transport — that is the script being re-run in the same executor, and two
+   * sockets for one client would double-answer every command. A different
+   * clientId joins alongside the others.
+   */
+  attachRoblox(sessionId: string, clientId: string, transport: RobloxTransport): void {
+    let clients = this.transports.get(sessionId);
+    if (!clients) {
+      clients = new Map();
+      this.transports.set(sessionId, clients);
     }
-    this.transports.set(sessionId, transport);
+    const existing = clients.get(clientId);
+    if (existing && existing.connectionId !== transport.connectionId) {
+      existing.close(4004, 'Replaced by a newer Clovyre connection from the same executor.');
+    }
+    clients.set(clientId, transport);
   }
 
-  detachRoblox(sessionId: string, connectionId: string): void {
-    const existing = this.transports.get(sessionId);
-    if (!existing || existing.connectionId !== connectionId) return;
-    this.transports.delete(sessionId);
-    this.failAllPending(sessionId, {
+  detachRoblox(sessionId: string, clientId: string, connectionId: string): void {
+    const clients = this.transports.get(sessionId);
+    const existing = clients?.get(clientId);
+    if (!clients || !existing || existing.connectionId !== connectionId) return;
+    clients.delete(clientId);
+    if (clients.size === 0) this.transports.delete(sessionId);
+    // Only work bound to the client that left fails; other clients keep going.
+    this.failPendingForClient(sessionId, clientId, {
       code: ErrorCodes.CLIENT_NOT_CONNECTED,
       message: 'The Roblox client disconnected before the command completed.',
     });
   }
 
   isConnected(sessionId: string): boolean {
-    return this.transports.has(sessionId);
+    return (this.transports.get(sessionId)?.size ?? 0) > 0;
   }
 
-  getTransport(sessionId: string): RobloxTransport | null {
-    return this.transports.get(sessionId) ?? null;
+  clientIds(sessionId: string): string[] {
+    return [...(this.transports.get(sessionId)?.keys() ?? [])];
   }
 
-  /** Pushes a control frame to the client without expecting a result. */
-  notify(sessionId: string, message: ServerMessage): boolean {
-    const transport = this.transports.get(sessionId);
-    if (!transport) return false;
-    transport.send(message);
+  getTransport(sessionId: string, clientId: string): RobloxTransport | null {
+    return this.transports.get(sessionId)?.get(clientId) ?? null;
+  }
+
+  /** Pushes a control frame to one client, or to every client when none is named. */
+  notify(sessionId: string, message: ServerMessage, clientId?: string): boolean {
+    const clients = this.transports.get(sessionId);
+    if (!clients || clients.size === 0) return false;
+    if (clientId !== undefined) {
+      const transport = clients.get(clientId);
+      if (!transport) return false;
+      transport.send(message);
+      return true;
+    }
+    for (const transport of clients.values()) transport.send(message);
     return true;
   }
 
@@ -93,6 +119,7 @@ export class SessionBroker {
     session: SessionRecord,
     input: {
       tool: string;
+      clientId: string;
       arguments: Record<string, unknown>;
       timeoutMs?: number;
       origin: CommandRecord['origin'];
@@ -109,6 +136,7 @@ export class SessionBroker {
     const record: CommandRecord = {
       id: commandId,
       tool: input.tool,
+      clientId: input.clientId,
       startedAt,
       timeoutMs,
       origin: input.origin,
@@ -146,11 +174,11 @@ export class SessionBroker {
       });
     }
 
-    const transport = this.transports.get(session.id);
+    const transport = this.getTransport(session.id, input.clientId);
     if (!transport) {
       return fail({
         code: ErrorCodes.CLIENT_NOT_CONNECTED,
-        message: 'No Roblox client is connected to this Clovyre session.',
+        message: `Roblox client "${input.clientId}" is not connected to this Clovyre session.`,
       });
     }
 
@@ -180,7 +208,13 @@ export class SessionBroker {
       }, timeoutMs);
       timer.unref?.();
 
-      this.pending.set(commandId, { sessionId: session.id, record, timer, resolve });
+      this.pending.set(commandId, {
+        sessionId: session.id,
+        clientId: input.clientId,
+        record,
+        timer,
+        resolve,
+      });
 
       try {
         transport.send({
@@ -228,7 +262,7 @@ export class SessionBroker {
     if (!entry || entry.sessionId !== sessionId) return false;
     clearTimeout(entry.timer);
     this.pending.delete(commandId);
-    this.transports.get(sessionId)?.send({
+    this.getTransport(sessionId, entry.clientId)?.send({
       protocolVersion: PROTOCOL_VERSION,
       type: 'cancel_command',
       id: commandId,
@@ -239,6 +273,16 @@ export class SessionBroker {
       durationMs: Date.now() - entry.record.startedAt,
     });
     return true;
+  }
+
+  /** Fails only the work dispatched to one client. */
+  failPendingForClient(sessionId: string, clientId: string, error: CommandError): void {
+    for (const [commandId, entry] of this.pending) {
+      if (entry.sessionId !== sessionId || entry.clientId !== clientId) continue;
+      clearTimeout(entry.timer);
+      this.pending.delete(commandId);
+      entry.resolve({ ok: false, error, durationMs: Date.now() - entry.record.startedAt });
+    }
   }
 
   failAllPending(sessionId: string, error: CommandError): void {
@@ -257,19 +301,21 @@ export class SessionBroker {
     closeCode: number,
     closeReason: string,
   ): void {
-    const transport = this.transports.get(sessionId);
+    const clients = this.transports.get(sessionId);
     this.failAllPending(sessionId, {
       code: ErrorCodes.SESSION_REVOKED,
       message: closeReason,
     });
-    if (transport) {
+    if (!clients) return;
+    // The session is ending, so every client attached to it goes.
+    for (const transport of clients.values()) {
       try {
         transport.send(message);
       } finally {
         transport.close(closeCode, closeReason);
-        this.transports.delete(sessionId);
       }
     }
+    this.transports.delete(sessionId);
   }
 
   private remember(session: SessionRecord, record: CommandRecord): void {
@@ -323,8 +369,11 @@ export class SessionBroker {
     return this.pending.size;
   }
 
+  /** Total live Roblox clients across every session. */
   get connectionCount(): number {
-    return this.transports.size;
+    let count = 0;
+    for (const clients of this.transports.values()) count += clients.size;
+    return count;
   }
 }
 

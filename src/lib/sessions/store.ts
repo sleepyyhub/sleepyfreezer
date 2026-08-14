@@ -12,6 +12,8 @@ import {
 import { deleteSession, loadSessions, persistSession } from './persistence';
 import {
   createObservations,
+  createSettings,
+  unionCapabilities,
   isPrivilegeActive,
   sessionStatus,
   type CredentialRole,
@@ -108,10 +110,11 @@ export class SessionStore {
         mutations: { enabled: false, expiresAt: null, enabledAt: null },
         remote_spy: { enabled: false, expiresAt: null, enabledAt: null },
       },
-      roblox: null,
+      robloxClients: new Map(),
       mcpConnections: new Map(),
       capabilities: {},
       metadata: null,
+      settings: createSettings(),
       commands: new Map(),
       commandOrder: [],
       audit: new AuditLog(),
@@ -328,6 +331,25 @@ export class SessionStore {
     persistSession(session);
   }
 
+  /** Recomputes the session-level capability union after a client joins or leaves. */
+  refreshCapabilities(session: SessionRecord): void {
+    session.capabilities = unionCapabilities(session);
+    persistSession(session);
+  }
+
+  setClientLogging(session: SessionRecord, enabled: boolean, actor: 'owner' | 'system'): void {
+    if (session.settings.clientLogging === enabled) return;
+    session.settings.clientLogging = enabled;
+    session.audit.record({
+      kind: enabled ? 'settings_enabled' : 'settings_disabled',
+      actor,
+      message: enabled
+        ? 'Executor console output was turned on for connected clients.'
+        : 'Executor console output was turned off for connected clients.',
+    });
+    persistSession(session);
+  }
+
   updateMetadata(session: SessionRecord, metadata: ClientMetadata): void {
     session.metadata = metadata;
     persistSession(session);
@@ -376,7 +398,7 @@ export class SessionStore {
     for (const session of this.sessions.values()) {
       if (sessionStatus(session, now) === 'active') {
         active += 1;
-        if (session.roblox) robloxConnected += 1;
+        robloxConnected += session.robloxClients.size;
         mcpConnections += session.mcpConnections.size;
       }
     }

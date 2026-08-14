@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, CAPABILITY_NAMES, type CapabilityName } from '../protocol/messages';
 import { getSessionBroker } from '../sessions/broker';
 import { getSessionStore } from '../sessions/store';
-import { sessionStatus, type SessionRecord } from '../sessions/types';
+import { connectedClients, sessionStatus, type SessionRecord } from '../sessions/types';
 import { TOOL_DEFINITIONS } from '../tools/registry';
 
 /**
@@ -14,6 +14,8 @@ export function sessionInfo(session: SessionRecord): Record<string, unknown> {
   const broker = getSessionBroker();
   const now = Date.now();
   const connected = broker.isConnected(session.id);
+  const clients = connectedClients(session);
+  const primary = clients[0] ?? null;
 
   return {
     sessionId: session.id,
@@ -21,12 +23,27 @@ export function sessionInfo(session: SessionRecord): Record<string, unknown> {
     protocolVersion: PROTOCOL_VERSION,
     roblox: {
       connected,
-      connectedAt: session.roblox ? new Date(session.roblox.connectedAt).toISOString() : null,
-      lastHeartbeatAt: session.roblox
-        ? new Date(session.roblox.lastHeartbeatAt).toISOString()
-        : null,
-      uptimeSeconds: session.roblox ? Math.floor((now - session.roblox.connectedAt) / 1000) : null,
-      bridgeVersion: session.roblox?.bridgeVersion ?? null,
+      clientCount: clients.length,
+      /**
+       * Every attached client. With more than one, a tool call must name which
+       * client it is for via the "client" argument, or it fails with
+       * CLIENT_AMBIGUOUS rather than picking one.
+       */
+      clients: clients.map((client) => ({
+        client: client.clientId,
+        label: client.label,
+        account: client.metadata?.localPlayer?.name ?? null,
+        executor: client.metadata?.executor ?? null,
+        place: client.metadata?.gameName ?? null,
+        connectedAt: new Date(client.connectedAt).toISOString(),
+        uptimeSeconds: Math.floor((now - client.connectedAt) / 1000),
+        bridgeVersion: client.bridgeVersion,
+        capabilities: client.capabilities,
+      })),
+      connectedAt: primary ? new Date(primary.connectedAt).toISOString() : null,
+      lastHeartbeatAt: primary ? new Date(primary.lastHeartbeatAt).toISOString() : null,
+      uptimeSeconds: primary ? Math.floor((now - primary.connectedAt) / 1000) : null,
+      bridgeVersion: primary?.bridgeVersion ?? null,
     },
     place: {
       placeId: session.metadata?.placeId ?? null,
@@ -154,6 +171,7 @@ export function listWatches(session: SessionRecord): Record<string, unknown> {
   return {
     active: [...observations.activeWatches.entries()].map(([watchId, watch]) => ({
       watchId,
+      client: watch.clientId,
       target: watch.target,
       kinds: watch.kinds,
     })),
@@ -169,11 +187,18 @@ export function listWatches(session: SessionRecord): Record<string, unknown> {
 
 export function getWatchEvents(
   session: SessionRecord,
-  options: { limit: number; watchId?: string; since?: number; clear?: boolean },
+  options: {
+    limit: number;
+    clientId?: string | null;
+    watchId?: string;
+    since?: number;
+    clear?: boolean;
+  },
 ): Record<string, unknown> {
   const observations = session.observations;
   let events = observations.watchEvents;
 
+  if (options.clientId) events = events.filter((event) => event.clientId === options.clientId);
   if (options.watchId) events = events.filter((event) => event.watchId === options.watchId);
   if (options.since) events = events.filter((event) => event.at > options.since!);
 
@@ -189,6 +214,7 @@ export function getWatchEvents(
     events: selected.map((event) => ({
       at: new Date(event.at).toISOString(),
       atEpochMs: event.at,
+      client: event.clientId,
       watchId: event.watchId,
       kind: event.kind,
       target: event.target,
@@ -207,10 +233,19 @@ export function getWatchEvents(
 
 export function getRemoteCalls(
   session: SessionRecord,
-  options: { limit: number; remoteName?: string; method?: string; since?: number; clear?: boolean },
+  options: {
+    limit: number;
+    clientId?: string | null;
+    remoteName?: string;
+    method?: string;
+    since?: number;
+    clear?: boolean;
+  },
 ): Record<string, unknown> {
   const observations = session.observations;
   let calls = observations.remoteCalls;
+
+  if (options.clientId) calls = calls.filter((call) => call.clientId === options.clientId);
 
   if (options.remoteName) {
     const needle = options.remoteName.toLowerCase();
@@ -237,6 +272,7 @@ export function getRemoteCalls(
     calls: selected.map((call) => ({
       at: new Date(call.at).toISOString(),
       atEpochMs: call.at,
+      client: call.clientId,
       remote: call.remote,
       className: call.className,
       method: call.method,

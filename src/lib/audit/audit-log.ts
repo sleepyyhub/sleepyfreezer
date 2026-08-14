@@ -28,6 +28,8 @@ export const AUDIT_KINDS = [
   'privilege_disabled',
   'privilege_expired',
   'client_log',
+  'settings_enabled',
+  'settings_disabled',
   'client_event',
   'rate_limited',
   'protocol_violation',

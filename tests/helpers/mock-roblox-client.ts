@@ -38,6 +38,11 @@ export interface MockClientOptions {
   respond?: CommandResponder;
   /** Skip the hello frame entirely, to test the handshake timeout. */
   skipHello?: boolean;
+  /**
+   * Stable per-executor identity. Two mock clients sharing a key stand for one
+   * person re-running the script; different keys stand for two people.
+   */
+  clientKey?: string;
 }
 
 export class MockRobloxClient {
@@ -92,6 +97,7 @@ export class MockRobloxClient {
           executor: 'MockExecutor 1.0',
         },
         bridgeVersion: 'mock-0.1.0',
+        ...(this.options.clientKey === undefined ? {} : { clientKey: this.options.clientKey }),
       });
     });
 

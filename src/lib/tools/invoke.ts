@@ -15,7 +15,8 @@ import { getRateLimiter } from '../security/rate-limit';
 import { normalizeIncoming } from '../serialization/roblox-value';
 import { getSessionBroker } from '../sessions/broker';
 import { getSessionStore } from '../sessions/store';
-import type { CommandRecord, SessionRecord } from '../sessions/types';
+import type { CommandRecord, RobloxClientState, SessionRecord } from '../sessions/types';
+import { connectedClients, findClient } from '../sessions/types';
 import { getTool } from './registry';
 
 /**
@@ -56,6 +57,74 @@ function failure(code: string, message: string, detail?: unknown): ToolInvocatio
   };
 }
 
+/**
+ * Describes a client to the agent. Deliberately identity-only: enough to ask a
+ * human "which one?" and nothing that would leak between users of a session.
+ */
+function describeClient(client: RobloxClientState) {
+  return {
+    client: client.clientId,
+    label: client.label,
+    account: client.metadata?.localPlayer?.name ?? null,
+    executor: client.metadata?.executor ?? null,
+    place: client.metadata?.gameName ?? null,
+    connectedAt: new Date(client.connectedAt).toISOString(),
+  };
+}
+
+/**
+ * Picks the Roblox client a call is for.
+ *
+ * With one client attached the choice is obvious and is made silently. With
+ * several, guessing would be the wrong move: the clients are different people's
+ * games, and running a mutation against the wrong one is not recoverable by
+ * retrying. So an unaddressed call fails with the roster attached and an
+ * instruction to ask, which is what turns into "which client should I use?" in
+ * the agent's own words.
+ */
+function resolveClient(
+  session: SessionRecord,
+  selector: string | undefined,
+): { ok: true; client: RobloxClientState } | { ok: false; failure: ToolInvocationFailure } {
+  const clients = connectedClients(session);
+
+  if (clients.length === 0) {
+    return {
+      ok: false,
+      failure: failure(
+        ErrorCodes.CLIENT_NOT_CONNECTED,
+        'No Roblox client is connected to this Clovyre session.',
+      ),
+    };
+  }
+
+  if (selector !== undefined && selector.trim().length > 0) {
+    const found = findClient(session, selector);
+    if (!found) {
+      return {
+        ok: false,
+        failure: failure(
+          ErrorCodes.CLIENT_NOT_FOUND,
+          `No connected Roblox client matches "${selector}". Choose one of the clients listed in "clients".`,
+          { clients: clients.map(describeClient) },
+        ),
+      };
+    }
+    return { ok: true, client: found };
+  }
+
+  if (clients.length === 1) return { ok: true, client: clients[0]! };
+
+  return {
+    ok: false,
+    failure: failure(
+      ErrorCodes.CLIENT_AMBIGUOUS,
+      `${clients.length} Roblox clients are connected to this session, so it is not clear which one this call is for. Ask the user which client they mean, then repeat the call with the "client" argument set to that client's id. Do not guess.`,
+      { clients: clients.map(describeClient) },
+    ),
+  };
+}
+
 export async function invokeTool(
   session: SessionRecord,
   toolName: string,
@@ -66,6 +135,15 @@ export async function invokeTool(
   if (!definition) {
     return failure('TOOL_NOT_FOUND', `Clovyre has no tool named "${toolName}".`);
   }
+
+  // `client` addresses the call rather than describing it, so it is peeled off
+  // before validation: the tool schemas are strict and know nothing about it.
+  const rawRecord =
+    typeof rawArguments === 'object' && rawArguments !== null
+      ? (rawArguments as Record<string, unknown>)
+      : {};
+  const { client: rawClientSelector, ...toolArguments } = rawRecord;
+  const clientSelector = typeof rawClientSelector === 'string' ? rawClientSelector : undefined;
 
   const availability = evaluateTool(session, definition);
   if (!availability.available) {
@@ -80,7 +158,7 @@ export async function invokeTool(
     return failure(code, availability.detail ?? 'This tool is not currently available.');
   }
 
-  const parsed = definition.inputSchema.safeParse(rawArguments ?? {});
+  const parsed = definition.inputSchema.safeParse(toolArguments);
   if (!parsed.success) {
     return failure(
       ErrorCodes.INVALID_ARGUMENTS,
@@ -111,9 +189,12 @@ export async function invokeTool(
 
   if (definition.local) {
     const started = Date.now();
-    const data = runLocalTool(session, definition.name, args);
+    const data = runLocalTool(session, definition.name, args, clientSelector);
     return { ok: true, commandId: null, durationMs: Date.now() - started, truncated: false, data };
   }
+
+  const resolved = resolveClient(session, clientSelector);
+  if (!resolved.ok) return resolved.failure;
 
   const config = getConfig();
   const requestedTimeout = typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined;
@@ -133,6 +214,7 @@ export async function invokeTool(
 
   const { commandId, outcome } = await getSessionBroker().dispatch(session, {
     tool: definition.name,
+    clientId: resolved.client.clientId,
     arguments: commandArguments,
     timeoutMs,
     origin,
@@ -162,10 +244,13 @@ function runLocalTool(
   session: SessionRecord,
   toolName: string,
   args: Record<string, unknown>,
+  clientSelector: string | undefined,
 ): unknown {
   switch (toolName) {
     case 'clovyre_session_info':
       return sessionInfo(session);
+    case 'clovyre_list_clients':
+      return { clients: connectedClients(session).map(describeClient) };
     case 'clovyre_list_capabilities':
       return listCapabilities(session);
     case 'clovyre_get_recent_activity':
@@ -177,6 +262,7 @@ function runLocalTool(
     case 'clovyre_get_watch_events':
       return getWatchEvents(session, {
         limit: typeof args.limit === 'number' ? args.limit : 50,
+        clientId: clientSelector ? (findClient(session, clientSelector)?.clientId ?? null) : null,
         watchId: typeof args.watchId === 'string' ? args.watchId : undefined,
         since: typeof args.since === 'number' ? args.since : undefined,
         clear: args.clear === true,
@@ -184,6 +270,7 @@ function runLocalTool(
     case 'clovyre_get_remote_calls':
       return getRemoteCalls(session, {
         limit: typeof args.limit === 'number' ? args.limit : 50,
+        clientId: clientSelector ? (findClient(session, clientSelector)?.clientId ?? null) : null,
         remoteName: typeof args.remoteName === 'string' ? args.remoteName : undefined,
         method: typeof args.method === 'string' ? args.method : undefined,
         since: typeof args.since === 'number' ? args.since : undefined,

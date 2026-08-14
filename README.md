@@ -63,6 +63,13 @@ server, which is why Clovyre needs a long-lived container rather than serverless
   mutation tools all require an explicit grant made by the session owner in the browser. A grant
   then stands until the owner turns it off: enable it once and the agent keeps working. Set
   `PRIVILEGE_TTL_MINUTES` above 0 if you want grants to clear themselves instead.
+- **Several clients per session** — everyone who runs the script joins the same session. Re-running
+  it in one executor replaces that client; a second person joins alongside. Once more than one is
+  attached, a tool call must name its client, and a call that does not fails with
+  `CLIENT_AMBIGUOUS` and the roster rather than guessing which person's game to act on.
+- **Silent by default** — the bridge prints nothing to the executor console unless you turn console
+  output on for the session. Logs are still buffered on the client and readable with
+  `clovyre_get_logs`, so quiet costs no diagnostics.
 - **Live observation** — install watchers on properties, attributes and children and poll the
   changes they record, instead of re-reading the same instance and missing what happened in between.
 - **Remote spy** — record the RemoteEvent and RemoteFunction calls the client sends, with serialized

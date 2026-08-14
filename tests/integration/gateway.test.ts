@@ -305,22 +305,145 @@ describe('command routing', () => {
     if (!outcome.ok) expect(outcome.code).toBe('CLIENT_NOT_CONNECTED');
   });
 
-  it('replaces an older connection rather than running two bridges', async () => {
+  it('replaces the older connection when the same executor re-runs the script', async () => {
     const { session, secrets } = newSession();
+    const shared = 'executor-key-same';
     const first = track(
-      new MockRobloxClient({ url: wsUrl, sessionId: session.id, token: secrets.robloxToken }),
+      new MockRobloxClient({
+        url: wsUrl,
+        sessionId: session.id,
+        token: secrets.robloxToken,
+        clientKey: shared,
+      }),
     );
     await first.connect();
 
     const second = track(
-      new MockRobloxClient({ url: wsUrl, sessionId: session.id, token: secrets.robloxToken }),
+      new MockRobloxClient({
+        url: wsUrl,
+        sessionId: session.id,
+        token: secrets.robloxToken,
+        clientKey: shared,
+      }),
     );
     await second.connect();
 
     await new Promise((resolve) => setTimeout(resolve, 200));
+    // One executor, one slot: two sockets for it would double-answer commands.
     expect(first.isOpen).toBe(false);
     expect(second.isOpen).toBe(true);
-    expect(getSessionBroker().isConnected(session.id)).toBe(true);
+    expect(session.robloxClients.size).toBe(1);
+  });
+
+  it('keeps both clients when two people run the same script', async () => {
+    const { session, secrets } = newSession();
+    const alice = track(
+      new MockRobloxClient({
+        url: wsUrl,
+        sessionId: session.id,
+        token: secrets.robloxToken,
+        clientKey: 'executor-key-alice',
+        metadata: {
+          placeId: 1,
+          localPlayer: { name: 'Alice', userId: 1 },
+          executor: 'ExecutorA',
+        },
+      }),
+    );
+    const aliceAck = await alice.connect();
+
+    const bob = track(
+      new MockRobloxClient({
+        url: wsUrl,
+        sessionId: session.id,
+        token: secrets.robloxToken,
+        clientKey: 'executor-key-bob',
+        metadata: {
+          placeId: 1,
+          localPlayer: { name: 'Bob', userId: 2 },
+          executor: 'ExecutorB',
+        },
+      }),
+    );
+    const bobAck = await bob.connect();
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Neither evicts the other, and each is told which client it is.
+    expect(alice.isOpen).toBe(true);
+    expect(bob.isOpen).toBe(true);
+    expect(session.robloxClients.size).toBe(2);
+    expect(aliceAck.clientId).not.toBe(bobAck.clientId);
+    expect(aliceAck.clientLabel).toBe('Alice');
+    expect(bobAck.clientLabel).toBe('Bob');
+  });
+
+  it('refuses to guess which client a tool call is for, and names both', async () => {
+    const { session, secrets } = newSession();
+    for (const [key, name] of [
+      ['client-key-one', 'Alice'],
+      ['client-key-two', 'Bob'],
+    ] as const) {
+      const client = track(
+        new MockRobloxClient({
+          url: wsUrl,
+          sessionId: session.id,
+          token: secrets.robloxToken,
+          clientKey: key,
+          metadata: { placeId: 1, localPlayer: { name, userId: 1 }, executor: 'Executor' },
+          respond: () => ({ kind: 'ok', result: { ok: true } }),
+        }),
+      );
+      await client.connect();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const ambiguous = await invokeTool(session, 'clovyre_get_services', {}, 'mcp');
+    expect(ambiguous.ok).toBe(false);
+    if (!ambiguous.ok) {
+      expect(ambiguous.code).toBe('CLIENT_AMBIGUOUS');
+      // The roster is what lets the agent ask a question a human can answer.
+      const detail = ambiguous.detail as { clients: Array<{ label: string }> };
+      expect(detail.clients.map((entry) => entry.label).sort()).toEqual(['Alice', 'Bob']);
+    }
+
+    // Naming one resolves it.
+    const chosen = [...session.robloxClients.values()][0]!;
+    const addressed = await invokeTool(
+      session,
+      'clovyre_get_services',
+      { client: chosen.clientId },
+      'mcp',
+    );
+    expect(addressed.ok).toBe(true);
+
+    // A label works too, since that is what a human would say.
+    const byLabel = await invokeTool(
+      session,
+      'clovyre_get_services',
+      { client: chosen.label },
+      'mcp',
+    );
+    expect(byLabel.ok).toBe(true);
+  });
+
+  it('fails a single-client call with no client argument only when none is attached', async () => {
+    const { session, secrets } = newSession();
+    const only = track(
+      new MockRobloxClient({
+        url: wsUrl,
+        sessionId: session.id,
+        token: secrets.robloxToken,
+        clientKey: 'solo-executor-key',
+        respond: () => ({ kind: 'ok', result: { services: [] } }),
+      }),
+    );
+    await only.connect();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // One client is unambiguous, so the call needs no addressing.
+    const result = await invokeTool(session, 'clovyre_get_services', {}, 'mcp');
+    expect(result.ok).toBe(true);
   });
 });
 

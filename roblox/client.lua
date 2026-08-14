@@ -80,14 +80,29 @@ local function pushLog(level, message)
     end
 end
 
+--- Whether the bridge may write to the executor console.
+--- Off until the server says otherwise: the console belongs to the user, and a
+--- tool bridge printing into it unasked is noise in their own output window.
+--- Every line is still recorded in the ring buffer above and readable through
+--- clovyre_get_logs, so turning printing off loses no diagnostics.
+local consoleOutput = false
+
+local function setConsoleOutput(enabled)
+    consoleOutput = enabled == true
+end
+
 local function info(message)
     pushLog('info', message)
-    print('[Clovyre] ' .. tostring(message))
+    if consoleOutput then
+        print('[Clovyre] ' .. tostring(message))
+    end
 end
 
 local function warnLog(message)
     pushLog('warn', message)
-    warn('[Clovyre] ' .. tostring(message))
+    if consoleOutput then
+        warn('[Clovyre] ' .. tostring(message))
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -2381,7 +2396,31 @@ local bridge = {
     generation = (genv.__ClovyreGeneration or 0) + 1,
     cancelled = {},
     heartbeatThread = nil,
+    clientId = nil,
+    clientLabel = nil,
 }
+
+--- Stable identity for this executor, kept in getgenv so it survives re-running
+--- the script. The server hashes it into a client id: the same key reclaims the
+--- same slot (re-running replaces one connection rather than stacking another),
+--- while a second person on another machine brings a different key and joins the
+--- session as an additional client instead of evicting the first.
+local function getClientKey()
+    local existing = genv.__ClovyreClientKey
+    if type(existing) == 'string' and #existing >= 8 then
+        return existing
+    end
+    local ok, generated = pcall(function()
+        return HttpService:GenerateGUID(false)
+    end)
+    if not ok or type(generated) ~= 'string' or #generated < 8 then
+        -- GenerateGUID is the good path; this is only so a stripped HttpService
+        -- still yields something stable for the life of the executor session.
+        generated = string.format('%d-%d', os.time(), math.random(1, 1e9))
+    end
+    genv.__ClovyreClientKey = generated
+    return generated
+end
 genv.__ClovyreGeneration = bridge.generation
 
 local function isCurrentGeneration()
@@ -2494,8 +2533,13 @@ local function handleMessage(raw)
     local messageType = message.type
 
     if messageType == 'hello_ack' then
-        info('Session ' .. tostring(message.sessionId) .. ' is live.')
+        setConsoleOutput(message.logging)
+        bridge.clientId = message.clientId
+        bridge.clientLabel = message.clientLabel
+        info('Session ' .. tostring(message.sessionId) .. ' is live as client ' .. tostring(message.clientId) .. '.')
         LIMITS.maxPayloadBytes = math.min(tonumber(message.maxPayloadBytes) or LIMITS.maxPayloadBytes, 2 * 1024 * 1024)
+    elseif messageType == 'settings_update' then
+        setConsoleOutput(message.logging)
     elseif messageType == 'command' then
         dispatchCommand(message)
     elseif messageType == 'cancel_command' then
@@ -2593,6 +2637,7 @@ local function connectOnce()
         capabilities = buildCapabilities(),
         metadata = collectMetadata(),
         bridgeVersion = BRIDGE_VERSION,
+        clientKey = getClientKey(),
     })
     if not sent then
         bridge.connected = false

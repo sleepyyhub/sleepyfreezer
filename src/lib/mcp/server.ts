@@ -68,6 +68,29 @@ function fail(
   };
 }
 
+/**
+ * Tools that accept a `client`. Anything forwarded to Roblox has to name the
+ * client it runs on once a session holds more than one, and the two observation
+ * readers accept it as a filter. It is added here rather than to each Zod schema
+ * because `client` addresses the call rather than describing it — the tool
+ * schemas stay strict and know nothing about routing.
+ */
+function acceptsClientArgument(definition: ToolDefinition): boolean {
+  return (
+    !definition.local ||
+    definition.name === 'clovyre_get_watch_events' ||
+    definition.name === 'clovyre_get_remote_calls'
+  );
+}
+
+const CLIENT_PROPERTY = {
+  type: 'string',
+  description:
+    'Which connected Roblox client to act on, by client id or label. Optional while one client ' +
+    'is attached. With several attached this is required: omitting it fails with CLIENT_AMBIGUOUS ' +
+    'and returns the roster, and the right response is to ask the user which client they mean.',
+} as const;
+
 /** JSON Schema for a tool, derived from its Zod definition. */
 export function toolInputJsonSchema(definition: ToolDefinition): Record<string, unknown> {
   const schema = zodToJsonSchema(definition.inputSchema, {
@@ -79,6 +102,14 @@ export function toolInputJsonSchema(definition: ToolDefinition): Record<string, 
     return { type: 'object', properties: {}, additionalProperties: false };
   }
   delete schema.$schema;
+
+  if (acceptsClientArgument(definition)) {
+    const properties = (schema.properties ?? {}) as Record<string, unknown>;
+    schema.properties = { ...properties, client: { ...CLIENT_PROPERTY } };
+    // `client` is peeled off before validation, so a strict schema must not
+    // reject it here either.
+    if (schema.additionalProperties === false) delete schema.additionalProperties;
+  }
   return schema;
 }
 

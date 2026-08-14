@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -12,7 +13,11 @@ import {
 import { getSessionBroker, type RobloxTransport } from '../src/lib/sessions/broker';
 import { getSessionStore, hashAddress } from '../src/lib/sessions/store';
 import { ingestClientEvent, resetObservations } from '../src/lib/sessions/observations';
-import { sessionStatus, type SessionRecord } from '../src/lib/sessions/types';
+import {
+  buildClientLabel,
+  sessionStatus,
+  type SessionRecord,
+} from '../src/lib/sessions/types';
 import { getRateLimiter } from '../src/lib/security/rate-limit';
 import { normalizeIncoming } from '../src/lib/serialization/roblox-value';
 import { generateEventId } from '../src/lib/security/tokens';
@@ -39,8 +44,23 @@ interface ConnectionState {
   readonly socket: WebSocket;
   readonly remoteAddressHash: string;
   sessionId: string | null;
+  /** Assigned at hello. Identifies which client of the session this socket is. */
+  clientId: string | null;
   helloTimer: NodeJS.Timeout | null;
   closed: boolean;
+}
+
+/**
+ * Stable client handle. The key is the client's own, so it is hashed with the
+ * session secret rather than used directly: it should not be possible to read a
+ * clientId off the wire and learn anything about the executor that produced it.
+ */
+function deriveClientId(sessionId: string, clientKey: string | null, connectionId: string): string {
+  if (!clientKey) return `rc_${connectionId.slice(0, 12)}`;
+  const digest = createHmac('sha256', getConfig().sessionSecret)
+    .update(`${sessionId}:${clientKey}`)
+    .digest('hex');
+  return `rc_${digest.slice(0, 12)}`;
 }
 
 function send(socket: WebSocket, message: ServerMessage): void {
@@ -106,6 +126,7 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
       socket,
       remoteAddressHash: hashAddress(clientAddress(request)),
       sessionId: null,
+      clientId: null,
       helloTimer: null,
       closed: false,
     };
@@ -189,7 +210,8 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
 
     switch (message.type) {
       case 'heartbeat': {
-        if (session.roblox) session.roblox.lastHeartbeatAt = Date.now();
+        const client = state.clientId ? session.robloxClients.get(state.clientId) : undefined;
+        if (client) client.lastHeartbeatAt = Date.now();
         send(state.socket, {
           protocolVersion: PROTOCOL_VERSION,
           type: 'heartbeat_ack',
@@ -234,7 +256,12 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
       case 'event': {
         // Watcher and remote-spy traffic is high volume, so it goes into the
         // bounded observation buffers instead of the audit trail.
-        const consumed = ingestClientEvent(session, message.event, message.data);
+        const consumed = ingestClientEvent(
+          session,
+          state.clientId ?? 'unknown',
+          message.event,
+          message.data,
+        );
         if (!consumed) {
           session.audit.record({
             kind: 'client_event',
@@ -258,7 +285,9 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
       }
 
       case 'capabilities_update': {
-        store.updateCapabilities(session, message.capabilities);
+        const client = state.clientId ? session.robloxClients.get(state.clientId) : undefined;
+        if (client) client.capabilities = message.capabilities;
+        store.refreshCapabilities(session);
         session.audit.record({
           kind: 'capabilities_reported',
           actor: 'roblox',
@@ -333,23 +362,44 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
         }
       },
     };
-    broker.attachRoblox(session.id, transport);
+    // Derive a stable handle from the key the client keeps in getgenv, so
+    // re-running the script in the same executor reclaims the same slot instead
+    // of piling up connections. Clients that send no key get a per-connection
+    // handle, which simply means every run of those joins as a new client.
+    const clientId = deriveClientId(session.id, message.clientKey ?? null, state.id);
+    state.clientId = clientId;
 
-    session.roblox = {
+    broker.attachRoblox(session.id, clientId, transport);
+
+    const existing = session.robloxClients.get(clientId);
+    const label = buildClientLabel(message.metadata, clientId);
+    session.robloxClients.set(clientId, {
+      clientId,
       connectionId: state.id,
-      connectedAt: Date.now(),
+      // Keep the original join time when the same client reconnects.
+      connectedAt: existing?.connectedAt ?? Date.now(),
       lastHeartbeatAt: Date.now(),
       remoteAddressHash: state.remoteAddressHash,
       bridgeVersion: message.bridgeVersion ?? null,
-    };
-    store.updateCapabilities(session, message.capabilities);
-    store.updateMetadata(session, message.metadata);
+      capabilities: message.capabilities,
+      metadata: message.metadata,
+      label,
+    });
+
+    store.refreshCapabilities(session);
+    // The dashboard summary follows the first client that joined.
+    if (session.metadata === null || session.robloxClients.size === 1) {
+      store.updateMetadata(session, message.metadata);
+    }
 
     session.audit.record({
       kind: 'roblox_connected',
       actor: 'roblox',
-      message: `Roblox client connected${message.metadata.executor ? ` via ${message.metadata.executor}` : ''}.`,
+      message: `Roblox client "${label}" connected${
+        message.metadata.executor ? ` via ${message.metadata.executor}` : ''
+      }. ${session.robloxClients.size} client(s) now attached.`,
       detail: {
+        clientId,
         placeId: message.metadata.placeId,
         jobId: message.metadata.jobId,
         bridgeVersion: message.bridgeVersion,
@@ -361,10 +411,13 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
       protocolVersion: PROTOCOL_VERSION,
       type: 'hello_ack',
       sessionId: session.id,
+      clientId,
+      clientLabel: label,
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       maxPayloadBytes: config.maxWsPayloadBytes,
       expiresAt: session.expiresAt,
       serverTime: Date.now(),
+      logging: session.settings.clientLogging,
     });
   }
 
@@ -374,19 +427,24 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
     connections.delete(state);
     if (state.helloTimer) clearTimeout(state.helloTimer);
 
-    if (!state.sessionId) return;
+    if (!state.sessionId || !state.clientId) return;
     const session = store.get(state.sessionId);
-    if (session?.roblox?.connectionId === state.id) {
-      session.roblox = null;
+    const client = session?.robloxClients.get(state.clientId);
+    // A newer socket may already have reclaimed this clientId, in which case the
+    // client is still present and nothing should be torn down.
+    if (session && client && client.connectionId === state.id) {
+      session.robloxClients.delete(state.clientId);
       // Hooks and watchers lived in the client that just went away.
-      resetObservations(session);
+      resetObservations(session, state.clientId);
+      store.refreshCapabilities(session);
       session.audit.record({
         kind: 'roblox_disconnected',
         actor: 'roblox',
-        message: `Roblox client disconnected (${reason}).`,
+        message: `Roblox client "${client.label}" disconnected (${reason}). ${session.robloxClients.size} client(s) remain.`,
+        detail: { clientId: state.clientId },
       });
     }
-    broker.detachRoblox(state.sessionId, state.id);
+    broker.detachRoblox(state.sessionId, state.clientId, state.id);
   }
 
   /** Drops sessions whose client stopped sending heartbeats, and ends dead sessions. */
@@ -419,7 +477,8 @@ export function createRobloxGateway(server: HttpServer): GatewayHandle {
         );
         continue;
       }
-      if (session.roblox && now - session.roblox.lastHeartbeatAt > HEARTBEAT_GRACE_MS) {
+      const client = state.clientId ? session.robloxClients.get(state.clientId) : undefined;
+      if (client && now - client.lastHeartbeatAt > HEARTBEAT_GRACE_MS) {
         state.socket.close(4008, 'heartbeat timeout');
       }
     }

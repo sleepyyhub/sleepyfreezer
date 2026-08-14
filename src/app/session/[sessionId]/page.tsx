@@ -132,6 +132,14 @@ export default function SessionOverviewPage({
     setPendingPrivilege(null);
   };
 
+  const setClientLogging = async (enabled: boolean) => {
+    setActionError(null);
+    const outcome = await mutate(`/api/sessions/${sessionId}/settings`, {
+      body: { clientLogging: enabled },
+    });
+    if (!outcome.ok) setActionError(outcome.message);
+  };
+
   const revokeCredential = async (role: string) => {
     setActionError(null);
     const outcome = await mutate(`/api/sessions/${sessionId}/credentials`, { body: { role } });
@@ -200,6 +208,55 @@ export default function SessionOverviewPage({
               <Field label="Session age">{formatDuration(session.ageSeconds)}</Field>
               <Field label="Protocol">v{session.protocolVersion}</Field>
             </div>
+
+            <div className="mt-6 flex flex-wrap items-start justify-between gap-4 border-t border-edge pt-5">
+              <div className="min-w-0 max-w-lg">
+                <h3 className="text-[13.5px] font-semibold text-ink">Executor console output</h3>
+                <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
+                  Off by default, so the bridge prints nothing into your executor&rsquo;s output
+                  window. Logs are kept on the client either way and stay readable through
+                  clovyre_get_logs, so turning this off hides nothing from you.
+                </p>
+              </div>
+              <Toggle
+                checked={session.settings.clientLogging}
+                disabled={session.status !== 'active'}
+                label="Executor console output"
+                onChange={(next) => void setClientLogging(next)}
+              />
+            </div>
+
+            {session.roblox.clientCount > 1 ? (
+              <div className="mt-6 border-t border-edge pt-5">
+                <div className="cl-label mb-3">
+                  {session.roblox.clientCount} clients on this session
+                </div>
+                <p className="mb-4 text-[12.5px] leading-relaxed text-ink-muted">
+                  Everyone running this script shares the session. An agent must name which client a
+                  tool call is for; asked without one, it is told to check with you rather than
+                  pick.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {session.roblox.clients.map((client) => (
+                    <div
+                      key={client.clientId}
+                      className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg border border-edge px-3.5 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[13px] font-medium text-ink">{client.label}</span>
+                        <span className="ml-2 font-mono text-[11.5px] text-ink-faint">
+                          {client.clientId}
+                        </span>
+                      </div>
+                      <div className="text-[12px] text-ink-muted">
+                        {client.executor ?? 'unknown executor'} · joined{' '}
+                        {relativeTime(client.connectedAt)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </Panel>
 
           {/* Loadstring */}

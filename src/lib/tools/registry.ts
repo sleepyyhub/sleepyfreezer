@@ -77,6 +77,20 @@ function tool<TSchema extends z.ZodTypeAny>(definition: ToolDefinition<TSchema>)
 
 const sessionTools: ToolDefinition[] = [
   tool({
+    name: 'clovyre_list_clients',
+    title: 'List connected Roblox clients',
+    description:
+      'Lists every Roblox client attached to this session, with the account, executor and place ' +
+      'for each. Call this when a tool reports CLIENT_AMBIGUOUS: show the user this list, ask ' +
+      'which client they mean, then pass that client id as the "client" argument. Never guess ' +
+      'which client to act on -- they are different people\u2019s games.',
+    category: 'session',
+    inputSchema: empty,
+    local: true,
+    readOnly: true,
+    defaultTimeoutMs: 5_000,
+  }),
+  tool({
     name: 'clovyre_session_info',
     title: 'Session information',
     description:

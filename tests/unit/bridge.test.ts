@@ -18,6 +18,33 @@ import { SAFE_PROPERTIES } from '../../src/lib/tools/safe-properties';
 const source = readFileSync(join(process.cwd(), 'roblox', 'client.lua'), 'utf8');
 
 describe('roblox/client.lua', () => {
+  it('never writes to the executor console outside the gated log helpers', () => {
+    // Console output is opt-in per session, so a bare print()/warn() anywhere in
+    // the bridge would leak into the user's own output window regardless of the
+    // setting. Only info() and warnLog() may reach the console, and both check
+    // the flag the server pushes.
+    const offenders: string[] = [];
+    source.split('\n').forEach((line, index) => {
+      const code = line.replace(/--.*$/, '');
+      if (!/(^|[^%\w.])(print|warn)\s*\(/.test(code)) return;
+      offenders.push(`${index + 1}: ${line.trim()}`);
+    });
+
+    // The two permitted call sites live inside info() and warnLog().
+    expect(offenders).toHaveLength(2);
+    for (const offender of offenders) {
+      expect(offender).toMatch(/\[Clovyre\]/);
+    }
+    expect(source).toContain('if consoleOutput then');
+  });
+
+  it('keeps a stable client key so re-running replaces instead of stacking', () => {
+    // The key must persist in getgenv: a fresh key on every run would make one
+    // person's repeated executions look like a crowd of different clients.
+    expect(source).toContain('genv.__ClovyreClientKey');
+    expect(source).toContain('clientKey = getClientKey()');
+  });
+
   it('is syntactically valid Lua', () => {
     expect(() => parse(source, { luaVersion: '5.3', comments: false })).not.toThrow();
   });

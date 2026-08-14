@@ -62,7 +62,8 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       4003,
       'roblox credential revoked',
     );
-    auth.session.roblox = null;
+    // Every client authenticated with the credential that was just revoked.
+    auth.session.robloxClients.clear();
   }
 
   if (role === 'mcp') {

@@ -2,7 +2,13 @@ import { Pool } from 'pg';
 import { AuditLog } from '../audit/audit-log';
 import { getConfig } from '../config';
 import type { CapabilityMap, ClientMetadata } from '../protocol/messages';
-import { createObservations, type PrivilegeState, type SessionRecord } from './types';
+import {
+  createObservations,
+  createSettings,
+  type PrivilegeState,
+  type SessionRecord,
+  type SessionSettings,
+} from './types';
 
 /**
  * Session persistence.
@@ -37,11 +43,17 @@ CREATE TABLE IF NOT EXISTS clovyre_sessions (
   privileges           JSONB NOT NULL,
   capabilities         JSONB NOT NULL DEFAULT '{}'::JSONB,
   metadata             JSONB,
+  settings             JSONB NOT NULL DEFAULT '{}'::JSONB,
   creator_address_hash TEXT NOT NULL,
   updated_at           BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS clovyre_sessions_terminated_idx
   ON clovyre_sessions (terminated_at);
+
+-- Added after the table shipped, so existing deployments need the column too.
+-- CREATE TABLE IF NOT EXISTS leaves an existing table untouched.
+ALTER TABLE clovyre_sessions
+  ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::JSONB;
 `;
 
 type PoolGlobal = typeof globalThis & { __clovyrePool?: Pool | null };
@@ -95,6 +107,7 @@ interface SessionRow {
   privileges: Record<string, PrivilegeState>;
   capabilities: CapabilityMap;
   metadata: ClientMetadata | null;
+  settings: Partial<SessionSettings> | null;
   creator_address_hash: string;
 }
 
@@ -123,10 +136,11 @@ function rowToSession(row: SessionRow): SessionRecord {
     },
     capabilities: row.capabilities ?? {},
     metadata: row.metadata,
+    settings: { ...createSettings(), ...(row.settings ?? {}) },
     creatorAddressHash: row.creator_address_hash,
 
     // Connection-scoped state never survives the process that owned it.
-    roblox: null,
+    robloxClients: new Map(),
     mcpConnections: new Map(),
     commands: new Map(),
     commandOrder: [],
@@ -142,7 +156,8 @@ export async function loadSessions(): Promise<SessionRecord[]> {
 
   const result = await pool.query<SessionRow>(
     `SELECT id, created_at, sequence, expires_at, terminated_at, termination_reason,
-            credentials, csrf_token, privileges, capabilities, metadata, creator_address_hash
+            credentials, csrf_token, privileges, capabilities, metadata, settings,
+            creator_address_hash
        FROM clovyre_sessions
       WHERE terminated_at IS NULL
       ORDER BY sequence ASC`,
@@ -168,6 +183,7 @@ export function persistSession(session: SessionRecord): void {
     JSON.stringify(session.privileges),
     JSON.stringify(session.capabilities),
     session.metadata === null ? null : JSON.stringify(session.metadata),
+    JSON.stringify(session.settings),
     session.creatorAddressHash,
     Date.now(),
   ];
@@ -176,9 +192,9 @@ export function persistSession(session: SessionRecord): void {
     .query(
       `INSERT INTO clovyre_sessions (
          id, created_at, sequence, expires_at, terminated_at, termination_reason,
-         credentials, csrf_token, privileges, capabilities, metadata,
+         credentials, csrf_token, privileges, capabilities, metadata, settings,
          creator_address_hash, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (id) DO UPDATE SET
          expires_at = EXCLUDED.expires_at,
          terminated_at = EXCLUDED.terminated_at,
@@ -187,6 +203,7 @@ export function persistSession(session: SessionRecord): void {
          privileges = EXCLUDED.privileges,
          capabilities = EXCLUDED.capabilities,
          metadata = EXCLUDED.metadata,
+         settings = EXCLUDED.settings,
          updated_at = EXCLUDED.updated_at`,
       values,
     )

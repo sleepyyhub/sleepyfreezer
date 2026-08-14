@@ -11,6 +11,8 @@ export const metadata: Metadata = {
 const sections = [
   { id: 'architecture', label: 'Architecture' },
   { id: 'quickstart', label: 'Quick start' },
+  { id: 'clients', label: 'Multiple clients' },
+  { id: 'quiet', label: 'Console output' },
   { id: 'connect-claude', label: 'Connecting Claude' },
   { id: 'tools', label: 'Tools' },
   { id: 'privileged', label: 'Privileged tools' },
@@ -88,6 +90,11 @@ const apiRoutes = [
     '/api/sessions/{id}/tools',
     'Runs a Clovyre tool as the owner. Same path MCP clients use.',
   ],
+  [
+    'POST',
+    '/api/sessions/{id}/settings',
+    'Toggles executor console output for connected clients. Owner only.',
+  ],
   ['POST', '/api/mcp/{id}', 'Remote MCP endpoint. Bearer token authentication.'],
   [
     'POST',
@@ -154,6 +161,44 @@ Claude · Claude Code · Codex · other MCP client`}</Pre>
             connection — the WebSocket, pending commands, observation buffers and the audit trail.
             Those describe a process that no longer exists, and they rebuild the moment your Roblox
             client reconnects.
+          </P>
+        </Section>
+
+        <Section id="clients" title="More than one client">
+          <P>
+            A session is not limited to one Roblox client. Everyone who runs the same script joins
+            the same session, which is what makes it useful for two people in the same experience.
+            Re-running the script in the same executor replaces that client rather than adding
+            another, because the bridge keeps a stable key in <Code>getgenv</Code>.
+          </P>
+          <P>
+            With several clients attached, a tool call has to say which one it is for, using the{' '}
+            <Code>client</Code> argument that every Roblox-bound tool accepts. Omitting it does not
+            pick a default: the call fails with <Code>CLIENT_AMBIGUOUS</Code> and returns the list
+            of connected clients, and the agent is told to ask you which one you mean.{' '}
+            <strong className="text-ink">That refusal is deliberate.</strong> The clients are
+            different people&rsquo;s games, and a mutation sent to the wrong one is not something a
+            retry can undo.
+          </P>
+          <P>
+            <Code>clovyre_list_clients</Code> returns the roster at any time: client id, account,
+            executor and place for each. Watchers and the remote spy belong to the client that
+            installed them, and their events carry the client id, so an agent can tell whose game a
+            change happened in.
+          </P>
+        </Section>
+
+        <Section id="quiet" title="Executor console output">
+          <P>
+            The bridge prints nothing to your executor&rsquo;s output window unless you turn console
+            output on in the dashboard. It is off by default: the console is your own workspace, and
+            a tool bridge writing into it unasked is noise you did not ask for.
+          </P>
+          <P>
+            Nothing is lost by leaving it off. Every line the bridge would have printed still goes
+            to its in-memory ring buffer, so <Code>clovyre_get_logs</Code> returns the same
+            diagnostics either way. Toggling the setting takes effect on connected clients
+            immediately, without re-running the script.
           </P>
         </Section>
 

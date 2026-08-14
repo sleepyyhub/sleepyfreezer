@@ -4,6 +4,7 @@ import { evaluateAllTools } from '../mcp/tool-availability';
 import { getSessionBroker } from './broker';
 import { getSessionStore } from './store';
 import {
+  connectedClients,
   sessionStatus,
   type CredentialRole,
   type PrivilegeName,
@@ -72,6 +73,18 @@ export interface ToolAvailabilityView {
   readonly requiresPrivilege: string | null;
 }
 
+export interface RobloxClientView {
+  readonly clientId: string;
+  readonly label: string;
+  readonly account: string | null;
+  readonly userId: number | null;
+  readonly executor: string | null;
+  readonly place: string | null;
+  readonly connectedAt: string;
+  readonly lastHeartbeatAt: string;
+  readonly bridgeVersion: string | null;
+}
+
 export interface SessionView {
   readonly id: string;
   readonly status: SessionStatus;
@@ -85,12 +98,16 @@ export interface SessionView {
 
   readonly roblox: {
     readonly connected: boolean;
+    readonly clientCount: number;
+    readonly clients: readonly RobloxClientView[];
+    /** Summary fields describing the first-connected client. */
     readonly connectedAt: string | null;
     readonly lastHeartbeatAt: string | null;
     readonly bridgeVersion: string | null;
   };
   readonly metadata: ClientMetadata | null;
   readonly capabilities: CapabilityMap;
+  readonly settings: { readonly clientLogging: boolean };
 
   readonly mcp: {
     readonly connectionCount: number;
@@ -119,6 +136,8 @@ export function buildSessionView(session: SessionRecord, now = Date.now()): Sess
   const config = getConfig();
   const store = getSessionStore();
   const broker = getSessionBroker();
+  const clients = connectedClients(session);
+  const primary = clients[0] ?? null;
 
   const credential = (role: CredentialRole): CredentialView => {
     const record = session.credentials[role];
@@ -185,15 +204,28 @@ export function buildSessionView(session: SessionRecord, now = Date.now()): Sess
     protocolVersion: PROTOCOL_VERSION,
 
     roblox: {
-      connected: broker.isConnected(session.id) && session.roblox !== null,
-      connectedAt: session.roblox ? new Date(session.roblox.connectedAt).toISOString() : null,
-      lastHeartbeatAt: session.roblox
-        ? new Date(session.roblox.lastHeartbeatAt).toISOString()
-        : null,
-      bridgeVersion: session.roblox?.bridgeVersion ?? null,
+      connected: clients.length > 0,
+      clientCount: clients.length,
+      clients: clients.map((client) => ({
+        clientId: client.clientId,
+        label: client.label,
+        account: client.metadata?.localPlayer?.name ?? null,
+        userId: client.metadata?.localPlayer?.userId ?? null,
+        executor: client.metadata?.executor ?? null,
+        place: client.metadata?.gameName ?? null,
+        connectedAt: new Date(client.connectedAt).toISOString(),
+        lastHeartbeatAt: new Date(client.lastHeartbeatAt).toISOString(),
+        bridgeVersion: client.bridgeVersion,
+      })),
+      // The summary fields describe the first client, so a single-client session
+      // reads exactly as it did before.
+      connectedAt: primary ? new Date(primary.connectedAt).toISOString() : null,
+      lastHeartbeatAt: primary ? new Date(primary.lastHeartbeatAt).toISOString() : null,
+      bridgeVersion: primary?.bridgeVersion ?? null,
     },
     metadata: session.metadata,
     capabilities: session.capabilities,
+    settings: { clientLogging: session.settings.clientLogging },
 
     mcp: {
       connectionCount: session.mcpConnections.size,

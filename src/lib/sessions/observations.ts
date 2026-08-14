@@ -57,7 +57,12 @@ function push<T>(buffer: T[], item: T, max: number): boolean {
  * Routes one `event` frame into session state.
  * Returns true when the event was recognised and consumed.
  */
-export function ingestClientEvent(session: SessionRecord, event: string, data: unknown): boolean {
+export function ingestClientEvent(
+  session: SessionRecord,
+  clientId: string,
+  event: string,
+  data: unknown,
+): boolean {
   const observations = session.observations;
 
   switch (event) {
@@ -69,6 +74,7 @@ export function ingestClientEvent(session: SessionRecord, event: string, data: u
         observations.watchEvents,
         {
           at: parsed.data.at ?? Date.now(),
+          clientId,
           watchId: parsed.data.watchId,
           kind: parsed.data.kind,
           target: parsed.data.target,
@@ -88,6 +94,7 @@ export function ingestClientEvent(session: SessionRecord, event: string, data: u
         observations.remoteCalls,
         {
           at: parsed.data.at ?? Date.now(),
+          clientId,
           remote: parsed.data.remote,
           className: parsed.data.className,
           method: parsed.data.method,
@@ -105,12 +112,16 @@ export function ingestClientEvent(session: SessionRecord, event: string, data: u
     case 'watch_state': {
       const parsed = watchStateSchema.safeParse(data);
       if (!parsed.success) return false;
-      observations.activeWatches.clear();
+      // A client reports its own full watch set, so only its entries are replaced.
+      for (const [watchId, watch] of observations.activeWatches) {
+        if (watch.clientId === clientId) observations.activeWatches.delete(watchId);
+      }
       for (const watch of parsed.data.watches) {
         observations.activeWatches.set(watch.watchId, {
           target: watch.target,
           kinds: watch.kinds,
           startedAt: Date.now(),
+          clientId,
         });
       }
       return true;
@@ -119,8 +130,12 @@ export function ingestClientEvent(session: SessionRecord, event: string, data: u
     case 'remote_spy_state': {
       const parsed = remoteSpyStateSchema.safeParse(data);
       if (!parsed.success) return false;
-      observations.remoteSpyActive = parsed.data.active;
-      observations.remoteSpyStartedAt = parsed.data.active ? Date.now() : null;
+      if (parsed.data.active) observations.remoteSpyClients.add(clientId);
+      else observations.remoteSpyClients.delete(clientId);
+      observations.remoteSpyActive = observations.remoteSpyClients.size > 0;
+      observations.remoteSpyStartedAt = observations.remoteSpyActive
+        ? (observations.remoteSpyStartedAt ?? Date.now())
+        : null;
       return true;
     }
 
@@ -129,9 +144,23 @@ export function ingestClientEvent(session: SessionRecord, event: string, data: u
   }
 }
 
-/** Clears observation state when a client disconnects; the hooks went with it. */
-export function resetObservations(session: SessionRecord): void {
-  session.observations.activeWatches.clear();
-  session.observations.remoteSpyActive = false;
-  session.observations.remoteSpyStartedAt = null;
+/**
+ * Clears observation state when a client disconnects; its hooks went with it.
+ * Other clients keep watching, so only the departing client's state is dropped.
+ * Buffered events are left in place: they are history, and history stays true
+ * after the observer leaves.
+ */
+export function resetObservations(session: SessionRecord, clientId?: string): void {
+  const observations = session.observations;
+  if (clientId === undefined) {
+    observations.activeWatches.clear();
+    observations.remoteSpyClients.clear();
+  } else {
+    for (const [watchId, watch] of observations.activeWatches) {
+      if (watch.clientId === clientId) observations.activeWatches.delete(watchId);
+    }
+    observations.remoteSpyClients.delete(clientId);
+  }
+  observations.remoteSpyActive = observations.remoteSpyClients.size > 0;
+  if (!observations.remoteSpyActive) observations.remoteSpyStartedAt = null;
 }

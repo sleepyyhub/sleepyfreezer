@@ -183,6 +183,7 @@ describe('operator overview', () => {
     session.commandOrder.push('cmd_x');
     session.commands.set('cmd_x', {
       id: 'cmd_x',
+      clientId: 'rc_test',
       tool: 'clovyre_inspect_instance',
       startedAt: Date.now(),
       timeoutMs: 1000,

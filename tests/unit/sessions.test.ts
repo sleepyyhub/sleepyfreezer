@@ -1,6 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionStore } from '../../src/lib/sessions/store';
-import { sessionStatus } from '../../src/lib/sessions/types';
+import {
+  connectedClients,
+  findClient,
+  sessionStatus,
+  type SessionRecord,
+} from '../../src/lib/sessions/types';
 import { getConfig, resetConfigForTests } from '../../src/lib/config';
 import {
   fingerprint,
@@ -217,6 +222,89 @@ describe('privileges', () => {
 
     delete process.env.PRIVILEGE_TTL_MINUTES;
     resetConfigForTests();
+  });
+});
+
+describe('multiple Roblox clients on one session', () => {
+  let store: SessionStore;
+  beforeEach(() => {
+    resetConfigForTests();
+    store = new SessionStore();
+  });
+
+  function attach(session: SessionRecord, clientId: string, name: string, at: number) {
+    session.robloxClients.set(clientId, {
+      clientId,
+      connectionId: `conn_${clientId}`,
+      connectedAt: at,
+      lastHeartbeatAt: at,
+      remoteAddressHash: 'hash',
+      bridgeVersion: '0.1.0',
+      capabilities: { websocket: true },
+      metadata: { placeId: 1, localPlayer: { name, userId: 1 } },
+      label: name,
+    });
+  }
+
+  it('orders clients by when they joined, not by map insertion', () => {
+    const { session } = store.create();
+    attach(session, 'rc_b', 'Bob', 2000);
+    attach(session, 'rc_a', 'Alice', 1000);
+
+    expect(connectedClients(session).map((client) => client.label)).toEqual(['Alice', 'Bob']);
+  });
+
+  it('resolves a client by id, by label and by unique id prefix', () => {
+    const { session } = store.create();
+    attach(session, 'rc_alice1', 'Alice', 1000);
+    attach(session, 'rc_bob222', 'Bob', 2000);
+
+    expect(findClient(session, 'rc_alice1')?.label).toBe('Alice');
+    // Case-insensitive, because a label round-trips through a human.
+    expect(findClient(session, 'bob')?.clientId).toBe('rc_bob222');
+    expect(findClient(session, 'rc_al')?.label).toBe('Alice');
+    // A prefix matching both is not a choice, so it resolves to nothing.
+    expect(findClient(session, 'rc_')).toBeNull();
+    expect(findClient(session, 'nobody')).toBeNull();
+  });
+
+  it('reports the union of what the connected clients can do', () => {
+    const { session } = store.create();
+    attach(session, 'rc_a', 'Alice', 1000);
+    attach(session, 'rc_b', 'Bob', 2000);
+    session.robloxClients.get('rc_a')!.capabilities = { websocket: true, decompile: true };
+    session.robloxClients.get('rc_b')!.capabilities = { websocket: true, getgc: true };
+
+    store.refreshCapabilities(session);
+    expect(session.capabilities).toEqual({ websocket: true, decompile: true, getgc: true });
+  });
+});
+
+describe('session settings', () => {
+  let store: SessionStore;
+  beforeEach(() => {
+    resetConfigForTests();
+    store = new SessionStore();
+  });
+
+  it('keeps executor console output off until the owner asks for it', () => {
+    const { session } = store.create();
+    // The console belongs to the user; the bridge stays out of it by default.
+    expect(session.settings.clientLogging).toBe(false);
+
+    store.setClientLogging(session, true, 'owner');
+    expect(session.settings.clientLogging).toBe(true);
+    expect(session.audit.list().some((event) => event.kind === 'settings_enabled')).toBe(true);
+
+    store.setClientLogging(session, false, 'owner');
+    expect(session.settings.clientLogging).toBe(false);
+    expect(session.audit.list().some((event) => event.kind === 'settings_disabled')).toBe(true);
+  });
+
+  it('does not audit a setting that did not change', () => {
+    const { session } = store.create();
+    store.setClientLogging(session, false, 'owner');
+    expect(session.audit.list().some((event) => event.kind.startsWith('settings_'))).toBe(false);
   });
 });
 

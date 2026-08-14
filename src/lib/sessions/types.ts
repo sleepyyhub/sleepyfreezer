@@ -29,12 +29,24 @@ export interface PrivilegeState {
   enabledAt: number | null;
 }
 
-export interface RobloxConnectionState {
+/**
+ * One live Roblox client. A session may hold several at once: two people running
+ * the same script both belong to the session, and a tool call names which one it
+ * is for.
+ */
+export interface RobloxClientState {
+  /** Server-assigned handle, stable for as long as this client stays connected. */
+  readonly clientId: string;
   readonly connectionId: string;
   readonly connectedAt: number;
   lastHeartbeatAt: number;
   readonly remoteAddressHash: string;
   bridgeVersion: string | null;
+  /** Capabilities this particular executor reported. They differ between clients. */
+  capabilities: CapabilityMap;
+  metadata: ClientMetadata | null;
+  /** Display name: the Roblox account where known, else the executor. */
+  label: string;
 }
 
 export interface McpConnectionState {
@@ -51,6 +63,8 @@ export type CommandStatus = 'pending' | 'succeeded' | 'failed' | 'timeout' | 'ca
 export interface CommandRecord {
   readonly id: string;
   readonly tool: string;
+  /** Which Roblox client the command was sent to. */
+  readonly clientId: string;
   readonly startedAt: number;
   readonly timeoutMs: number;
   readonly origin: 'mcp' | 'owner' | 'system';
@@ -67,6 +81,8 @@ export interface CommandRecord {
 /** One change reported by an active watcher on the client. */
 export interface WatchEvent {
   readonly at: number;
+  /** Which client observed it. Several clients may watch at once. */
+  readonly clientId: string;
   readonly watchId: string;
   readonly kind: 'property' | 'childAdded' | 'childRemoved' | 'attribute';
   readonly target: string;
@@ -76,6 +92,7 @@ export interface WatchEvent {
 /** One outbound remote call observed on the client. */
 export interface RemoteCallEvent {
   readonly at: number;
+  readonly clientId: string;
   readonly remote: string;
   readonly className: string;
   readonly method: string;
@@ -94,7 +111,9 @@ export interface Observations {
   watchEvents: WatchEvent[];
   remoteCalls: RemoteCallEvent[];
   /** Watch ids the client reports as currently installed. */
-  activeWatches: Map<string, { target: string; kinds: string[]; startedAt: number }>;
+  activeWatches: Map<string, { target: string; kinds: string[]; startedAt: number; clientId: string }>;
+  /** Clients currently running the remote spy. */
+  remoteSpyClients: Set<string>;
   remoteSpyActive: boolean;
   remoteSpyStartedAt: number | null;
   /** Counts of what was dropped once a buffer filled. */
@@ -113,6 +132,7 @@ export function createObservations(): Observations {
     watchEvents: [],
     remoteCalls: [],
     activeWatches: new Map(),
+    remoteSpyClients: new Set(),
     remoteSpyActive: false,
     remoteSpyStartedAt: null,
     droppedWatchEvents: 0,
@@ -140,11 +160,21 @@ export interface SessionRecord {
 
   readonly privileges: Record<PrivilegeName, PrivilegeState>;
 
-  roblox: RobloxConnectionState | null;
+  /** Every live Roblox client, keyed by clientId, in connection order. */
+  readonly robloxClients: Map<string, RobloxClientState>;
   readonly mcpConnections: Map<string, McpConnectionState>;
 
+  /**
+   * Session-level capability view: the union across connected clients. The MCP
+   * tool list is per session, not per client, so a tool is offered when some
+   * connected client can run it. Whether the *chosen* client can is settled at
+   * dispatch, where the bridge answers CAPABILITY_UNAVAILABLE by name.
+   */
   capabilities: CapabilityMap;
+  /** Metadata of the first-connected client, kept for the dashboard summary. */
   metadata: ClientMetadata | null;
+
+  readonly settings: SessionSettings;
 
   readonly commands: Map<string, CommandRecord>;
   readonly commandOrder: string[];
@@ -156,6 +186,62 @@ export interface SessionRecord {
   /** Populated when the session was created behind a proxy. Hashed, not raw. */
   readonly creatorAddressHash: string;
 
+}
+
+export interface SessionSettings {
+  /**
+   * Whether the bridge prints to the executor console. Off by default: the
+   * console is the user's own output window, and a tool bridge has no business
+   * writing to it unless asked. Logs are always kept in the client's ring buffer
+   * and reachable through clovyre_get_logs regardless.
+   */
+  clientLogging: boolean;
+}
+
+export function createSettings(): SessionSettings {
+  return { clientLogging: false };
+}
+
+/** Live clients in connection order, oldest first. */
+export function connectedClients(session: SessionRecord): RobloxClientState[] {
+  return [...session.robloxClients.values()].sort((a, b) => a.connectedAt - b.connectedAt);
+}
+
+/**
+ * Resolves the client a tool call names. Accepts the clientId or the label, and
+ * matches case-insensitively so an agent can pass back what a human said.
+ */
+export function findClient(session: SessionRecord, selector: string): RobloxClientState | null {
+  const wanted = selector.trim().toLowerCase();
+  if (wanted.length === 0) return null;
+  const clients = connectedClients(session);
+  return (
+    clients.find((client) => client.clientId.toLowerCase() === wanted) ??
+    clients.find((client) => client.label.toLowerCase() === wanted) ??
+    // A unique prefix is enough; an ambiguous one is treated as no match.
+    (clients.filter((client) => client.clientId.toLowerCase().startsWith(wanted)).length === 1
+      ? (clients.find((client) => client.clientId.toLowerCase().startsWith(wanted)) ?? null)
+      : null)
+  );
+}
+
+/** Builds the display label for a client from whatever identity it reported. */
+export function buildClientLabel(metadata: ClientMetadata | null, clientId: string): string {
+  const player = metadata?.localPlayer?.name;
+  if (player) return player;
+  if (metadata?.executor) return metadata.executor;
+  return clientId;
+}
+
+/** Union of what every connected client reports. */
+export function unionCapabilities(session: SessionRecord): CapabilityMap {
+  const union: CapabilityMap = {};
+  for (const client of session.robloxClients.values()) {
+    for (const [name, enabled] of Object.entries(client.capabilities)) {
+      if (enabled) union[name as keyof CapabilityMap] = true;
+    }
+  }
+  return union;
 }
 
 export type SessionStatus = 'active' | 'expired' | 'terminated';

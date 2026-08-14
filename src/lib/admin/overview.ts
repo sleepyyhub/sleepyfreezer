@@ -1,5 +1,4 @@
 import { getConfig } from '../config';
-import { getSessionBroker } from '../sessions/broker';
 import { getSessionStore } from '../sessions/store';
 import { sessionStatus, type SessionRecord } from '../sessions/types';
 
@@ -39,6 +38,8 @@ export interface ConnectedSessionRow {
   readonly sessionId: string;
   readonly status: 'active' | 'expired' | 'terminated';
   readonly robloxConnected: boolean;
+  /** How many people are running the script against this one session. */
+  readonly robloxClientCount: number;
   readonly account: ConnectedRobloxAccount | null;
   readonly executor: string | null;
   readonly placeId: number | null;
@@ -73,7 +74,8 @@ function toRow(session: SessionRecord, now: number): ConnectedSessionRow {
   return {
     sessionId: session.id,
     status: sessionStatus(session, now),
-    robloxConnected: getSessionBroker().isConnected(session.id) && session.roblox !== null,
+    robloxConnected: session.robloxClients.size > 0,
+    robloxClientCount: session.robloxClients.size,
     account: player
       ? {
           username: player.name,
