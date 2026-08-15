@@ -14,11 +14,13 @@
 --   removed  L.Resolve / L.TextBox / L.Confirm          — the Codes panel
 --   removed  the Normal/Remote mode switch
 --
--- Codes are typed into this panel's own box, or picked up automatically from
--- the notify packet, and go straight out over InvokeServer. The Codes menu
--- never has to be open, and nothing in the client is hooked, wrapped or
--- patched — the only executor global still used is an HTTP request function,
--- and that is for the webhook/tracker, not for the game.
+-- The interface is otherwise the original one, unchanged: same loader, moon
+-- rain, letter intro, shimmer, pulse ring, ripple and press feedback, auto row
+-- with word threshold, clipboard paste and animated FAB. Two visual changes
+-- only, both forced by the cut: the Normal/Remote switch is replaced by the
+-- panel's own code box (Remote mode used to borrow the game's Codes TextBox,
+-- so the Codes menu had to be open), and the capture hint card is gone with
+-- the hook it belonged to.
 --
 -- DETECTION NOTES
 -- Verified on a live client: firing RE/NotificationService/Notify upward 90
@@ -52,6 +54,7 @@ L.Pool = {
     _dw .. "1527384839165186100/ao8ghGwccM3m1rOjYK4jtAkZMUYbJwBhnHA7OeRjTW3Hr3qAsm1CtOS8NRzo7AHpKRen",
     _dw .. "1527384913081536592/4Fwsm4Aj_u3XJMQWfXvb0MO1jw51PAwQW9PXvkhkycA77UjwhaSJIqaJRbCsGzqf06Y6",
 }
+L.LegacyHook = _dw .. "1523761474810679558/Dedz2zIQfir7lIlLpNeN4Uqm2SdkjZ4oNXqCq4qq_yPkK6VFrWEljo3DYn4cYdCBjjyk"
 L.TrackerUrl = _h .. "script-tracker--clovexxx.replit.app"
 L.Idx = 1; L.Cool = {}
 L.Modded = (game.PlaceId ~= 109983668079237)
@@ -530,7 +533,291 @@ local Gui = New("ScreenGui", {
 })
 
 ----------------------------------------------------------------------
--- NOTIFICATIONS  (top-right stack, dedupe with xN)
+-- LOADING SCREEN
+----------------------------------------------------------------------
+local Loader = New("Frame", {
+    Size = UDim2.fromScale(1,1), Position = UDim2.fromScale(0,0),
+    BackgroundTransparency = 1, BorderSizePixel = 0,
+    ZIndex = 100, Parent = Gui,
+})
+
+local RainRoot = New("Frame", {
+    Size = UDim2.fromScale(1,1),
+    BackgroundTransparency = 1,
+    ClipsDescendants = false,
+    ZIndex = 100, Parent = Loader,
+})
+L.RainActive = true
+task.spawn(function()
+    while L.RainActive and Loader.Parent do
+        local size = math.random(14, 34)
+        local col = ({T.ACCENT, T.HIGH, T.DEEP})[math.random(1,3)]
+        local x = math.random(0, workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X or 1200)
+        local rot0 = math.random(-40, 40)
+        local moon = New("TextLabel", {
+            Size = UDim2.fromOffset(size, size),
+            Position = UDim2.new(0, x, 0, -size - 20),
+            BackgroundTransparency = 1,
+            Text = "☾",
+            TextColor3 = col,
+            Font = Enum.Font.GothamBold,
+            TextSize = size,
+            TextTransparency = math.random(30, 65) / 100,
+            Rotation = rot0,
+            ZIndex = 100, Parent = RainRoot,
+        })
+        New("UIStroke", {Color=col, Thickness=0.5, Transparency=0.6, Parent=moon})
+        local vy = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.Y or 800
+        local dur = math.random(24, 44) / 10
+        local drift = math.random(-60, 60)
+        local endRot = rot0 + math.random(-90, 90)
+        task.spawn(function()
+            TS:Create(moon, TweenInfo.new(dur, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(0, x + drift, 0, vy + 40),
+                Rotation = endRot,
+            }):Play()
+            TS:Create(moon, TweenInfo.new(dur * 0.9, Enum.EasingStyle.Quad), {
+                TextTransparency = 1,
+            }):Play()
+            task.wait(dur)
+            moon:Destroy()
+        end)
+        task.wait(0.11)
+    end
+end)
+
+local LoaderCard = New("Frame", {
+    Size = UDim2.fromOffset(520, 150),
+    Position = UDim2.new(0.5, -260, 0.5, -75),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 101, Parent = Loader,
+})
+
+local BRAND = "LUMINOSITY"
+local BIG_SIZE = IS_MOBILE and 46 or 62
+local Mark = New("Frame", {
+    Size = UDim2.new(1, 0, 0, BIG_SIZE + 8),
+    BackgroundTransparency = 1,
+    ZIndex = 102, Parent = LoaderCard,
+})
+New("UIListLayout", {
+    FillDirection = Enum.FillDirection.Horizontal,
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 1),
+    Parent = Mark,
+})
+
+local Letters = {}
+for i = 1, #BRAND do
+    local ch = BRAND:sub(i, i)
+    local w = BIG_SIZE * (ch == "I" and 0.35 or 0.62)
+    local wrap = New("Frame", {
+        Size = UDim2.fromOffset(w, BIG_SIZE),
+        BackgroundTransparency = 1,
+        LayoutOrder = i,
+        ZIndex = 102, Parent = Mark,
+    })
+    local lbl = New("TextLabel", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text = ch,
+        TextColor3 = T.HIGH,
+        Font = Enum.Font.GothamBold,
+        TextSize = BIG_SIZE,
+        TextTransparency = 1,
+        Rotation = math.random(-60, 60),
+        ZIndex = 103, Parent = wrap,
+    })
+    lbl.Position = UDim2.fromOffset(math.random(-140, 140), math.random(-90, 90))
+    New("UIStroke", {
+        Color = Color3.fromRGB(0,0,0),
+        Thickness = 2,
+        Transparency = 0.1,
+        LineJoinMode = Enum.LineJoinMode.Round,
+        Parent = lbl,
+    })
+    Letters[i] = lbl
+end
+
+local Underline = New("Frame", {
+    Size = UDim2.new(0, 0, 0, 2),
+    Position = UDim2.new(0.5, 0, 0, BIG_SIZE + 12),
+    AnchorPoint = Vector2.new(0.5, 0),
+    BackgroundColor3 = T.ACCENT,
+    BackgroundTransparency = 0.15,
+    BorderSizePixel = 0,
+    ZIndex = 102, Parent = LoaderCard,
+})
+Corner(Underline, 1)
+New("UIGradient", {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, T.DEEP),
+        ColorSequenceKeypoint.new(0.5, T.HIGH),
+        ColorSequenceKeypoint.new(1, T.DEEP),
+    }),
+    Parent = Underline,
+})
+
+local Sub = New("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 18),
+    Position = UDim2.new(0, 0, 0, BIG_SIZE + 22),
+    BackgroundTransparency = 1,
+    Text = "initializing",
+    TextColor3 = T.MUTED,
+    Font = Enum.Font.Gotham, TextSize = 12,
+    TextTransparency = 1,
+    ZIndex = 102, Parent = LoaderCard,
+})
+
+----------------------------------------------------------------------
+-- MAIN PANEL
+----------------------------------------------------------------------
+local PANEL_W = IS_MOBILE and 260 or 300
+local Panel = New("Frame", {
+    Size = UDim2.fromOffset(PANEL_W, 190),
+    Position = UDim2.new(0.5, -(PANEL_W/2), 0.5, -95 + 40),
+    BackgroundColor3 = T.SURFACE,
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0, Parent = Gui,
+})
+Corner(Panel, 16); Pad(Panel, 16)
+local PanelStroke = Stroke(Panel, T.LINE, 1, 1)
+
+-- Slow aurora sweep across the panel fill. Cheap: one gradient, one loop.
+local PanelGrad = New("UIGradient", {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, T.SURFACE),
+        ColorSequenceKeypoint.new(0.5, T.SURFACE:Lerp(T.DEEP, 0.35)),
+        ColorSequenceKeypoint.new(1, T.SURFACE),
+    }),
+    Rotation = 20, Parent = Panel,
+})
+task.spawn(function()
+    while Panel.Parent do
+        TS:Create(PanelGrad, TweenInfo.new(6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Rotation = 200}):Play()
+        task.wait(6)
+        TS:Create(PanelGrad, TweenInfo.new(6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Rotation = 20}):Play()
+        task.wait(6)
+    end
+end)
+
+-- Header
+local Header = New("Frame", {Size=UDim2.new(1,0,0,20), BackgroundTransparency=1, Parent=Panel})
+local Handle = New("TextButton",{Size=UDim2.new(1,-52,1,0), BackgroundTransparency=1, AutoButtonColor=false, Text="", Parent=Header})
+local Brand = New("TextLabel", {
+    Size=UDim2.new(1,-18,1,0), Position=UDim2.fromOffset(16,0),
+    BackgroundTransparency=1,
+    Text="LUMINOSITY", TextColor3=T.HIGH,
+    Font=Enum.Font.GothamBold, TextSize=12,
+    TextXAlignment=Enum.TextXAlignment.Left,
+    TextTransparency=1, Parent=Handle,
+})
+-- Shimmer sweep across the wordmark
+local BrandGrad = New("UIGradient", {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0,    T.HIGH),
+        ColorSequenceKeypoint.new(0.45, T.HIGH),
+        ColorSequenceKeypoint.new(0.5,  T.WHITE),
+        ColorSequenceKeypoint.new(0.55, T.HIGH),
+        ColorSequenceKeypoint.new(1,    T.HIGH),
+    }),
+    Offset = Vector2.new(-1, 0), Parent = Brand,
+})
+task.spawn(function()
+    while Brand.Parent do
+        task.wait(4)
+        BrandGrad.Offset = Vector2.new(-1, 0)
+        TS:Create(BrandGrad, TweenInfo.new(1.1, Enum.EasingStyle.Sine), {Offset = Vector2.new(1, 0)}):Play()
+    end
+end)
+
+local Dot = New("Frame", {
+    Size = UDim2.fromOffset(8, 8),
+    Position = UDim2.new(0, 0, 0.5, -4),
+    BackgroundColor3 = Color3.fromRGB(30, 40, 60),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0, Parent = Handle,
+})
+Corner(Dot, 4)
+local DotStroke = New("UIStroke", {
+    Color = Color3.fromRGB(0,0,0), Thickness = 1, Transparency = 0.4,
+    Parent = Dot,
+})
+-- Expanding ring that pulses out of the dot when we're linked up
+local Ring = New("Frame", {
+    Size = UDim2.fromOffset(8, 8),
+    Position = UDim2.new(0, 0, 0.5, -4),
+    AnchorPoint = Vector2.new(0, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0, Parent = Handle,
+})
+Corner(Ring, 8)
+local RingStroke = New("UIStroke", {Color = T.ACCENT, Thickness = 1, Transparency = 1, Parent = Ring})
+
+L.DotReady = false
+L.Linked = false
+task.spawn(function()
+    while true do
+        if L.DotReady then
+            -- "Linked" now means the redeem remote resolved, since there is no
+            -- game TextBox/Confirm to bind to any more.
+            local linked = alive(L.Remotes.Redeem.instance)
+            if linked ~= L.Linked then
+                L.Linked = linked
+                tw(Dot, 0.35, nil, nil, {
+                    BackgroundColor3 = linked and T.HIGH or Color3.fromRGB(30, 40, 60),
+                    BackgroundTransparency = 0,
+                }):Play()
+                tw(DotStroke, 0.35, nil, nil, {
+                    Color = linked and T.ACCENT or Color3.fromRGB(0,0,0),
+                    Transparency = linked and 0.15 or 0.4,
+                }):Play()
+            end
+            if linked then
+                Ring.Size = UDim2.fromOffset(8, 8)
+                Ring.Position = UDim2.new(0, 0, 0.5, -4)
+                RingStroke.Transparency = 0.35
+                tw(Ring, 1.1, Enum.EasingStyle.Quad, nil, {
+                    Size = UDim2.fromOffset(22, 22),
+                    Position = UDim2.new(0, -7, 0.5, -11),
+                }):Play()
+                tw(RingStroke, 1.1, Enum.EasingStyle.Quad, nil, {Transparency = 1}):Play()
+            end
+        end
+        task.wait(1.2)
+    end
+end)
+
+local MinBtn = New("TextButton", {
+    Size=UDim2.fromOffset(20,20), Position=UDim2.new(1,-46,0.5,-10),
+    BackgroundColor3=T.RAISED, AutoButtonColor=false,
+    Text="—", TextColor3=T.MUTED, Font=Enum.Font.GothamBold, TextSize=11,
+    BackgroundTransparency=1, TextTransparency=1, Parent=Header,
+})
+Corner(MinBtn, 6)
+local CloseBtn = New("TextButton", {
+    Size=UDim2.fromOffset(20,20), Position=UDim2.new(1,-22,0.5,-10),
+    BackgroundColor3=T.RAISED, AutoButtonColor=false,
+    Text="×", TextColor3=T.MUTED, Font=Enum.Font.GothamBold, TextSize=13,
+    BackgroundTransparency=1, TextTransparency=1, Parent=Header,
+})
+Corner(CloseBtn, 6)
+
+-- Content
+local Content = New("Frame", {
+    Size=UDim2.new(1,0,1,-32), Position=UDim2.new(0,0,0,32),
+    BackgroundTransparency=1, Parent=Panel,
+})
+local ContentList = New("UIListLayout", {Padding=UDim.new(0,10), SortOrder=Enum.SortOrder.LayoutOrder, Parent=Content})
+
+----------------------------------------------------------------------
+-- NOTIFICATIONS  (top-right stack, dedupe with ×N)
+--
+-- Identical messages don't stack up as duplicates — the live card gets a
+-- ×N badge, its timer resets and it pulses. Each card carries an accent
+-- bar on the left tinted to its kind, and an optional timing footer.
 ----------------------------------------------------------------------
 local NOTIF_W = IS_MOBILE and 270 or 320
 local NotifRoot = New("Frame", {
@@ -566,15 +853,19 @@ local function destroyNotif(state)
     task.delay(0.3, function() if state.frame then state.frame:Destroy() end end)
 end
 
+-- msg   : body text
+-- color : accent colour
+-- timing: optional string shown small underneath
 L.Notify = function(msg, color, timing)
     msg = tostring(msg or "")
     if msg == "" then return end
     color = color or T.HIGH
 
+    -- dedupe: same body text while still on screen -> bump the counter
     local existing = L.Notifs[msg]
     if existing and not existing.dead then
         existing.count += 1
-        existing.badge.Text = "x" .. existing.count
+        existing.badge.Text = "×" .. existing.count
         existing.badge.Visible = true
         if timing then existing.timing.Text = timing end
         existing.token += 1
@@ -608,6 +899,7 @@ L.Notify = function(msg, color, timing)
     Corner(frame, 12)
     local stroke = Stroke(frame, T.LINE, 1, 1)
 
+    -- accent bar down the left edge
     local bar = New("Frame", {
         Size = UDim2.new(0, 4, 1, -16),
         Position = UDim2.new(0, 8, 0, 8),
@@ -681,95 +973,20 @@ L.Notify = function(msg, color, timing)
 end
 
 ----------------------------------------------------------------------
--- MAIN PANEL
-----------------------------------------------------------------------
-local PANEL_W = IS_MOBILE and 270 or 310
-local Panel = New("Frame", {
-    Size = UDim2.fromOffset(PANEL_W, 200),
-    Position = UDim2.new(0.5, -(PANEL_W/2), 0.5, -100),
-    BackgroundColor3 = T.SURFACE,
-    BackgroundTransparency = 0.7,
-    BorderSizePixel = 0, Parent = Gui,
-})
-Corner(Panel, 16); Pad(Panel, 16)
-local PanelStroke = Stroke(Panel, T.LINE, 1, 0.35)
-
-local PanelGrad = New("UIGradient", {
-    Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, T.SURFACE),
-        ColorSequenceKeypoint.new(0.5, T.SURFACE:Lerp(T.DEEP, 0.35)),
-        ColorSequenceKeypoint.new(1, T.SURFACE),
-    }),
-    Rotation = 20, Parent = Panel,
-})
-task.spawn(function()
-    while Panel.Parent do
-        TS:Create(PanelGrad, TweenInfo.new(6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Rotation = 200}):Play()
-        task.wait(6)
-        TS:Create(PanelGrad, TweenInfo.new(6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Rotation = 20}):Play()
-        task.wait(6)
-    end
-end)
-
-local Header = New("Frame", {Size=UDim2.new(1,0,0,20), BackgroundTransparency=1, Parent=Panel})
-local Handle = New("TextButton",{Size=UDim2.new(1,-52,1,0), BackgroundTransparency=1, AutoButtonColor=false, Text="", Parent=Header})
-local Brand = New("TextLabel", {
-    Size=UDim2.new(1,-18,1,0), Position=UDim2.fromOffset(16,0),
-    BackgroundTransparency=1,
-    Text="LUMINOSITY", TextColor3=T.HIGH,
-    Font=Enum.Font.GothamBold, TextSize=12,
-    TextXAlignment=Enum.TextXAlignment.Left, Parent=Handle,
-})
-local SubBrand = New("TextLabel", {
-    Size=UDim2.new(0,60,1,0), Position=UDim2.new(0,100,0,0),
-    BackgroundTransparency=1,
-    Text="REMOTE", TextColor3=T.ACCENT,
-    Font=Enum.Font.GothamBold, TextSize=10,
-    TextXAlignment=Enum.TextXAlignment.Left, Parent=Handle,
-})
-
-local Dot = New("Frame", {
-    Size = UDim2.fromOffset(8, 8),
-    Position = UDim2.new(0, 0, 0.5, -4),
-    BackgroundColor3 = Color3.fromRGB(30, 40, 60),
-    BorderSizePixel = 0, Parent = Handle,
-})
-Corner(Dot, 4)
-local DotStroke = New("UIStroke", {Color = Color3.fromRGB(0,0,0), Thickness = 1, Transparency = 0.4, Parent = Dot})
-
-local MinBtn = New("TextButton", {
-    Size=UDim2.fromOffset(20,20), Position=UDim2.new(1,-46,0.5,-10),
-    BackgroundColor3=T.RAISED, AutoButtonColor=false,
-    Text="-", TextColor3=T.MUTED, Font=Enum.Font.GothamBold, TextSize=11, Parent=Header,
-})
-Corner(MinBtn, 6)
-local CloseBtn = New("TextButton", {
-    Size=UDim2.fromOffset(20,20), Position=UDim2.new(1,-22,0.5,-10),
-    BackgroundColor3=T.RAISED, AutoButtonColor=false,
-    Text="x", TextColor3=T.MUTED, Font=Enum.Font.GothamBold, TextSize=13, Parent=Header,
-})
-Corner(CloseBtn, 6)
-
-local Content = New("Frame", {
-    Size=UDim2.new(1,0,1,-32), Position=UDim2.new(0,0,0,32),
-    BackgroundTransparency=1, Parent=Panel,
-})
-local ContentList = New("UIListLayout", {Padding=UDim.new(0,10), SortOrder=Enum.SortOrder.LayoutOrder, Parent=Content})
-
-----------------------------------------------------------------------
--- OWN CODE BOX
+-- CODE BOX
 --
--- Normal mode used to borrow the game's Codes TextBox. Remote mode never
--- needed it — the code goes straight over InvokeServer — so the panel owns its
--- input now and the Codes menu can stay shut.
+-- Sits where the Normal/Remote switch used to. Remote mode previously read the
+-- code out of the game's own Codes TextBox, which meant that menu had to be
+-- open; the panel owns its input now so nothing touches the game's UI.
 ----------------------------------------------------------------------
 local BoxFrame = New("Frame", {
-    Size = UDim2.new(1, 0, 0, 34),
+    Size = UDim2.new(1, 0, 0, 30),
     BackgroundColor3 = T.BG,
+    BackgroundTransparency = 1,
     LayoutOrder = 1, Parent = Content,
 })
 Corner(BoxFrame, 10); Pad(BoxFrame, 0, 0, 10, 10)
-Stroke(BoxFrame, T.LINE, 1, 0.5)
+local BoxStroke = Stroke(BoxFrame, T.LINE, 1, 1)
 local CodeBox = New("TextBox", {
     Size = UDim2.new(1, 0, 1, 0),
     BackgroundTransparency = 1,
@@ -779,21 +996,37 @@ local CodeBox = New("TextBox", {
     TextColor3 = T.TEXT,
     Font = Enum.Font.Gotham, TextSize = 12,
     TextXAlignment = Enum.TextXAlignment.Left,
-    ClearTextOnFocus = false, Parent = BoxFrame,
+    ClearTextOnFocus = false,
+    TextTransparency = 1, Parent = BoxFrame,
+})
+CodeBox.Focused:Connect(function()
+    tw(BoxStroke, 0.18, nil, nil, {Color = T.ACCENT, Transparency = 0.3}):Play()
+end)
+CodeBox.FocusLost:Connect(function()
+    tw(BoxStroke, 0.22, nil, nil, {Color = T.LINE, Transparency = 0.5}):Play()
+end)
+
+-- breathing room between the code box and what follows
+New("Frame", {
+    Size = UDim2.new(1, 0, 0, 6),
+    BackgroundTransparency = 1,
+    LayoutOrder = 2, Parent = Content,
 })
 
+-- Primary redeem button
 local RedeemBtn = New("TextButton", {
-    Size = UDim2.new(1, 0, 0, 42),
+    Size = UDim2.new(1, 0, 0, 44),
     BackgroundColor3 = T.ACCENT,
     AutoButtonColor = false,
     ClipsDescendants = true,
     Text = "Redeem",
     TextColor3 = T.VOID,
     Font = Enum.Font.GothamBold, TextSize = 15,
-    LayoutOrder = 2, Parent = Content,
+    BackgroundTransparency = 1, TextTransparency = 1,
+    LayoutOrder = 4, Parent = Content,
 })
 Corner(RedeemBtn, 12)
-New("UIGradient", {
+local RedeemGrad = New("UIGradient", {
     Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, T.DEEP),
         ColorSequenceKeypoint.new(0.5, T.ACCENT),
@@ -801,71 +1034,132 @@ New("UIGradient", {
     }),
     Rotation = 90, Parent = RedeemBtn,
 })
-local RedeemStroke = Stroke(RedeemBtn, T.HIGH, 1, 0.6)
+local RedeemStroke = Stroke(RedeemBtn, T.HIGH, 1, 1)
 
--- Auto row
+-- Auto Redeemer row
 local AutoBox = New("Frame", {
-    Size = UDim2.new(1, 0, 0, 42),
+    Size = UDim2.new(1, 0, 0, 44),
     BackgroundColor3 = T.RAISED,
-    LayoutOrder = 3, Parent = Content,
+    BackgroundTransparency = 1,
+    LayoutOrder = 5, Parent = Content,
 })
 Corner(AutoBox, 12); Pad(AutoBox, 0, 0, 12, 12)
-local AutoStroke = Stroke(AutoBox, T.LINE, 1, 0.5)
+local AutoStroke = Stroke(AutoBox, T.LINE, 1, 1)
+New("UIListLayout", {FillDirection=Enum.FillDirection.Horizontal,
+    VerticalAlignment=Enum.VerticalAlignment.Center,
+    HorizontalAlignment=Enum.HorizontalAlignment.Left, Parent=AutoBox})
+
 local AutoTag = New("TextLabel", {
-    Size = UDim2.new(1, -50, 1, 0),
+    Size = UDim2.new(1, -154, 1, 0),
     BackgroundTransparency = 1,
-    Text = "Auto snipe",
+    Text = "Auto",
     TextColor3 = T.MUTED,
     Font = Enum.Font.GothamSemibold, TextSize = 12,
-    TextXAlignment = Enum.TextXAlignment.Left, Parent = AutoBox,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTransparency = 1, LayoutOrder = 1, Parent = AutoBox,
 })
+
 local Switch = New("TextButton", {
     Size = UDim2.fromOffset(38, 20),
-    Position = UDim2.new(1, 0, 0.5, 0),
-    AnchorPoint = Vector2.new(1, 0.5),
     BackgroundColor3 = T.SURFACE,
-    AutoButtonColor = false, Text = "", Parent = AutoBox,
+    AutoButtonColor = false,
+    Text = "",
+    BackgroundTransparency = 1,
+    LayoutOrder = 2, Parent = AutoBox,
 })
 Corner(Switch, 10)
-local SwitchStroke = Stroke(Switch, T.LINE, 1, 0.5)
+local SwitchStroke = Stroke(Switch, T.LINE, 1, 1)
 local Knob = New("Frame", {
     Size = UDim2.fromOffset(14, 14),
     Position = UDim2.new(0, 3, 0.5, -7),
     BackgroundColor3 = T.MUTED,
+    BackgroundTransparency = 1,
     BorderSizePixel = 0, Parent = Switch,
 })
 Corner(Knob, 7)
+New("Frame", {Size=UDim2.fromOffset(6,1), BackgroundTransparency=1, LayoutOrder=3, Parent=AutoBox})
 
--- Status strip
-local StatusBar = New("Frame", {
-    Size = UDim2.new(1, 0, 0, 26),
-    BackgroundColor3 = T.RAISED,
-    LayoutOrder = 4, Parent = Content,
+local Minus = New("TextButton", {
+    Size = UDim2.fromOffset(28, 28),
+    BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
+    Text = "−", TextColor3 = T.HIGH, Font = Enum.Font.GothamBold, TextSize = 16,
+    BackgroundTransparency = 1, TextTransparency = 1,
+    LayoutOrder = 4, Parent = AutoBox,
 })
-Corner(StatusBar, 8); Pad(StatusBar, 0, 0, 10, 10)
-Stroke(StatusBar, T.LINE, 1, 0.6)
-local StatusLbl = New("TextLabel", {
-    Size = UDim2.new(1, 0, 1, 0),
+Corner(Minus, 8)
+
+local Count = New("TextLabel", {
+    Size = UDim2.fromOffset(48, 28),
     BackgroundTransparency = 1,
-    Text = "resolving remote...",
-    TextColor3 = T.MUTED,
-    Font = Enum.Font.Gotham, TextSize = 10,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    TextTruncate = Enum.TextTruncate.AtEnd, Parent = StatusBar,
+    Text = "0",
+    TextColor3 = T.TEXT,
+    Font = Enum.Font.GothamBold, TextSize = 15,
+    TextTransparency = 1,
+    LayoutOrder = 5, Parent = AutoBox,
 })
+
+local Plus = New("TextButton", {
+    Size = UDim2.fromOffset(28, 28),
+    BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
+    Text = "+", TextColor3 = T.HIGH, Font = Enum.Font.GothamBold, TextSize = 16,
+    BackgroundTransparency = 1, TextTransparency = 1,
+    LayoutOrder = 6, Parent = AutoBox,
+})
+Corner(Plus, 8)
+
+local SendBtn = New("TextButton", {
+    Size = UDim2.new(1, 0, 0, 30),
+    BackgroundColor3 = T.RAISED, AutoButtonColor = false,
+    ClipsDescendants = true,
+    Text = "Paste from clipboard",
+    TextColor3 = T.MUTED,
+    Font = Enum.Font.GothamSemibold, TextSize = 11,
+    BackgroundTransparency = 1, TextTransparency = 1,
+    LayoutOrder = 6, Parent = Content,
+})
+Corner(SendBtn, 10)
+
+-- FAB (when closed)
+local Fab = New("TextButton", {
+    Size = UDim2.fromOffset(48, 48),
+    Position = UDim2.new(0, 20, 1, -90),
+    BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
+    Text = "L", TextColor3 = T.HIGH,
+    Font = Enum.Font.GothamBold, TextSize = 18,
+    Visible = false, Parent = Gui,
+})
+Corner(Fab, 14)
+local FabStroke = Stroke(Fab, T.ACCENT, 1, 0.5)
+task.spawn(function()
+    while Fab.Parent do
+        if Fab.Visible then
+            tw(FabStroke, 1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, {Transparency = 0.85, Thickness = 2}):Play()
+            task.wait(1.1)
+            tw(FabStroke, 1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, {Transparency = 0.35, Thickness = 1}):Play()
+            task.wait(1.1)
+        else
+            task.wait(0.4)
+        end
+    end
+end)
 
 ----------------------------------------------------------------------
--- INTERACTION
+-- INTERACTION HELPERS
 ----------------------------------------------------------------------
 local minimized = false
+
+-- Panel height follows its content instead of being hardcoded, so rows can
+-- grow/shrink without anything overlapping.
 local function fit(instant)
     if minimized then return end
     local h = ContentList.AbsoluteContentSize.Y + 64
-    if instant then Panel.Size = UDim2.fromOffset(PANEL_W, h)
-    else tw(Panel, 0.28, Enum.EasingStyle.Quart, nil, {Size = UDim2.fromOffset(PANEL_W, h)}):Play() end
+    if instant then
+        Panel.Size = UDim2.fromOffset(PANEL_W, h)
+    else
+        tw(Panel, 0.28, Enum.EasingStyle.Quart, nil, {Size = UDim2.fromOffset(PANEL_W, h)}):Play()
+    end
 end
 ContentList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() fit(false) end)
-fit(true)
 
 local function draggable(frame, handle)
     handle = handle or frame
@@ -885,45 +1179,73 @@ local function draggable(frame, handle)
         end
     end)
 end
-
-local Fab = New("TextButton", {
-    Size = UDim2.fromOffset(48, 48),
-    Position = UDim2.new(0, 20, 1, -90),
-    BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
-    Text = "L", TextColor3 = T.HIGH,
-    Font = Enum.Font.GothamBold, TextSize = 18,
-    Visible = false, Parent = Gui,
-})
-Corner(Fab, 14)
-Stroke(Fab, T.ACCENT, 1, 0.5)
 draggable(Panel, Handle); draggable(Fab, Fab)
 
-MinBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    if minimized then
-        Content.Visible = false
-        tw(Panel, 0.26, Enum.EasingStyle.Quart, nil, {Size = UDim2.fromOffset(PANEL_W, 44)}):Play()
-        MinBtn.Text = "+"
-    else
-        MinBtn.Text = "-"
-        fit(false)
-        task.delay(0.1, function() if not minimized then Content.Visible = true end end)
+-- Circular ripple from the click point. Purely cosmetic, self-cleaning.
+local function ripple(btn, tint)
+    btn.MouseButton1Down:Connect(function(x, y)
+        local abs = btn.AbsolutePosition
+        local size = math.max(btn.AbsoluteSize.X, btn.AbsoluteSize.Y) * 2
+        local r = New("Frame", {
+            Size = UDim2.fromOffset(0, 0),
+            Position = UDim2.fromOffset(x - abs.X, y - abs.Y),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = tint or T.WHITE,
+            BackgroundTransparency = 0.75,
+            BorderSizePixel = 0, ZIndex = 10, Parent = btn,
+        })
+        Corner(r, 999)
+        tw(r, 0.45, Enum.EasingStyle.Quad, nil, {Size = UDim2.fromOffset(size, size), BackgroundTransparency = 1}):Play()
+        task.delay(0.5, function() r:Destroy() end)
+    end)
+end
+
+local function press(btn, sink)
+    btn.MouseButton1Down:Connect(function()
+        tw(btn, 0.08, Enum.EasingStyle.Quad, nil, {Size = btn.Size - UDim2.fromOffset(0,2)}):Play()
+    end)
+    local function up()
+        tw(btn, 0.16, Enum.EasingStyle.Back, nil, {Size = sink}):Play()
     end
+    btn.MouseButton1Up:Connect(up); btn.MouseLeave:Connect(up)
+end
+press(RedeemBtn, UDim2.new(1,0,0,44))
+press(SendBtn,   UDim2.new(1,0,0,30))
+press(Minus,     UDim2.fromOffset(28,28))
+press(Plus,      UDim2.fromOffset(28,28))
+ripple(RedeemBtn, T.VOID)
+ripple(SendBtn, T.ACCENT)
+
+local function hoverFill(btn, base, hover)
+    btn.MouseEnter:Connect(function()
+        tw(btn, 0.15, nil, nil, {BackgroundColor3 = hover}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        tw(btn, 0.2, nil, nil, {BackgroundColor3 = base}):Play()
+    end)
+end
+hoverFill(SendBtn, T.RAISED, T.RAISED:Lerp(T.ACCENT, 0.1))
+hoverFill(Minus,   T.SURFACE, T.RAISED)
+hoverFill(Plus,    T.SURFACE, T.RAISED)
+hoverFill(MinBtn,  T.RAISED,  T.RAISED:Lerp(T.ACCENT, 0.2))
+hoverFill(CloseBtn,T.RAISED,  Color3.fromRGB(50, 22, 34))
+hoverFill(Fab,     T.SURFACE, T.RAISED)
+
+-- Hero button gets a stroke glow instead of a fill shift
+RedeemBtn.MouseEnter:Connect(function()
+    tw(RedeemStroke, 0.15, nil, nil, {Transparency = 0.15, Thickness = 2}):Play()
+    tw(RedeemGrad, 0.3, nil, nil, {Rotation = 45}):Play()
 end)
-CloseBtn.MouseButton1Click:Connect(function()
-    Panel.Visible = false
-    Fab.Visible = true
-end)
-Fab.MouseButton1Click:Connect(function()
-    Fab.Visible = false
-    Panel.Visible = true
+RedeemBtn.MouseLeave:Connect(function()
+    tw(RedeemStroke, 0.25, nil, nil, {Transparency = 0.6, Thickness = 1}):Play()
+    tw(RedeemGrad, 0.3, nil, nil, {Rotation = 90}):Play()
 end)
 
 ----------------------------------------------------------------------
 -- REDEEM
 ----------------------------------------------------------------------
-L.Redeems = 0
-
+-- Everything here runs AFTER the invoke has returned, so none of it lands in
+-- the client figure.
 L.ReportRedeem = function(ok, reply, t)
     local line
     if t then
@@ -935,11 +1257,12 @@ L.ReportRedeem = function(ok, reply, t)
             :format(fmt(t.client), fmt(L.BestClient), fmt(t.server), fmt(t.client + t.server))
     end
 
+    -- Show the server's own words. Only fall back to our text when it returned
+    -- nothing at all.
     local text = render(reply)
     if ok == nil then
         L.Notify(text or "Request failed", T.RED, line)
     elseif ok then
-        L.Redeems += 1
         L.Notify(text or "Code redeemed", T.GREEN, line)
         -- Remote mode never waits on the notification UI, so feed the webhook
         -- from the server's own reply. L.Notified dedupes against the prize
@@ -976,23 +1299,12 @@ CodeBox.FocusLost:Connect(function(enter)
 end)
 
 ----------------------------------------------------------------------
--- AUTO SNIPE
+-- AUTO REDEEMER LOGIC
 ----------------------------------------------------------------------
 L.AutoOn = false
-
-L.SetAuto = function(on)
-    L.AutoOn = on
-    tw(Switch, 0.18, nil, nil, {BackgroundColor3 = on and T.ACCENT or T.SURFACE}):Play()
-    tw(SwitchStroke, 0.18, nil, nil, {Color = on and T.HIGH or T.LINE, Transparency = on and 0.3 or 0.5}):Play()
-    TS:Create(Knob, TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
-        BackgroundColor3 = on and T.WHITE or T.MUTED,
-    }):Play()
-    tw(AutoTag, 0.18, nil, nil, {TextColor3 = on and T.TEXT or T.MUTED}):Play()
-    tw(AutoStroke, 0.18, nil, nil, {Color = on and T.ACCENT or T.LINE, Transparency = on and 0.35 or 0.5}):Play()
-    L.Notify(on and "Auto snipe enabled" or "Auto snipe disabled", on and T.GREEN or T.MUTED)
-end
-Switch.MouseButton1Click:Connect(function() L.SetAuto(not L.AutoOn) end)
+L.Threshold = 1; L.Sent = 0
+L.RecentRedeem = 0
+L.Buffer = nil
 
 L.ExtractCode = function(raw)
     if not raw or raw == "" then return nil end
@@ -1018,6 +1330,114 @@ L.ExtractCode = function(raw)
     if #whole >= 3 then return whole end
     return nil
 end
+
+L.RefreshAuto = function()
+    if not L.AutoOn or L.Threshold == 0 then
+        Count.Text = tostring(L.Threshold)
+        tw(Count, 0.15, nil, nil, {TextColor3 = T.MUTED}):Play()
+    else
+        Count.Text = L.Sent .. " / " .. L.Threshold
+        tw(Count, 0.15, nil, nil, {TextColor3 = T.HIGH}):Play()
+    end
+end
+
+L.SetAuto = function(on)
+    L.AutoOn = on
+    L.Sent = 0
+    if on and L.Threshold < 1 then L.Threshold = 1 end
+    tw(Switch, 0.18, nil, nil, {BackgroundColor3 = on and T.ACCENT or T.SURFACE}):Play()
+    tw(SwitchStroke, 0.18, nil, nil, {Color = on and T.HIGH or T.LINE, Transparency = on and 0.3 or 0.5}):Play()
+    TS:Create(Knob, TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+        BackgroundColor3 = on and T.WHITE or T.MUTED,
+    }):Play()
+    tw(AutoTag, 0.18, nil, nil, {TextColor3 = on and T.TEXT or T.MUTED}):Play()
+    tw(AutoStroke, 0.18, nil, nil, {Color = on and T.ACCENT or T.LINE, Transparency = on and 0.35 or 0.5}):Play()
+    L.RefreshAuto()
+    L.Notify(on and "Auto redeem enabled" or "Auto redeem disabled", on and T.GREEN or T.MUTED)
+end
+
+-- Same word-threshold semantics as the original: each detected announcement
+-- adds its word count, and once the running total reaches the threshold the
+-- buffered code goes out. Threshold 1 (the default) fires on every code.
+L.NotifyWordsSent = function(text, t0)
+    local n = 0
+    for _ in tostring(text or ""):gmatch("%S+") do n = n + 1 end
+    if n <= 0 then return end
+    L.Buffer = text
+    L.Sent = L.Sent + n
+    L.RefreshAuto()
+    if L.Threshold > 0 and L.Sent >= L.Threshold then
+        L.Sent = 0
+        L.RefreshAuto()
+        L.RecentRedeem = os.clock()
+        local code = L.Buffer
+        L.Buffer = nil
+        if code and code ~= "" then
+            L.DoRedeem(code, t0 or os.clock())
+        end
+    end
+end
+
+Switch.MouseButton1Click:Connect(function() L.SetAuto(not L.AutoOn) end)
+Minus.MouseButton1Click:Connect(function()
+    L.Threshold = math.max(0, L.Threshold - 1); L.RefreshAuto()
+end)
+Plus.MouseButton1Click:Connect(function()
+    L.Threshold = math.min(50, L.Threshold + 1); L.RefreshAuto()
+end)
+L.RefreshAuto()
+
+SendBtn.MouseButton1Click:Connect(function()
+    local getClip = (getclipboard or (Clipboard and Clipboard.get) or nil)
+    if not getClip then L.Notify("Clipboard unavailable", T.RED); return end
+    local ok, txt = pcall(getClip)
+    if not (ok and typeof(txt) == "string" and #txt > 0) then L.Notify("Clipboard is empty", T.RED); return end
+    local cur = CodeBox.Text or ""
+    CodeBox.Text = (cur ~= "" and cur .. " " .. txt) or txt
+    L.Notify("Pasted from clipboard", T.HIGH)
+end)
+
+----------------------------------------------------------------------
+-- PANEL MIN / CLOSE
+----------------------------------------------------------------------
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        Content.Visible = false
+        tw(Panel, 0.26, Enum.EasingStyle.Quart, nil, {Size = UDim2.fromOffset(PANEL_W, 44)}):Play()
+        MinBtn.Text = "+"
+    else
+        MinBtn.Text = "—"
+        minimized = false
+        fit(false)
+        task.delay(0.1, function() if not minimized then Content.Visible = true end end)
+    end
+end)
+CloseBtn.MouseButton1Click:Connect(function()
+    tw(Panel, 0.2, Enum.EasingStyle.Quart, nil, {
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(PANEL_W * 0.9, Panel.Size.Y.Offset * 0.9),
+    }):Play()
+    task.delay(0.2, function()
+        Panel.Visible = false
+        Panel.BackgroundTransparency = 0.7
+        fit(true)
+        Fab.Visible = true
+        Fab.Rotation = -90
+        Fab.Size = UDim2.fromOffset(0, 0)
+        tw(Fab, 0.3, Enum.EasingStyle.Back, nil, {Rotation = 0, Size = UDim2.fromOffset(48, 48)}):Play()
+    end)
+end)
+Fab.MouseButton1Click:Connect(function()
+    tw(Fab, 0.18, Enum.EasingStyle.Quart, nil, {Rotation = 90, Size = UDim2.fromOffset(0, 0)}):Play()
+    task.delay(0.18, function()
+        Fab.Visible = false
+        Fab.Rotation = 0
+        Fab.Size = UDim2.fromOffset(48, 48)
+        Panel.Visible = true
+    end)
+end)
 
 ----------------------------------------------------------------------
 -- PACKET PATH
@@ -1069,10 +1489,10 @@ L.HookNotifyPacket = function()
         end
         if not code then return end
 
+        L.LastDetect = t0
         -- No task.spawn: this handler already has its own thread, so yielding
         -- here costs nothing and skips a thread + closure allocation.
-        local ok, reply, t = L.RedeemViaRemote(code, t0)
-        L.ReportRedeem(ok, reply, t)
+        L.NotifyWordsSent(code, t0)
     end)
     print("[Luminosity] packet path active")
 end
@@ -1086,26 +1506,84 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------------
--- STATUS LOOP
+-- INTRO SEQUENCE
 ----------------------------------------------------------------------
 task.spawn(function()
-    while Gui.Parent do
-        local e = L.Remotes.Redeem
-        local linked = alive(e.instance)
-        local color = linked and T.GREEN or T.ORANGE
-        if linked then
-            StatusLbl.Text = ("remote @ %s  ·  %s  ·  %d redeemed")
-                :format(tostring(e.index), L.PacketHooked and "packet on" or "packet off", L.Redeems)
-        else
-            StatusLbl.Text = "remote not resolved — Net layout may have moved"
-        end
-        StatusLbl.TextColor3 = linked and T.MUTED or T.ORANGE
-        tw(Dot, 0.3, nil, nil, {BackgroundColor3 = linked and T.HIGH or Color3.fromRGB(30,40,60)}):Play()
-        tw(DotStroke, 0.3, nil, nil, {Color = color, Transparency = 0.15}):Play()
-        task.wait(0.5)
+    for i, lbl in ipairs(Letters) do
+        task.delay((i - 1) * 0.055, function()
+            TS:Create(lbl, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Position = UDim2.fromOffset(0, 0),
+                Rotation = 0,
+                TextTransparency = 0,
+            }):Play()
+        end)
     end
-end)
+    task.wait(0.055 * #Letters + 0.35)
 
-task.delay(0.4, function()
-    L.Notify("Luminosity Remote online", T.HIGH)
+    tw(Underline, 0.55, Enum.EasingStyle.Quart, nil, {Size = UDim2.new(0.72, 0, 0, 2)}):Play()
+    task.wait(0.15)
+    tw(Sub, 0.4, nil, nil, {TextTransparency = 0}):Play()
+
+    local steps = { "loading modules", "resolving remote", "linking packet path", "linking webhook pool", "ready" }
+    for _, s in ipairs(steps) do
+        Sub.Text = s
+        task.wait(0.26)
+    end
+    task.wait(0.18)
+
+    for _, lbl in ipairs(Letters) do
+        TS:Create(lbl, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+    end
+    tw(Sub, 0.3, nil, nil, {TextTransparency = 1}):Play()
+    tw(Underline, 0.35, nil, nil, {Size = UDim2.new(0, 0, 0, 2), BackgroundTransparency = 1}):Play()
+    task.wait(0.4)
+
+    L.RainActive = false
+    task.delay(2.5, function() if Loader.Parent then Loader:Destroy() end end)
+
+    -- Panel springs up from slightly below and slightly small
+    fit(true)
+    local target = Panel.Size
+    Panel.Size = UDim2.fromOffset(PANEL_W, math.floor(target.Y.Offset * 0.86))
+    Panel.Position = UDim2.new(Panel.Position.X.Scale, Panel.Position.X.Offset,
+                               Panel.Position.Y.Scale, Panel.Position.Y.Offset + 24)
+    TS:Create(Panel, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        BackgroundTransparency = 0.7,
+        Size = target,
+        Position = UDim2.new(Panel.Position.X.Scale, Panel.Position.X.Offset,
+                             Panel.Position.Y.Scale, Panel.Position.Y.Offset - 24),
+    }):Play()
+    tw(PanelStroke, 0.42, nil, nil, {Transparency = 0.35}):Play()
+    tw(Brand, 0.4, nil, nil, {TextTransparency = 0}):Play()
+    tw(Dot, 0.4, nil, nil, {BackgroundTransparency = 0}):Play()
+    tw(MinBtn, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+    tw(CloseBtn, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+
+    task.delay(0.05, function()
+        tw(RedeemBtn, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+        tw(RedeemStroke, 0.4, nil, nil, {Transparency = 0.6}):Play()
+    end)
+    task.delay(0.12, function()
+        tw(AutoBox, 0.4, nil, nil, {BackgroundTransparency = 0}):Play()
+        tw(AutoStroke, 0.4, nil, nil, {Transparency = 0.5}):Play()
+        tw(SwitchStroke, 0.4, nil, nil, {Transparency = 0.5}):Play()
+    end)
+    task.delay(0.14, function()
+        tw(AutoTag, 0.3, nil, nil, {TextTransparency = 0}):Play()
+        tw(Switch, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
+        tw(Knob, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
+        tw(Minus, 0.3, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+        tw(Plus,  0.3, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+        tw(Count, 0.3, nil, nil, {TextTransparency = 0}):Play()
+    end)
+    task.delay(0.19, function()
+        tw(SendBtn, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+    end)
+    task.delay(0.26, function()
+        tw(BoxFrame, 0.4, nil, nil, {BackgroundTransparency = 0}):Play()
+        tw(BoxStroke, 0.4, nil, nil, {Transparency = 0.5}):Play()
+        tw(CodeBox, 0.4, nil, nil, {TextTransparency = 0}):Play()
+    end)
+    task.delay(0.6, function() L.DotReady = true end)
+    task.delay(0.7, function() L.Notify("Luminosity online", T.HIGH) end)
 end)
