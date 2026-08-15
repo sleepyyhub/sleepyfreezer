@@ -1340,92 +1340,26 @@ L.Consume = function(src, message, duration, sound, position)
     end)
 end
 
-L.Bound = {}
-
-L.FindNotifyRemote = function()
-    if not L.Net then return nil end
-    if typeof(getconnections) ~= "function" then return nil end
-    local getinfo = debug and (debug.getinfo or debug.info)
-    if not getinfo then return nil end
-    for _, d in ipairs(L.Net:GetDescendants()) do
-        if d:IsA("RemoteEvent") then
-            local ok, cs = pcall(getconnections, d.OnClientEvent)
-            if ok then
-                for _, c in ipairs(cs) do
-                    local okf, fn = pcall(function() return c.Function end)
-                    if okf and type(fn) == "function" then
-                        local oki, info = pcall(getinfo, fn, "s")
-                        local src = ""
-                        if oki then
-                            src = (type(info) == "table")
-                                and tostring(info.short_src or info.source or "")
-                                or tostring(info)
-                        end
-                        if src:find("NotificationController", 1, true) then
-                            return d
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
-L.BindRemote = function(re)
-    if not re or L.Bound[re] then return false end
-    L.Bound[re] = true
-    local nm = re.Name
-    local ok = pcall(function()
-        re.OnClientEvent:Connect(function(a, b, c, d)
-            if typeof(a) == "string" then L.Consume(nm, a, b, c, d) end
-        end)
-    end)
-    if ok then
-        L.Channels += 1
-        L.PacketHooked = true
-    end
-    return ok
-end
-
-L.BindAll = function()
-    if not L.Net then return 0 end
-    local added = 0
-    for _, c in ipairs(L.Net:GetChildren()) do
-        if c:IsA("RemoteEvent") and not L.Bound[c] then
-            if L.BindRemote(c) then added += 1 end
-        end
-    end
-    return added
-end
-
 L.HookNotifyPacket = function()
-    if L.NotifyRemote and L.NotifyRemote.Parent then return true end
-    local re = L.FindNotifyRemote()
-    if re then
-        L.NotifyRemote = re
-        L.NotifyRemoteName = re.Name
-        L.BindRemote(re)
-        return true
-    end
-    if not L.BroadBound then
-        L.BroadBound = true
-        L.BindAll()
-    end
-    return L.PacketHooked
+    if L.PacketHooked then return true end
+    L.ResolveRemotes()
+    local re = L.Remotes.Notify.instance
+    if not re then return false end
+    L.PacketHooked = true
+    L.NotifyRemote = re
+    L.NotifyRemoteName = re.Name
+    L.Channels = 1
+    local nm = re.Name
+    re.OnClientEvent:Connect(function(a, b, c, d)
+        if typeof(a) == "string" then L.Consume(nm, a, b, c, d) end
+    end)
+    return true
 end
 
 task.spawn(function()
     for _ = 1, 600 do
-        if L.HookNotifyPacket() and L.NotifyRemote then break end
+        if L.HookNotifyPacket() then return end
         task.wait(0.15)
-    end
-    while true do
-        task.wait(5)
-        if not (L.NotifyRemote and L.NotifyRemote.Parent) then
-            L.NotifyRemote = nil
-            L.HookNotifyPacket()
-        end
     end
 end)
 
