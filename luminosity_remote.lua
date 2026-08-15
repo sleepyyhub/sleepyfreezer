@@ -1313,7 +1313,6 @@ end)
 L.AutoOn = false
 L.Threshold = 1; L.Sent = 0
 L.RecentRedeem = 0
-L.Buffer = nil
 
 L.ExtractCode = function(raw)
     if not raw or raw == "" then return nil end
