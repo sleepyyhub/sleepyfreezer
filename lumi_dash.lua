@@ -16,8 +16,8 @@
 --      where blocked, sweeps perpendicular offsets left and right for a way
 --      around, falling back to lifting only if every lateral option fails.
 --
--- Each stop is a hop with a short beat between them, so the route reads as
--- a series of steps rather than one clip through a wall.
+-- The whole route is applied within a single frame, so it arrives instantly
+-- rather than gliding, while still passing through each stop in order.
 --
 -- AUTO STEAL
 -- ProximityPromptService.PromptTriggered fires the moment a hold completes.
@@ -60,7 +60,7 @@ L.MaxHops    = 64
 L.AutoAim    = true
 L.MineOnly   = false
 L.Pathfind   = true
-L.HopDelay   = 0.01
+L.HopDelay   = 0
 L.AutoSteal  = true
 L.ShowPath   = true
 L.Aiming     = false
@@ -543,6 +543,10 @@ local function dashTo(landing, dir, allowNav, prebuilt)
         end
         root.CFrame = CFrame.lookAt(s.pos, s.pos + face)
         root.AssemblyLinearVelocity = Vector3.zero
+        -- No yield. Every stop is applied inside one frame, so the route is
+        -- travelled in order without ever rendering as movement. A per-hop
+        -- wait turned into a visible glide the moment waypoint spacing got
+        -- dense; HopDelay stays configurable but defaults to off.
         if L.HopDelay > 0 and i < #stops then task.wait(L.HopDelay) end
     end
 
