@@ -66,6 +66,8 @@ L.Stepped    = false
 L.PreviewHz  = 0.12
 L.StopShort  = 20
 L.StealShort = 40
+L.StealHop   = 20
+L.StealHang  = 0.2
 L.StepDelay  = 0.02
 L.AutoSteal  = true
 L.ShowPath   = true
@@ -1248,38 +1250,72 @@ PPS.PromptTriggered:Connect(function(prompt, player)
 
     local root = hrp()
     local pad = myPad()
-    if not (root and pad) then
-        L.Notify("Auto steal", T.RED, "no owned base found")
+    if not root then return end
+
+    -- Phase 1, on this very frame: straight up.
+    --
+    -- Nothing above this line yields, so the lift lands on the same frame the
+    -- prompt completed. The route home was planned in advance precisely so
+    -- this handler never has to wait on a planner.
+    local origin = root.Position
+    local rot = root.CFrame - root.CFrame.Position
+    local up = origin + Vector3.new(0, L.StealHop, 0)
+    root.CFrame = rot + up
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
+
+    local hum = humanoid()
+    if hum then
+        hum:ChangeState(Enum.HumanoidStateType.Freefall)
+        hum.PlatformStand = false
+    end
+
+    if not pad then
+        L.Notify("Auto steal", T.RED, "lifted, but no owned base found")
         return
     end
 
-    -- Everything below is synchronous. The warm route is used when it still
-    -- describes where we are; otherwise we settle for a straight drop to the
-    -- floor short of the pad, which needs no planner at all. Either way the
-    -- character moves on this frame.
-    -- Stealing lands further out than a manual dash. The steal jump is the
-    -- one the server scrutinises hardest, and it is also the one you can
-    -- afford to finish on foot, so it gets its own distance.
-    local origin = root.Position
-    local target = pullBack(origin, padPoint(pad) or pad.part.Position, L.StealShort)
+    -- Phases 2 and 3 need the hang time, so they leave the handler.
+    task.spawn(function()
+        -- Hold the lift. Velocity is pinned every frame or gravity eats the
+        -- height before the drop is due.
+        local hangUntil = os.clock() + L.StealHang
+        while os.clock() < hangUntil do
+            local r = hrp()
+            if not r then return end
+            r.CFrame = rot + up
+            r.AssemblyLinearVelocity = Vector3.zero
+            RunS.RenderStepped:Wait()
+        end
 
-    local route = nil
-    local warm = L.HomeReady
-    if warm and (warm.from - origin).Magnitude <= 12 and (warm.to - target).Magnitude <= 12 then
-        route = warm.stops
-        L.Engine = "navmesh (warm)"
-    else
-        route = {{pos = target, kind = "land"}}
-        L.Engine = "direct"
-    end
+        -- Phase 2: back down to the floor beneath us.
+        local r = hrp()
+        if not r then return end
+        local down = groundAt(Vector3.new(up.X, origin.Y, up.Z))
+        r.CFrame = rot + down
+        r.AssemblyLinearVelocity = Vector3.zero
 
-    local to = Vector3.new(target.X - origin.X, 0, target.Z - origin.Z)
-    local dir = (to.Magnitude > 0.01) and to.Unit or aimDir()
-    local ok, hops = dashTo(target, dir, false, route)
-    if ok then
-        L.Notify("Stole → home", T.GREEN, ("%s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s"))
-        StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
-    end
+        -- Phase 3: home. Warm route when it still describes where we are,
+        -- otherwise a direct drop short of the pad, which needs no planner.
+        local from = r.Position
+        local target = pullBack(from, padPoint(pad) or pad.part.Position, L.StealShort)
+        local route, warm = nil, L.HomeReady
+        if warm and (warm.from - origin).Magnitude <= 12 and (warm.to - target).Magnitude <= 12 then
+            route, L.Engine = warm.stops, "navmesh (warm)"
+        else
+            route, L.Engine = {{pos = target, kind = "land"}}, "direct"
+        end
+
+        local to = Vector3.new(target.X - from.X, 0, target.Z - from.Z)
+        local dir = (to.Magnitude > 0.01) and to.Unit or aimDir()
+        local ok, hops = dashTo(target, dir, false, route)
+        if ok then
+            L.Notify("Stole to home", T.GREEN,
+                ("up %d · hang %.2fs · %s · %d hop%s"):format(L.StealHop, L.StealHang,
+                    L.Engine, hops, hops == 1 and "" or "s"))
+            StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
+        end
+    end)
 end)
 
 ----------------------------------------------------------------------
