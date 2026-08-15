@@ -18,9 +18,24 @@ local Net = RepS:WaitForChild("Packages", 10)
 Net = Net and Net:WaitForChild("Net", 10)
 
 L.EXPECTED_INDEX = 70
+L.EXPECTED_NOTIFY_INDEX = 146
+L.SkipResults = false
 
 local function isHashed(n) return #n == 67 and n:match("^RF/%x+$") ~= nil end
 local function isBait(n)   return n:match("^RF/%x+%-%x+%-%x+%-%x+%-%x+$") ~= nil end
+local function isHashedRE(n) return #n == 67 and n:match("^RE/%x+$") ~= nil end
+
+L.FindNotify = function()
+    if not Net then return nil end
+    local seen = 0
+    for _, c in ipairs(Net:GetChildren()) do
+        if c:IsA("RemoteEvent") and isHashedRE(c.Name) then
+            seen += 1
+            if seen == L.EXPECTED_NOTIFY_INDEX then return c, seen end
+        end
+    end
+    return nil
+end
 
 L.FindRedeem = function()
     if not Net then return nil end
@@ -51,7 +66,14 @@ L.Resolve = function()
         end
     end
     if not (L.NotifyRE and L.NotifyRE.Parent) and Net then
-        L.NotifyRE = Net:FindFirstChild("RE/NotificationService/Notify")
+        local inst, idx = L.FindNotify()
+        if inst then
+            L.NotifyRE, L.NotifyIndex = inst, idx
+            L.NotifyIndexOk = true
+        else
+            L.NotifyRE = Net:FindFirstChild("RE/NotificationService/Notify")
+            L.NotifyIndexOk = false
+        end
     end
     return L.RF
 end
@@ -119,7 +141,7 @@ L.Hook = function()
     if not re then return end
     L.Hooked = true
 
-    re.OnClientEvent:Connect(function(message)
+    re.OnClientEvent:Connect(function(message, duration, sound, position)
         local t0 = os.clock()
         if not L.Auto then return end
         if typeof(message) ~= "string" or message == "" then return end
@@ -130,32 +152,20 @@ L.Hook = function()
             raw = raw:gsub("^%s+", ""):gsub("%s+$", "")
         end
         if raw == "" or L.Seen[raw] then return end
+        if L.SkipResults and RESULT_WORDS[raw:lower()] then return end
 
-        local code, preclean
-        local n = #raw
-        if n >= 3 and n <= 50 and not raw:find("[^%w]") then
-            if RESULT_WORDS[raw:lower()] then return end
-            code, preclean = raw, true
-        else
-            if raw:find("[Ss]pawned") or raw:find("[Rr]edeemed") or raw:find("[Ii]nvalid")
-               or raw:find("[Ee]xpired") or raw:find("[Aa]lready") or raw:find("[Ff]ailed") then
-                return
-            end
-            code = raw:match("[%u%d][%u%d][%u%d]+")
-            if not code then return end
-            preclean = false
-        end
         L.Seen[raw] = t0
+        L.LastHeard = {text = raw, pos = position, at = t0}
 
         if L.Threshold > 1 then
             local w = 0
-            for _ in code:gmatch("%S+") do w += 1 end
+            for _ in raw:gmatch("%S+") do w += 1 end
             L.Sent += w
             if L.Sent < L.Threshold then return end
             L.Sent = 0
         end
 
-        L.Redeem(code, t0, preclean)
+        L.Redeem(raw, t0, true)
     end)
 end
 
