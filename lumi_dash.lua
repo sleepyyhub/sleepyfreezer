@@ -1387,12 +1387,19 @@ end)
 PPS.PromptTriggered:Connect(function(prompt, player)
     if not L.AutoSteal then return end
     if player ~= LP then return end
-    local txt = ((prompt.ObjectText or "") .. " " .. (prompt.ActionText or "")):lower()
-    if not txt:find("steal", 1, true) then return end
+    if not isSteal(prompt) then return end
 
     local root = hrp()
     local pad = myPad()
     if not root then return end
+
+    -- Arm the flicker as part of the escape, not after it. FlickBusy keeps it
+    -- quiet through the lift, hang and drop so it never fights those writes,
+    -- and it takes over the moment the sequence releases the character.
+    if L.FlickSteal and not L.Flicker then
+        L.Flicker = true
+        if L.SyncFlicker then L.SyncFlicker(true) end
+    end
 
     -- Phase 1, on this very frame: straight up.
     --
