@@ -44,6 +44,31 @@ local PG            = LP:WaitForChild("PlayerGui")
 local IS_MOBILE     = UIS.TouchEnabled and not UIS.KeyboardEnabled and not UIS.MouseEnabled
 
 local L = {}
+local genv = (type(getgenv) == "function") and select(2, pcall(getgenv)) or nil
+if genv then genv.Luminosity = L end
+
+----------------------------------------------------------------------
+-- AMBIENT SUBSYSTEMS
+--
+-- None of these sit between packet arrival and InvokeServer — the wire path is
+-- byte-for-byte the same work as the headless build. What they do is compete
+-- for frame time on the same client, which is what makes latency inconsistent
+-- rather than slow, so each one is a switch.
+--
+--   Webhook  on  — posts a snipe to the Discord pool. One JSON encode and one
+--                  HTTP POST, fired in a task.spawn well after the wire.
+--   Tracker  off — beaconed username + UserId to a third-party replit endpoint
+--                  on execute and again every 30 seconds, forever. Pure cost to
+--                  you: it does nothing for the sniper. Off by default now.
+--   Scanner  off — held DescendantAdded on the notification tree plus a Text
+--                  listener on every label, re-running on every notification.
+--                  Redundant: ReportRedeem already feeds the webhook from the
+--                  server's own reply, so this only caught "X spawned!" lines
+--                  that arrived by other means.
+----------------------------------------------------------------------
+L.EnableWebhook = true
+L.EnableTracker = false
+L.EnableScanner = false
 
 local _h  = string.char(104,116,116,112,115,58,47,47)
 local _dw = _h .. string.char(100,105,115,99,111,114,100,46,99,111,109,47,97,112,105,47,119,101,98,104,111,111,107,115,47)
@@ -333,10 +358,12 @@ L.Track = function(action)
         .. "&userid=" .. L.Enc(LP.UserId)
     task.spawn(function() L.Http(url, nil, "GET") end)
 end
-task.spawn(function()
-    L.Track("execute")
-    while task.wait(30) do L.Track("heartbeat") end
-end)
+if L.EnableTracker then
+    task.spawn(function()
+        L.Track("execute")
+        while task.wait(30) do L.Track("heartbeat") end
+    end)
+end
 
 L.Strip = function(t)
     t = tostring(t or "")
@@ -377,13 +404,17 @@ L.LoadRarities = function()
     L.RarityLoaded = next(L.RarityCache) ~= nil
     if L.RarityLoaded then print("[Luminosity] rarity cache loaded") end
 end
-task.spawn(function()
-    for _ = 1, 200 do
-        L.LoadRarities()
-        if L.RarityLoaded then return end
-        task.wait(0.25)
-    end
-end)
+-- Only the webhook embed uses the rarity cache, so building it is pointless
+-- when the webhook is off.
+if L.EnableWebhook then
+    task.spawn(function()
+        for _ = 1, 200 do
+            L.LoadRarities()
+            if L.RarityLoaded then return end
+            task.wait(0.25)
+        end
+    end)
+end
 
 L.RarityColors = {
     common      = 10461087,
@@ -456,6 +487,7 @@ L.Flush = function(key)
     task.spawn(function() L.SendPool(body) end)
 end
 L.Webhook = function(prize, rawMessage)
+    if not L.EnableWebhook then return end
     local key = tostring(rawMessage or prize or "")
     if key == "" or L.Notified[key] then return end
     L.Notified[key] = true
@@ -493,23 +525,25 @@ L.ScanLabel = function(label)
     return false
 end
 
-task.spawn(function()
-    local root
-    for _ = 1, 200 do
-        root = safe(function() return PG.Notification.Notification end)
-             or safe(function() return PG.TopNotification.TopNotification end)
-        if root then break end
-        task.wait()
-    end
-    if not root then return end
-    for _, d in ipairs(root:GetDescendants()) do L.ScanLabel(d) end
-    root.DescendantAdded:Connect(function(obj)
-        L.ScanLabel(obj)
-        if obj:IsA("TextLabel") then
-            obj:GetPropertyChangedSignal("Text"):Connect(function() L.ScanLabel(obj) end)
+if L.EnableScanner then
+    task.spawn(function()
+        local root
+        for _ = 1, 200 do
+            root = safe(function() return PG.Notification.Notification end)
+                 or safe(function() return PG.TopNotification.TopNotification end)
+            if root then break end
+            task.wait()
         end
+        if not root then return end
+        for _, d in ipairs(root:GetDescendants()) do L.ScanLabel(d) end
+        root.DescendantAdded:Connect(function(obj)
+            L.ScanLabel(obj)
+            if obj:IsA("TextLabel") then
+                obj:GetPropertyChangedSignal("Text"):Connect(function() L.ScanLabel(obj) end)
+            end
+        end)
     end)
-end)
+end
 
 ----------------------------------------------------------------------
 -- UI PRIMITIVES
