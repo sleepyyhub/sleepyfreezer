@@ -73,6 +73,9 @@ L.FlickRadius= 16
 L.FlickHz    = 0.02
 L.FlickBusy  = false
 L.FlickHide  = true
+L.FastPrompt = true
+L.HoldTime   = 0.1
+L.FlickSteal = true
 L.StepDelay  = 0.02
 L.AutoSteal  = true
 L.ShowPath   = true
@@ -706,6 +709,37 @@ local function dashTo(landing, dir, allowNav, prebuilt)
 end
 
 ----------------------------------------------------------------------
+-- PROMPT SPEED
+--
+-- PromptShown fires as a prompt comes into range, which is the cheapest
+-- possible moment to touch it: no descendant sweep of the workspace, no
+-- polling, and only prompts you could actually use are ever written to.
+--
+-- HoldDuration is a client-side property. Shortening it means your client
+-- reports the hold complete sooner; whether the server agrees is its own
+-- business, so this is a convenience rather than a guarantee.
+----------------------------------------------------------------------
+local function isSteal(prompt)
+    local txt = ((prompt.ObjectText or "") .. " " .. (prompt.ActionText or "")):lower()
+    return txt:find("steal", 1, true) ~= nil
+end
+
+local PromptOriginal = {}
+
+local function speedPrompt(prompt)
+    if not L.FastPrompt then return end
+    if not prompt:IsA("ProximityPrompt") then return end
+    if not isSteal(prompt) then return end
+    if PromptOriginal[prompt] == nil then PromptOriginal[prompt] = prompt.HoldDuration end
+    if prompt.HoldDuration ~= L.HoldTime then
+        pcall(function() prompt.HoldDuration = L.HoldTime end)
+    end
+end
+
+PPS.PromptShown:Connect(speedPrompt)
+PPS.PromptButtonHoldBegan:Connect(speedPrompt)
+
+----------------------------------------------------------------------
 -- FLICKER
 --
 -- A follower reads your root position and moves to it. It cannot chase a
@@ -1146,6 +1180,8 @@ local FlickRow = ToggleRow("flicker",      11, L.Flicker,   function(on)
              or "position reads true again")
 end)
 
+L.SyncFlicker = function(on) FlickRow.Set(on) end
+
 local HideRow = ToggleRow("smooth view",  12, L.FlickHide, function(on)
     L.FlickHide = on
     L.Notify(on and "Smooth view on" or "Smooth view off", on and T.GREEN or T.ORANGE,
@@ -1161,7 +1197,30 @@ local FlickSizeRow, FlickSizeVal = ValueRow("flicker range", 13, L.FlickRadius .
     return L.FlickRadius .. "st"
 end)
 
-local HoldRow, HoldVal = ValueRow("hold position", 14, L.Retries .. "x", function()
+local FastRow = ToggleRow("fast prompts", 14, L.FastPrompt, function(on)
+    L.FastPrompt = on
+    if not on then
+        for p, orig in pairs(PromptOriginal) do
+            if p and p.Parent then pcall(function() p.HoldDuration = orig end) end
+        end
+    end
+    L.Notify(on and "Fast prompts on" or "Fast prompts off", on and T.GREEN or T.MUTED,
+        on and ("steal holds cut to " .. L.HoldTime .. "s") or "original hold times restored")
+end)
+
+local HoldTimeRow, HoldTimeVal = ValueRow("hold time", 15, L.HoldTime .. "s", function()
+    local steps = {0.05, 0.1, 0.2, 0.35, 0.5}
+    local i = 1
+    for k, v in ipairs(steps) do if v == L.HoldTime then i = k break end end
+    L.HoldTime = steps[(i % #steps) + 1]
+    return L.HoldTime .. "s"
+end)
+
+local StealFlickRow = ToggleRow("flick on steal", 16, L.FlickSteal, function(on)
+    L.FlickSteal = on
+end)
+
+local HoldRow, HoldVal = ValueRow("hold position", 17, L.Retries .. "x", function()
     local steps = {0, 3, 5, 7, 10, 15}
     local i = 1
     for k, v in ipairs(steps) do if v == L.Retries then i = k break end end
@@ -1169,7 +1228,7 @@ local HoldRow, HoldVal = ValueRow("hold position", 14, L.Retries .. "x", functio
     return L.Retries .. "x"
 end)
 
-local SlimRow  = ToggleRow("slim avatar", 15, L.Slim,      function(on)
+local SlimRow  = ToggleRow("slim avatar", 18, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
@@ -1513,6 +1572,8 @@ task.spawn(function()
         NodeRow.Set(L.ShowPath)
         FlickRow.Set(L.Flicker)
         HideRow.Set(L.FlickHide)
+        FastRow.Set(L.FastPrompt)
+        StealFlickRow.Set(L.FlickSteal)
         SlimRow.Set(L.Slim)
         if L.Slim then applyScale(true) end
         L.Notify("Dash online", T.HIGH, "hold " .. L.Key.Name .. " to aim")
