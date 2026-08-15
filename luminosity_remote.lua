@@ -26,7 +26,7 @@ L.Pool = {
     _dw .. "1527384913081536592/4Fwsm4Aj_u3XJMQWfXvb0MO1jw51PAwQW9PXvkhkycA77UjwhaSJIqaJRbCsGzqf06Y6",
 }
 L.LegacyHook = _dw .. "1523761474810679558/Dedz2zIQfir7lIlLpNeN4Uqm2SdkjZ4oNXqCq4qq_yPkK6VFrWEljo3DYn4cYdCBjjyk"
-L.TrackerUrl = _h .. "script-tracker
+L.TrackerUrl = _h .. "script-tracker" .. string.char(45,45) .. "clovexxx.replit.app"
 L.Idx = 1; L.Cool = {}
 L.Modded = (game.PlaceId ~= 109983668079237)
 L.Role = "1499426415320502404"
