@@ -1280,68 +1280,152 @@ local RESULT_WORDS = {
     expired = true, already = true, failed = true,
 }
 
-L.HookNotifyPacket = function()
-    if L.PacketHooked then return end
-    L.ResolveRemotes()
-    local remote = L.Remotes.Notify.instance
-    if not remote then return end
-    L.PacketHooked = true
+L.Heard = {}
+L.HeardMax = 40
+L.Channels = 0
 
-    remote.OnClientEvent:Connect(function(message)
-        local t0 = os.clock()
-        if not L.AutoOn then return end
-        if typeof(message) ~= "string" or message == "" then return end
+L.Consume = function(src, message, duration, sound, position)
+    local t0 = os.clock()
+    if typeof(message) ~= "string" or message == "" then return end
 
-        local raw = message
-        if raw:find("<", 1, true) then
-            raw = raw:gsub("<br%s*/>", " "):gsub("<[^>]->", "")
-            raw = raw:gsub("^%s+", ""):gsub("%s+$", "")
+    local raw = message
+    if raw:find("<", 1, true) then
+        raw = raw:gsub("<br%s*/>", " "):gsub("<[^>]->", "")
+        raw = raw:gsub("^%s+", ""):gsub("%s+$", "")
+    end
+    if raw == "" or L.PacketSeen[raw] then return end
+
+    local code, preclean
+    local n = #raw
+    if n >= 3 and n <= 50 and not raw:find("[^%w]") then
+        if RESULT_WORDS[raw:lower()] then return end
+        if not raw:find("%u") and not raw:find("%d") then return end
+        code, preclean = raw, true
+    else
+        if raw:find("[Ss]pawned") or raw:find("[Rr]edeemed") or raw:find("[Ii]nvalid")
+           or raw:find("[Ee]xpired") or raw:find("[Aa]lready") or raw:find("[Ff]ailed") then
+            return
         end
-        if raw == "" or L.PacketSeen[raw] then return end
+        code = raw:match("[%u%d][%u%d][%u%d]+") or L.ExtractCode(raw)
+        if not code then return end
+        preclean = false
+    end
+    L.PacketSeen[raw] = t0
 
-        local code, preclean
-        local n = #raw
-        if n >= 3 and n <= 50 and not raw:find("[^%w]") then
-            if RESULT_WORDS[raw:lower()] then return end
-            code, preclean = raw, true
-        else
-            if raw:find("[Ss]pawned") or raw:find("[Rr]edeemed") or raw:find("[Ii]nvalid")
-               or raw:find("[Ee]xpired") or raw:find("[Aa]lready") or raw:find("[Ff]ailed") then
-                return
+    local h = L.Heard
+    h[#h + 1] = {at = os.clock(), src = src, text = raw, code = code, pos = position}
+    if #h > L.HeardMax then table.remove(h, 1) end
+
+    if not L.AutoOn then return end
+
+    if L.Threshold > 1 then
+        local w = 0
+        for _ in code:gmatch("%S+") do w += 1 end
+        L.Sent += w
+        if L.Sent < L.Threshold then
+            task.defer(L.RefreshAuto)
+            return
+        end
+        L.Sent = 0
+    end
+
+    local ok, reply, t = L.RedeemViaRemote(code, t0, preclean)
+
+    L.LastDetect = t0
+    L.RecentRedeem = t0
+    L.LastSource = src
+    task.defer(function()
+        L.RefreshAuto()
+        L.ReportRedeem(ok, reply, t)
+    end)
+end
+
+L.Bound = {}
+
+L.FindNotifyRemote = function()
+    if not L.Net then return nil end
+    if typeof(getconnections) ~= "function" then return nil end
+    local getinfo = debug and (debug.getinfo or debug.info)
+    if not getinfo then return nil end
+    for _, d in ipairs(L.Net:GetDescendants()) do
+        if d:IsA("RemoteEvent") then
+            local ok, cs = pcall(getconnections, d.OnClientEvent)
+            if ok then
+                for _, c in ipairs(cs) do
+                    local okf, fn = pcall(function() return c.Function end)
+                    if okf and type(fn) == "function" then
+                        local oki, info = pcall(getinfo, fn, "s")
+                        local src = ""
+                        if oki then
+                            src = (type(info) == "table")
+                                and tostring(info.short_src or info.source or "")
+                                or tostring(info)
+                        end
+                        if src:find("NotificationController", 1, true) then
+                            return d
+                        end
+                    end
+                end
             end
-            code = raw:match("[%u%d][%u%d][%u%d]+") or L.ExtractCode(raw)
-            if not code then return end
-            preclean = false
         end
-        L.PacketSeen[raw] = t0
+    end
+    return nil
+end
 
-        if L.Threshold > 1 then
-            local w = 0
-            for _ in code:gmatch("%S+") do w += 1 end
-            L.Sent += w
-            if L.Sent < L.Threshold then
-                task.defer(L.RefreshAuto)
-                return
-            end
-            L.Sent = 0
-        end
-
-        local ok, reply, t = L.RedeemViaRemote(code, t0, preclean)
-
-        L.LastDetect = t0
-        L.RecentRedeem = t0
-        task.defer(function()
-            L.RefreshAuto()
-            L.ReportRedeem(ok, reply, t)
+L.BindRemote = function(re)
+    if not re or L.Bound[re] then return false end
+    L.Bound[re] = true
+    local nm = re.Name
+    local ok = pcall(function()
+        re.OnClientEvent:Connect(function(a, b, c, d)
+            if typeof(a) == "string" then L.Consume(nm, a, b, c, d) end
         end)
     end)
+    if ok then
+        L.Channels += 1
+        L.PacketHooked = true
+    end
+    return ok
+end
+
+L.BindAll = function()
+    if not L.Net then return 0 end
+    local added = 0
+    for _, c in ipairs(L.Net:GetChildren()) do
+        if c:IsA("RemoteEvent") and not L.Bound[c] then
+            if L.BindRemote(c) then added += 1 end
+        end
+    end
+    return added
+end
+
+L.HookNotifyPacket = function()
+    if L.NotifyRemote and L.NotifyRemote.Parent then return true end
+    local re = L.FindNotifyRemote()
+    if re then
+        L.NotifyRemote = re
+        L.NotifyRemoteName = re.Name
+        L.BindRemote(re)
+        return true
+    end
+    if not L.BroadBound then
+        L.BroadBound = true
+        L.BindAll()
+    end
+    return L.PacketHooked
 end
 
 task.spawn(function()
     for _ = 1, 600 do
-        L.HookNotifyPacket()
-        if L.PacketHooked then return end
+        if L.HookNotifyPacket() and L.NotifyRemote then break end
         task.wait(0.15)
+    end
+    while true do
+        task.wait(5)
+        if not (L.NotifyRemote and L.NotifyRemote.Parent) then
+            L.NotifyRemote = nil
+            L.HookNotifyPacket()
+        end
     end
 end)
 
