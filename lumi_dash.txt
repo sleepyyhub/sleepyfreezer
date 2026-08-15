@@ -63,6 +63,8 @@ L.Pathfind   = true
 L.HopDelay   = 0
 L.Stepped    = false
 L.PreviewHz  = 0.12
+L.StopShort  = 10
+L.StepDelay  = 0.2
 L.AutoSteal  = true
 L.ShowPath   = true
 L.Aiming     = false
@@ -179,6 +181,18 @@ local function myPad()
         if pad.mine then return pad end
     end
     return nil
+end
+
+-- Land short of a target rather than on top of it. A single jump that ends
+-- exactly inside the delivery volume is the shape a server rejects; finishing
+-- a few studs out and closing the gap on foot is not. Pulled back along the
+-- approach direction, so the stop is always between you and the pad.
+local function pullBack(from, to, studs)
+    if studs <= 0 then return to end
+    local d = Vector3.new(to.X - from.X, 0, to.Z - from.Z)
+    local dist = d.Magnitude
+    if dist <= studs + 1 then return to end
+    return to - d.Unit * studs
 end
 
 local function aimDir()
@@ -851,6 +865,28 @@ local StatusHops = New("TextLabel", {Size = UDim2.new(1, 0, 0, 12), Position = U
     TextTransparency = 1, Parent = StatusCard})
 
 local Rows = {}
+
+local function ValueRow(label, order, initial, onClick)
+    local Box = New("Frame", {Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = T.RAISED,
+        BackgroundTransparency = 1, LayoutOrder = order, Parent = Content})
+    Corner(Box, 10); Pad(Box, 0, 0, 12, 12)
+    local BoxStroke = Stroke(Box, T.LINE, 1, 1)
+    flow(BoxStroke, {speed = 0.3, phase = order * 0.13})
+    local Tag = New("TextLabel", {Size = UDim2.new(1, -70, 1, 0), BackgroundTransparency = 1,
+        Text = label, TextColor3 = T.TEXT, Font = Enum.Font.GothamSemibold, TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTransparency = 1, Parent = Box})
+    local Val = New("TextButton", {Size = UDim2.new(0, 64, 0, 24), Position = UDim2.new(1, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5), BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
+        Text = initial, TextColor3 = T.HIGH, Font = Enum.Font.GothamBold, TextSize = 12,
+        BackgroundTransparency = 1, TextTransparency = 1, Parent = Box})
+    Corner(Val, 7)
+    Val.MouseButton1Click:Connect(function() Val.Text = onClick() end)
+    local entry = {Box = Box, BoxStroke = BoxStroke, Tag = Tag, Sw = Val, SwStroke = BoxStroke,
+                   Kn = Val, Set = function() end}
+    Rows[#Rows + 1] = entry
+    return entry, Val
+end
+
 local function ToggleRow(label, order, get, onChange)
     local Box = New("Frame", {Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = T.RAISED,
         BackgroundTransparency = 1, LayoutOrder = order, Parent = Content})
@@ -896,7 +932,26 @@ local PathRow  = ToggleRow("pathfinding",  4, L.Pathfind,  function(on)
 end)
 local StealRow = ToggleRow("auto steal",   5, L.AutoSteal, function(on) L.AutoSteal = on end)
 local NodeRow  = ToggleRow("path nodes",   6, L.ShowPath,  function(on) L.ShowPath = on end)
-local SlimRow  = ToggleRow("slim avatar",  7, L.Slim,      function(on)
+local ShortRow, ShortVal = ValueRow("stop short", 7, L.StopShort .. "st", function()
+    local steps = {0, 5, 10, 15, 20, 30}
+    local i = 1
+    for k, v in ipairs(steps) do if v == L.StopShort then i = k break end end
+    L.StopShort = steps[(i % #steps) + 1]
+    return L.StopShort .. "st"
+end)
+
+local StepRow, StepVal = ValueRow("hop mode", 8, "instant", function()
+    if not L.Stepped then
+        L.Stepped, L.HopDelay = true, L.StepDelay
+        L.Notify("Stepped hops", T.ORANGE, ("real frames, %.2fs apart"):format(L.StepDelay))
+        return ("%.0fms"):format(L.StepDelay * 1000)
+    end
+    L.Stepped, L.HopDelay = false, 0
+    L.Notify("Instant hops", T.GREEN, "single frame, one write")
+    return "instant"
+end)
+
+local SlimRow  = ToggleRow("slim avatar",  9, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
@@ -1009,10 +1064,12 @@ RunS.RenderStepped:Connect(function()
         point = Vector3.new(p.X, p.Y, p.Z)
         local to = Vector3.new(p.X - origin.X, 0, p.Z - origin.Z)
         if to.Magnitude > 0.01 then dir = to.Unit end
+        point = pullBack(origin, point, L.StopShort)
         Glow.Adornee = pad.part
         Glow.Enabled = true
-        StatusSub.Text = ("%s base · %dst"):format(pad.mine and "your" or pad.plot.Name:sub(1, 6),
-            math.floor((p - origin).Magnitude))
+        StatusSub.Text = ("%s base · %dst%s"):format(pad.mine and "your" or pad.plot.Name:sub(1, 6),
+            math.floor((p - origin).Magnitude),
+            L.StopShort > 0 and (" · stop " .. L.StopShort .. "st short") or "")
         StatusSub.TextColor3 = pad.mine and T.GREEN or T.HIGH
     else
         point = origin + dir * L.Range
@@ -1065,7 +1122,8 @@ PPS.PromptTriggered:Connect(function(prompt, player)
     local p = pad.part.Position
     local to = Vector3.new(p.X - root.Position.X, 0, p.Z - root.Position.Z)
     local dir = (to.Magnitude > 0.01) and to.Unit or aimDir()
-    local ok, hops = dashTo(groundAt(p), dir, true)
+    local landPoint = groundAt(pullBack(root.Position, p, L.StopShort))
+    local ok, hops = dashTo(landPoint, dir, true)
     if ok then
         L.Notify("Stole → home", T.GREEN, ("%s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s"))
         StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
