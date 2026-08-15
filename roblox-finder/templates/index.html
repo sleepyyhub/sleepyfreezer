@@ -342,7 +342,7 @@
 // ════════════════════════════════════════════════════════════════
 //  Shared helpers
 // ════════════════════════════════════════════════════════════════
-function fmtNum(n) { return Number(n).toLocaleString(); }
+function fmtNum(n) { return Number(n).toLocaleString('en-US'); }
 function totalCombos(len) { return Math.pow(26, len); }
 
 // ── Tab switching ────────────────────────────────────────────────
@@ -644,10 +644,22 @@ function handleProxyEvent(ev) {
                   s.found > 0 ? 'ok' : '');
           if (s.found > 0) {
             loadProxiesBtn.style.display = '';
-            if (pProxyResults.length > 0) {
-              copyAllBtn.style.display = '';
-              downloadBtn.style.display = '';
-            }
+            // Fetch the actual proxy list so Copy All / Download work after a reconnect
+            fetch('/api/proxies/results').then(r => r.json()).then(res => {
+              if (!res.proxies) return;
+              const existing = new Set(pProxyResults);
+              res.proxies.forEach(proxy => {
+                if (!existing.has(proxy)) {
+                  pProxyResults.push(proxy);
+                  addProxyResult(proxy);
+                  existing.add(proxy);
+                }
+              });
+              if (pProxyResults.length > 0) {
+                copyAllBtn.style.display = '';
+                downloadBtn.style.display = '';
+              }
+            }).catch(() => {});
           }
           stopProxy(true);
         } else {
@@ -732,10 +744,22 @@ function handleProxyEvent(ev) {
                     ' working / ' + fmtNum(s.checked) + ' checked', s.found > 0 ? 'ok' : '');
             if (s.found > 0) {
               loadProxiesBtn.style.display = '';
-              if (pProxyResults.length > 0) {
-                copyAllBtn.style.display = '';
-                downloadBtn.style.display = '';
-              }
+              // Recover proxy list for Copy All / Download
+              fetch('/api/proxies/results').then(r => r.json()).then(res => {
+                if (!res.proxies) return;
+                const existing = new Set(pProxyResults);
+                res.proxies.forEach(proxy => {
+                  if (!existing.has(proxy)) {
+                    pProxyResults.push(proxy);
+                    addProxyResult(proxy);
+                    existing.add(proxy);
+                  }
+                });
+                if (pProxyResults.length > 0) {
+                  copyAllBtn.style.display = '';
+                  downloadBtn.style.display = '';
+                }
+              }).catch(() => {});
             }
             stopProxy(true);
           }).catch(() => stopProxy(true));

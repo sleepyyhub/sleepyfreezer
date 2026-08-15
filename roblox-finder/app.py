@@ -654,15 +654,21 @@ def _proxy_scrape_runner_inner(_cf, mode="connect"):
         pscrape.active = False
         return
 
-    # Cap to keep validation fast enough to finish before SSE drops
-    proxies = list(all_raw)
-    if len(proxies) > 15_000:
-        random.shuffle(proxies)
-        proxies = proxies[:15_000]
+    # Cap to keep validation inside Render's limits (~3-4 min for 20k)
+    # random.sample works directly on a set (reservoir sampling) — no need to
+    # build a full list first, saving peak memory when all_raw is huge.
+    CAP = 20_000
+    total_scraped = len(all_raw)
+    if total_scraped > CAP:
+        proxies = random.sample(list(all_raw), CAP)
+        cap_note = f" (capped from {total_scraped:,} scraped)"
+    else:
+        proxies = list(all_raw)
+        cap_note = ""
 
     mode_label = "Roblox HTTP" if mode == "roblox" else "CONNECT tunnel"
     pscrape.push({"type": "log",
-                  "msg":   f"→ {len(proxies)} unique proxies → {mode_label} validation",
+                  "msg":   f"→ {len(proxies):,} proxies{cap_note} → {mode_label} validation",
                   "level": "info"})
 
     pscrape.total = len(proxies)
@@ -751,6 +757,17 @@ def proxies_status():
         "total":    pscrape.total,
         "cps":      pscrape.cps,
         "loaded":   len(PROXY_POOL),
+    })
+
+
+@app.route("/api/proxies/results")
+def proxies_results():
+    """Returns the working proxy list so the frontend can recover it after a
+    SSE disconnect — client-side pProxyResults is repopulated from here."""
+    return jsonify({
+        "proxies": pscrape.proxies,
+        "found":   pscrape.found,
+        "phase":   pscrape.phase,
     })
 
 
