@@ -152,19 +152,66 @@ L.HideOdds    = true
 L.KeepAfterBuy = true
 Store.Cfg     = L
 
-L.Replicator = nil
 L.RealName, L.RealMut, L.MachineState = nil, nil, "Idle"
 L.LastRead = 0
+L.SpoofLuck = false
+L.FakeLuck = 25
+L.LUCKS = {2, 4, 6, 8, 10, 12, 15, 20, 25, 30, 35}
 
-L.GetReplicator = function()
-    if L.Replicator then return L.Replicator end
+-- ---------------------------------------------------------------------------
+-- Where the roll actually comes from.
+--
+-- The controller does NOT render from the RNGMachine_<userid> replicator --
+-- that one only carries State/SpinCosts/SkillTree. _reconcileActivityDisplay
+-- calls getSelectedActivity(), which reads
+--     RNGMachineActivity.Data.Sessions[tostring(UserId)]
+-- and hands that session straight to _renderActivityOffer, which reads
+-- Offer.Name (model + overhead + prompt) and session.Multiplier (luck VFX).
+--
+-- So that session table is the single source every visual comes from. Editing
+-- it in place and letting the game render normally is what makes the result
+-- identical to a genuine roll, instead of repainting the aftermath.
+-- ---------------------------------------------------------------------------
+L.Reps = {}
+
+L.GetRep = function(id)
+    if L.Reps[id] then return L.Reps[id] end
     local pkgs = RepS:FindFirstChild("Packages")
     local mod = pkgs and pkgs:FindFirstChild("ReplicatorClient")
     if not mod then return nil end
     local RC = safe(require, mod)
     if type(RC) ~= "table" or type(RC.get) ~= "function" then return nil end
-    L.Replicator = safe(RC.get, ("RNGMachine_%d"):format(LP.UserId))
-    return L.Replicator
+    L.Reps[id] = safe(RC.get, id)
+    return L.Reps[id]
+end
+
+L.Session = function()
+    local a = L.GetRep("RNGMachineActivity")
+    local d = a and safe(function() return a.Data end)
+    if type(d) ~= "table" or type(d.Sessions) ~= "table" then return nil end
+    local s = d.Sessions[tostring(LP.UserId)]
+    return (type(s) == "table") and s or nil
+end
+
+L.Controller = function()
+    if L.Ctl then return L.Ctl end
+    L.Ctl = loadModule("Controllers", "RNGMachineController")
+    return L.Ctl
+end
+
+-- Models are not preloaded (ReplicatedStorage.Models.Animals is empty); they
+-- stream on demand. getModelBestEffort returns nil for anything not already
+-- resident and only delivers through its callback, and renderModel throws that
+-- callback away if the stage token moved on while the asset was in flight --
+-- which is exactly why the spoofed model kept failing to appear. Requesting it
+-- up front puts it in the AssetStreamController cache so the callback resolves
+-- immediately.
+L.Warm = function(name)
+    if type(name) ~= "string" then return end
+    local ASC = loadModule("Controllers", "AssetStreamController")
+    if ASC and type(ASC.requestAssets) == "function" then
+        safe(ASC.requestAssets, "m", {name})
+    end
 end
 
 L.Locked = {}
@@ -183,30 +230,95 @@ L.ClearLocked = function()
     table.clear(L.LockedMut)
 end
 
--- Data.Offer only exists while State == "Offer"; every other state has no
--- offer table at all, so gate on the state the controller itself checks.
 L.ReadOffer = function()
-    local now = os.clock()
-    if now - L.LastRead < 0.05 then return L.RealName, L.RealMut end
-    L.LastRead = now
-    local r = L.GetReplicator()
-    local d = r and safe(function() return r.Data end)
-    if type(d) ~= "table" then
+    local s = L.Session()
+    if not s then
+        if L.RealName then L.LockCurrent() end
         L.RealName, L.RealMut, L.MachineState = nil, nil, "Idle"
         return nil, nil
     end
-    L.MachineState = d.State or "Idle"
-    local offer = d.Offer
+    L.MachineState = s.State or "Idle"
+    local offer = s.Offer
     if L.MachineState == "Offer" and type(offer) == "table" then
-        L.RealName = offer.Name
-        L.RealMut  = offer.Mutation
+        -- Once spoofed, Offer.Name holds the fake, so the untouched original is
+        -- kept alongside it rather than re-read from a field we overwrote.
+        L.RealName = offer.__LumiReal or offer.Name
+        L.RealMut  = offer.__LumiRealMut ~= nil and offer.__LumiRealMut or offer.Mutation
+        if L.RealMut == false then L.RealMut = nil end
     else
-        -- Offer cleared: it was either bought or it expired. Pin the pair so a
-        -- bought brainrot keeps the face it was sold under.
+        -- Offer gone: bought or expired. Pin the pair so a bought brainrot
+        -- keeps the face it was sold under.
         if L.RealName then L.LockCurrent() end
         L.RealName, L.RealMut = nil, nil
     end
     return L.RealName, L.RealMut
+end
+
+-- Rewrite the session in place. Returns true only when something actually
+-- changed, so the steady state costs nothing and we never re-render on a tick
+-- where there was no work to do.
+L.ApplyToSession = function(s)
+    if not (L.Enabled and L.FakeName) then return false end
+    if type(s) ~= "table" or s.State ~= "Offer" then return false end
+    local o = s.Offer
+    if type(o) ~= "table" then return false end
+
+    local real = o.__LumiReal or o.Name
+    if type(real) ~= "string" then return false end
+    if not (L.AnimalData and L.AnimalData[real]) then return false end
+
+    local fake = L.Locked[real] or L.FakeName
+    if not (L.AnimalData and L.AnimalData[fake]) then return false end
+
+    local changed = false
+
+    if o.Name ~= fake then
+        if o.__LumiReal == nil then o.__LumiReal = real end
+        o.Name = fake
+        changed = true
+    end
+
+    if L.SpoofMut or L.LockedMut[real] ~= nil then
+        local want = L.SwapMut(o.__LumiRealMut ~= nil and o.__LumiRealMut or o.Mutation, real)
+        if o.__LumiRealMut == nil then o.__LumiRealMut = o.Mutation or false end
+        if o.Mutation ~= want then
+            o.Mutation = want
+            changed = true
+        end
+    end
+
+    -- session.Multiplier is what setLuckySpinVfx() is given, so this is the
+    -- luck explosion / spin colouring a real high roll comes with.
+    if L.SpoofLuck then
+        if s.__LumiRealMult == nil then s.__LumiRealMult = s.Multiplier or false end
+        if s.Multiplier ~= L.FakeLuck then
+            s.Multiplier = L.FakeLuck
+            changed = true
+        end
+    end
+
+    if changed then L.Warm(fake) end
+    return changed
+end
+
+-- _reconcileActivityDisplay short-circuits whenever its identity string
+-- ("<UserId>:Offer:<ExpiresAt>") is unchanged, so editing the session alone
+-- will not redraw anything. _renderActivityOffer is public on the controller
+-- and is the exact call the game makes itself, so driving it directly gives a
+-- real render rather than a patched-up one.
+L.ForceRender = function(s)
+    local C = L.Controller()
+    if not C or type(C._renderActivityOffer) ~= "function" then return false end
+    if type(s) ~= "table" or s.State ~= "Offer" or type(s.Offer) ~= "table" then return false end
+    return safe(function() C:_renderActivityOffer(s, true) end) ~= nil or true
+end
+
+-- Runs on every replicator update and on the poll tick.
+L.Sync = function(force)
+    local s = L.Session()
+    if not s then return end
+    local changed = L.ApplyToSession(s)
+    if changed or force then L.ForceRender(s) end
 end
 
 L.Active = function()
@@ -467,17 +579,39 @@ L.Display = function()
     return alive(f) and f or nil
 end
 
--- renderModel caches models in a local table keyed "Brainrot:<realName>:<mut>"
--- and reuses the cached one whenever its .Parent is still set. That means
--- changing the spoofed name mid-offer would keep showing the old model.
--- Destroying the folder's children forces the cache to miss so the game
--- re-renders through the hooked getModelBestEffort.
+-- renderModel caches display models in a local table keyed
+-- "Brainrot:<Offer.Name>:<mutation>" and reuses one while its .Parent is set.
+-- Because the key is built from Offer.Name, spoofing the name at the source
+-- changes the key too, so a stale real-name model is never reused. Clearing
+-- the folder is only needed when going back to unspoofed.
 L.Refresh = function()
     local f = L.Display()
     if not f then return end
     for _, c in ipairs(f:GetChildren()) do
         safe(function() c:Destroy() end)
     end
+end
+
+-- Restore a session we previously edited, so turning the spoof off puts the
+-- real roll back instead of leaving the fake frozen on screen.
+L.RestoreSession = function()
+    local s = L.Session()
+    if type(s) ~= "table" then return false end
+    local changed = false
+    local o = s.Offer
+    if type(o) == "table" then
+        if o.__LumiReal ~= nil then o.Name, o.__LumiReal, changed = o.__LumiReal, nil, true end
+        if o.__LumiRealMut ~= nil then
+            o.Mutation = (o.__LumiRealMut ~= false) and o.__LumiRealMut or nil
+            o.__LumiRealMut, changed = nil, true
+        end
+    end
+    if s.__LumiRealMult ~= nil then
+        s.Multiplier = (s.__LumiRealMult ~= false) and s.__LumiRealMult or nil
+        s.__LumiRealMult, changed = nil, true
+    end
+    if changed then L.ForceRender(s) end
+    return changed
 end
 
 L.LastSweep = 0
@@ -526,19 +660,42 @@ end
 
 L.Reapply = function()
     if not L.Enabled then
+        L.RestoreSession()
         L.Refresh()
         return
     end
     L.ReadOffer()
-    L.Refresh()
-    if L.SpoofMut then
-        for _, label in ipairs(CollectionService:GetTagged("RNGMachineMutationScreen")) do
-            if label:IsA("TextLabel") then
-                label.Text = L.MutationDisplay(L.FakeMut)
-            end
-        end
+    L.Warm(L.FakeName)
+    -- Re-point the session at the new choice, then force one render so a name
+    -- picked mid-offer takes effect instead of waiting for the next roll.
+    local s = L.Session()
+    if s then
+        local o = s.Offer
+        if type(o) == "table" and o.__LumiReal ~= nil then o.Name = o.__LumiReal end
+        L.ApplyToSession(s)
+        L.ForceRender(s)
     end
     L.Enforce()
+end
+
+-- The controller reacts to the activity replicator through ListenRaw. Hooking
+-- the same signal lets the session be rewritten as the update lands, so in the
+-- common case the game's own reconcile already sees the fake and draws it
+-- natively -- no second render, no visible swap.
+L.Hooked = false
+L.HookReplication = function()
+    if L.Hooked then return end
+    local a = L.GetRep("RNGMachineActivity")
+    if not a or type(a.ListenRaw) ~= "function" then return end
+    local ok = safe(function()
+        a:ListenRaw(function()
+            if not L.Enabled then return end
+            local s = L.Session()
+            if s then L.ApplyToSession(s) end
+        end)
+        return true
+    end)
+    if ok then L.Hooked = true end
 end
 
 -- ---------------------------------------------------------------------------
@@ -641,7 +798,7 @@ L.Notify = function(msg, color, sub)
 end
 
 local PANEL_W = IS_MOBILE and 300 or 350
-local PANEL_H = 620
+local PANEL_H = 700
 local Panel = New("Frame", {Size = UDim2.fromOffset(PANEL_W, PANEL_H),
     Position = UDim2.new(0.5, -(PANEL_W / 2), 0.5, -(PANEL_H / 2)),
     BackgroundColor3 = T.SURFACE, BackgroundTransparency = 1, BorderSizePixel = 0, Parent = Gui})
@@ -753,6 +910,8 @@ local SpoofToggle = ToggleRow("Visual Spoof", 1, function(on)
     L.Enabled = on
     if on then
         if L.Install() then
+            L.HookReplication()
+            L.Warm(L.FakeName)
             L.Notify("Spoof ON", T.GREEN, "Showing " .. L.DisplayOf(L.FakeName))
             L.Reapply()
         else
@@ -761,6 +920,7 @@ local SpoofToggle = ToggleRow("Visual Spoof", 1, function(on)
         end
     else
         L.Notify("Spoof OFF", T.MUTED)
+        L.RestoreSession()
         L.Refresh()
     end
 end)
@@ -786,8 +946,45 @@ local UnlockToggle = ToggleRow("Force Unlock", 5, function(on)
     L.ForceUnlock = on
 end)
 
+-- session.Multiplier drives setLuckySpinVfx, so this is the luck explosion and
+-- spin colouring that a genuine high roll comes with.
+local LuckToggle = ToggleRow("Spoof Luck", 6, function(on)
+    L.SpoofLuck = on
+    if L.Enabled then L.Reapply() end
+end)
+
+local LuckBox = New("Frame", {Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = T.RAISED,
+    LayoutOrder = 7, Parent = Content})
+Corner(LuckBox, 12); Pad(LuckBox, 0, 0, 12, 12)
+Stroke(LuckBox, T.LINE, 1, 0.5)
+New("TextLabel", {Size = UDim2.new(0, 70, 1, 0), BackgroundTransparency = 1, Text = "Luck",
+    TextColor3 = T.MUTED, Font = Enum.Font.GothamSemibold, TextSize = 12,
+    TextXAlignment = Enum.TextXAlignment.Left, Parent = LuckBox})
+local LuckPrev = New("TextButton", {Size = UDim2.fromOffset(26, 26), Position = UDim2.new(0, 72, 0.5, -13),
+    BackgroundColor3 = T.SURFACE, AutoButtonColor = false, Text = "<", TextColor3 = T.HIGH,
+    Font = Enum.Font.GothamBold, TextSize = 14, Parent = LuckBox})
+Corner(LuckPrev, 8)
+local LuckLabel = New("TextLabel", {Size = UDim2.new(1, -172, 1, 0), Position = UDim2.fromOffset(104, 0),
+    BackgroundTransparency = 1, Text = "25x", TextColor3 = T.ORANGE,
+    Font = Enum.Font.GothamBold, TextSize = 13, Parent = LuckBox})
+local LuckNext = New("TextButton", {Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, -26, 0.5, -13),
+    BackgroundColor3 = T.SURFACE, AutoButtonColor = false, Text = ">", TextColor3 = T.HIGH,
+    Font = Enum.Font.GothamBold, TextSize = 14, Parent = LuckBox})
+Corner(LuckNext, 8)
+
+local luckIndex = 9 -- 25x
+local function setLuck(i)
+    luckIndex = ((i - 1) % #L.LUCKS) + 1
+    L.FakeLuck = L.LUCKS[luckIndex]
+    LuckLabel.Text = L.FakeLuck .. "x"
+    if L.Enabled and L.SpoofLuck then L.Reapply() end
+end
+LuckPrev.MouseButton1Click:Connect(function() setLuck(luckIndex - 1) end)
+LuckNext.MouseButton1Click:Connect(function() setLuck(luckIndex + 1) end)
+setLuck(luckIndex)
+
 local MutBox = New("Frame", {Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = T.RAISED,
-    LayoutOrder = 6, Parent = Content})
+    LayoutOrder = 8, Parent = Content})
 Corner(MutBox, 12); Pad(MutBox, 0, 0, 12, 12)
 Stroke(MutBox, T.LINE, 1, 0.5)
 New("TextLabel", {Size = UDim2.new(0, 70, 1, 0), BackgroundTransparency = 1, Text = "Mutation",
@@ -818,7 +1015,7 @@ MutPrev.MouseButton1Click:Connect(function() setMut(mutIndex - 1) end)
 MutNext.MouseButton1Click:Connect(function() setMut(mutIndex + 1) end)
 
 local SearchBox = New("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = T.FIELD,
-    LayoutOrder = 7, Parent = Content})
+    LayoutOrder = 9, Parent = Content})
 Corner(SearchBox, 10); Pad(SearchBox, 0, 0, 10, 10)
 Stroke(SearchBox, T.LINE, 1, 0.6)
 local SearchInput = New("TextBox", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1,
@@ -826,7 +1023,7 @@ local SearchInput = New("TextBox", {Size = UDim2.new(1, 0, 1, 0), BackgroundTran
     TextColor3 = T.TEXT, Font = Enum.Font.Gotham, TextSize = 12,
     TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false, Parent = SearchBox})
 
-local ListFrame = New("ScrollingFrame", {Size = UDim2.new(1, 0, 1, -378), LayoutOrder = 8,
+local ListFrame = New("ScrollingFrame", {Size = UDim2.new(1, 0, 1, -478), LayoutOrder = 10,
     BackgroundColor3 = T.FIELD, BorderSizePixel = 0, ScrollBarThickness = 3,
     ScrollBarImageColor3 = T.ACCENT, ScrollBarImageTransparency = 0.4,
     CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -895,7 +1092,7 @@ end
 SearchInput:GetPropertyChangedSignal("Text"):Connect(L.Filter)
 
 local StatusBar = New("Frame", {Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = T.RAISED,
-    LayoutOrder = 9, Parent = Content})
+    LayoutOrder = 11, Parent = Content})
 Corner(StatusBar, 9); Pad(StatusBar, 0, 0, 10, 10)
 Stroke(StatusBar, T.LINE, 1, 0.6)
 local StatusDot = New("Frame", {Size = UDim2.fromOffset(7, 7), Position = UDim2.new(0, 4, 0.5, -4),
@@ -908,7 +1105,9 @@ local StatusLbl = New("TextLabel", {Size = UDim2.new(1, -16, 1, 0), Position = U
 
 task.spawn(function()
     while Gui.Parent do
+        safe(L.HookReplication)
         L.ReadOffer()
+        if L.Enabled then safe(L.Sync) end
         safe(L.Enforce)
 
         local machine = L.Machine()
