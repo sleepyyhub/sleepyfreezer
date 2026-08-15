@@ -61,6 +61,8 @@ L.AutoAim    = true
 L.MineOnly   = false
 L.Pathfind   = true
 L.HopDelay   = 0
+L.Stepped    = false
+L.PreviewHz  = 0.12
 L.AutoSteal  = true
 L.ShowPath   = true
 L.Aiming     = false
@@ -526,28 +528,42 @@ end
 local function dashTo(landing, dir, allowNav, prebuilt)
     local root, hum = hrp(), humanoid()
     if not root then return false, 0 end
-    local stops = prebuilt or buildRoute(root.Position, landing, allowNav ~= false)
+
+    -- Route is only used to choose WHERE to land, not how to get there.
+    -- Everything below happens inside one frame, and Roblox only replicates
+    -- the CFrame a part holds at the end of a frame, so intermediate stops
+    -- are invisible to the server no matter how many we write. Writing just
+    -- the final one is identical in result and costs nothing.
+    local stops = prebuilt
+    if not stops or #stops == 0 then
+        stops = {{pos = groundAt(landing), kind = "land"}}
+        L.Engine = "direct"
+    end
     L.LastRoute = stops
+
+    local final = stops[#stops].pos
 
     if hum then
         hum:ChangeState(Enum.HumanoidStateType.Freefall)
         hum.PlatformStand = false
     end
 
-    for i, s in ipairs(stops) do
-        local face = dir
-        if i < #stops then
-            local d = stops[i + 1].pos - s.pos
-            local f = Vector3.new(d.X, 0, d.Z)
-            if f.Magnitude > 0.01 then face = f.Unit end
+    if L.Stepped and L.HopDelay > 0 then
+        -- Opt-in only. Real frames between stops, which the server does see,
+        -- at the cost of it reading as movement instead of a teleport.
+        for i, st in ipairs(stops) do
+            local face = dir
+            if i < #stops then
+                local d = stops[i + 1].pos - st.pos
+                local f = Vector3.new(d.X, 0, d.Z)
+                if f.Magnitude > 0.01 then face = f.Unit end
+            end
+            root.CFrame = CFrame.lookAt(st.pos, st.pos + face)
+            root.AssemblyLinearVelocity = Vector3.zero
+            if i < #stops then task.wait(L.HopDelay) end
         end
-        root.CFrame = CFrame.lookAt(s.pos, s.pos + face)
-        root.AssemblyLinearVelocity = Vector3.zero
-        -- No yield. Every stop is applied inside one frame, so the route is
-        -- travelled in order without ever rendering as movement. A per-hop
-        -- wait turned into a visible glide the moment waypoint spacing got
-        -- dense; HopDelay stays configurable but defaults to off.
-        if L.HopDelay > 0 and i < #stops then task.wait(L.HopDelay) end
+    else
+        root.CFrame = CFrame.lookAt(final, final + dir)
     end
 
     root.AssemblyLinearVelocity = Vector3.zero
@@ -1010,8 +1026,18 @@ RunS.RenderStepped:Connect(function()
     L.PendingTarget = landing
     drawArrow(origin, landing, pad ~= nil)
 
+    -- rayRoute is hundreds of raycasts; running it per frame while aiming
+    -- was costing more than the dash itself. Refresh on a timer instead, and
+    -- reuse the parked navmesh route for free whenever it is warm.
     local ready = cacheUsable(origin, landing)
-    local preview = ready and L.Ready.stops or rayRoute(origin, landing)
+    local now = os.clock()
+    if ready then
+        L.Preview = L.Ready.stops
+    elseif now - (L.PreviewAt or 0) >= L.PreviewHz then
+        L.PreviewAt = now
+        L.Preview = rayRoute(origin, landing)
+    end
+    local preview = L.Preview or {}
     showNodes(preview)
     StatusHops.Text = ("%s · %d hop%s%s"):format(
         ready and "navmesh READY" or (L.Planning and "planning…" or "raycast"),
@@ -1070,7 +1096,7 @@ UIS.InputEnded:Connect(function(input)
         local target, face = landing, lockedDir
         local root = hrp()
         local route = root and instantRoute(root.Position, target) or nil
-        task.spawn(function()
+        do
             local ok, hops = dashTo(target, face, true, route)
             if ok then
                 StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
@@ -1080,7 +1106,7 @@ UIS.InputEnded:Connect(function(input)
                     Position = UDim2.new(0, -9, 0.5, -13)}):Play()
                 tw(RingStroke, 0.8, Enum.EasingStyle.Quad, nil, {Transparency = 1}):Play()
             end
-        end)
+        end
     end
     hideArrow()
 end)
