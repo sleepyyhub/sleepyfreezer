@@ -47,8 +47,15 @@ L.Range      = 260
 L.Cone       = 40
 L.Climb      = 40
 L.Step       = 14
-L.Spacing    = 12
-L.Detours    = {8, 16, 26, 38, 52, 68}
+L.Spacing    = 4
+L.Detours    = {6, 12, 20, 30, 42, 56}
+L.Slim       = true
+L.SlimWidth  = 0.70
+L.SlimDepth  = 0.60
+L.SlimHeight = 0.85
+L.SlimHead   = 0.75
+L.Precompute = true
+L.Ready      = nil
 L.MaxHops    = 64
 L.AutoAim    = true
 L.MineOnly   = false
@@ -84,6 +91,57 @@ local function alive(i) return i and typeof(i) == "Instance" and i.Parent ~= nil
 local function char()   return LP.Character end
 local function hrp()    local c = char(); return c and c:FindFirstChild("HumanoidRootPart") end
 local function humanoid() local c = char(); return c and c:FindFirstChildOfClass("Humanoid") end
+
+----------------------------------------------------------------------
+-- AVATAR
+--
+-- R15 exposes its proportions as NumberValues under the Humanoid. Narrowing
+-- depth and width is what actually matters for squeezing through gaps, and it
+-- also lets the navmesh agent radius shrink to match, so pathfinding stops
+-- refusing gaps the body would now fit through.
+--
+-- These are replicated, so a server that validates proportions can snap them
+-- back. Nothing here depends on them holding: the agent radius is derived
+-- from the values we asked for, and a reset only costs accuracy, not routes.
+----------------------------------------------------------------------
+local SCALE_KEYS = {
+    BodyWidthScale  = "SlimWidth",
+    BodyDepthScale  = "SlimDepth",
+    BodyHeightScale = "SlimHeight",
+    HeadScale       = "SlimHead",
+}
+local Original = {}
+
+local function applyScale(on)
+    local h = humanoid()
+    if not h then return false end
+    for key, field in pairs(SCALE_KEYS) do
+        local o = h:FindFirstChild(key)
+        if o and o:IsA("NumberValue") then
+            if Original[key] == nil then Original[key] = o.Value end
+            pcall(function() o.Value = on and L[field] or Original[key] end)
+        end
+    end
+    return true
+end
+
+-- Radius the navmesh should plan for. Half the shoulder width of a default
+-- R15 is about 2 studs, so scaling that by the width we asked for keeps the
+-- agent honest instead of optimistic.
+local function agentRadius()
+    local w = L.Slim and L.SlimWidth or 1
+    return math.max(0.6, 2.0 * w)
+end
+local function agentHeight()
+    local h = L.Slim and L.SlimHeight or 1
+    return math.max(2, 5.0 * h)
+end
+
+LP.CharacterAdded:Connect(function()
+    task.wait(0.6)
+    table.clear(Original)
+    if L.Slim then applyScale(true) end
+end)
 
 ----------------------------------------------------------------------
 -- WORLD
@@ -158,6 +216,8 @@ local function rayParams()
     return p
 end
 
+local findDetour   -- forward declaration: navRoute repairs with it
+
 local function segClear(a, b, params)
     local d = b - a
     if d.Magnitude < 0.01 then return true end
@@ -184,13 +244,26 @@ local function groundAt(pos)
     return pos
 end
 
--- Engine 1: the navmesh. ComputeAsync yields, so this is never called from a
--- hot path without the caller knowing.
-local function navRoute(from, to)
+-- Engine 1: the navmesh.
+--
+-- Accuracy comes from four things, in order of how much they matter:
+--   * a tight agent. Radius and height follow the slimmed avatar, so the
+--     planner stops rejecting gaps the body actually fits through.
+--   * dense waypoints. Spacing of 4 instead of 12 means the route hugs the
+--     mesh through corners rather than cutting them.
+--   * settling. Every waypoint is dropped onto real collidable floor, since
+--     mesh points sit on the navmesh surface, not on geometry.
+--   * verification. Consecutive waypoints are raycast against the world and
+--     any segment the mesh cut through gets a lateral detour spliced in, so
+--     a corner clipped by the planner is repaired rather than trusted.
+--
+-- If the planner refuses outright, the agent is widened step by step and
+-- retried; a fat route beats no route.
+local function rawNav(from, to, radius)
     local path = safe(function()
         return PathS:CreatePath({
-            AgentRadius = 2.5,
-            AgentHeight = 5,
+            AgentRadius = radius,
+            AgentHeight = agentHeight(),
             AgentCanJump = true,
             AgentCanClimb = false,
             WaypointSpacing = L.Spacing,
@@ -201,22 +274,53 @@ local function navRoute(from, to)
     if not ok or path.Status ~= Enum.PathStatus.Success then return nil end
     local wps = safe(function() return path:GetWaypoints() end)
     if not wps or #wps < 2 then return nil end
+    return wps
+end
 
+local function navRoute(from, to)
+    local base = agentRadius()
+    local wps
+    for _, mult in ipairs({1, 1.35, 1.8, 2.4}) do
+        wps = rawNav(from, to, base * mult)
+        if wps then break end
+    end
+    if not wps then return nil end
+
+    -- settle every waypoint onto real floor
     local stops = {}
     for i = 2, #wps do
         local w = wps[i]
+        local p = groundAt(w.Position)
         stops[#stops + 1] = {
-            pos  = w.Position + Vector3.new(0, 3, 0),
+            pos  = p,
             kind = (w.Action == Enum.PathWaypointAction.Jump) and "jump" or "nav",
         }
     end
-    stops[#stops] = {pos = groundAt(to), kind = "land"}
-    return stops
+    if #stops == 0 then return nil end
+
+    -- verify and repair: anywhere the planner cut a corner, splice a detour
+    local params = rayParams()
+    local fixed, cur = {}, from
+    for _, s in ipairs(stops) do
+        local a = cur + Vector3.new(0, 2, 0)
+        local b = s.pos + Vector3.new(0, 2, 0)
+        if not segClear(a, b, params) then
+            local detour = findDetour(a, b, params)
+            if detour then
+                fixed[#fixed + 1] = {pos = groundAt(detour), kind = "side"}
+            end
+        end
+        fixed[#fixed + 1] = s
+        cur = s.pos
+    end
+
+    fixed[#fixed] = {pos = groundAt(to), kind = "land"}
+    return fixed
 end
 
 -- Engine 2: straight line with lateral escapes. Prefer going around; climb
 -- only when every offset is blocked.
-local function findDetour(cur, nxt, params)
+function findDetour(cur, nxt, params)
     local d = nxt - cur
     local flat = Vector3.new(d.X, 0, d.Z)
     if flat.Magnitude < 0.01 then return nil end
@@ -272,6 +376,69 @@ local function buildRoute(origin, target, allowNav)
     if L.Pathfind and allowNav then
         local nav = navRoute(origin, target)
         if nav then L.Engine = "navmesh" return nav end
+    end
+    L.Engine = "raycast"
+    return rayRoute(origin, target)
+end
+
+----------------------------------------------------------------------
+-- PRECOMPUTE
+--
+-- ComputeAsync yields, so paying for it at release would put a stall exactly
+-- where it is most felt. Instead a worker plans continuously while you aim
+-- and parks the finished route. Release then does nothing but walk the stops.
+--
+-- The cache is only honoured when it was planned from close to where you now
+-- stand and towards close to where you are now pointing; drift past those
+-- thresholds and it is discarded rather than followed somewhere stale.
+----------------------------------------------------------------------
+L.PlanFrom  = Vector3.zero
+L.PlanTo    = Vector3.zero
+L.Planning  = false
+L.PlanTol   = 6
+
+local function cacheUsable(origin, target)
+    local r = L.Ready
+    if not r or not r.stops or #r.stops == 0 then return false end
+    if (r.from - origin).Magnitude > L.PlanTol then return false end
+    if (r.to - target).Magnitude > L.PlanTol then return false end
+    return true
+end
+
+task.spawn(function()
+    while true do
+        if L.Aiming and L.Pathfind and L.Precompute then
+            local root = hrp()
+            local target = L.PendingTarget
+            if root and target then
+                local origin = root.Position
+                local moved = (origin - L.PlanFrom).Magnitude > L.PlanTol
+                    or (target - L.PlanTo).Magnitude > L.PlanTol
+                if moved and not L.Planning then
+                    L.Planning = true
+                    L.PlanFrom, L.PlanTo = origin, target
+                    local stops = navRoute(origin, target)
+                    if stops then
+                        L.Ready = {stops = stops, from = origin, to = target, engine = "navmesh"}
+                    else
+                        L.Ready = nil
+                    end
+                    L.Planning = false
+                end
+            end
+        else
+            L.Ready = nil
+        end
+        task.wait(0.08)
+    end
+end)
+
+-- Release path. Never yields on planning: a warm cache is walked as-is, and
+-- a cold one falls straight through to raycast routing, which is synchronous.
+local function instantRoute(origin, target)
+    if cacheUsable(origin, target) then
+        L.Engine = "navmesh (ready)"
+        return L.Ready.stops
     end
     L.Engine = "raycast"
     return rayRoute(origin, target)
@@ -356,10 +523,10 @@ end
 ----------------------------------------------------------------------
 -- DASH
 ----------------------------------------------------------------------
-local function dashTo(landing, dir, allowNav)
+local function dashTo(landing, dir, allowNav, prebuilt)
     local root, hum = hrp(), humanoid()
     if not root then return false, 0 end
-    local stops = buildRoute(root.Position, landing, allowNav ~= false)
+    local stops = prebuilt or buildRoute(root.Position, landing, allowNav ~= false)
     L.LastRoute = stops
 
     if hum then
@@ -709,6 +876,13 @@ local PathRow  = ToggleRow("pathfinding",  4, L.Pathfind,  function(on)
 end)
 local StealRow = ToggleRow("auto steal",   5, L.AutoSteal, function(on) L.AutoSteal = on end)
 local NodeRow  = ToggleRow("path nodes",   6, L.ShowPath,  function(on) L.ShowPath = on end)
+local SlimRow  = ToggleRow("slim avatar",  7, L.Slim,      function(on)
+    L.Slim = on
+    local applied = applyScale(on)
+    L.Notify(on and "Slim avatar on" or "Slim avatar off",
+        on and T.GREEN or T.MUTED,
+        applied and ("agent radius " .. string.format("%.1f", agentRadius())) or "no R15 humanoid")
+end)
 
 local Fab = New("TextButton", {Size = UDim2.fromOffset(48, 48), Position = UDim2.new(0, 20, 1, -90),
     BackgroundColor3 = T.SURFACE, AutoButtonColor = false, Text = "L", TextColor3 = T.HIGH,
@@ -829,12 +1003,17 @@ RunS.RenderStepped:Connect(function()
     end
 
     landing, lockedDir = groundAt(point), dir
+    L.PendingTarget = landing
     drawArrow(origin, landing, pad ~= nil)
 
-    local preview = rayRoute(origin, landing)
+    local ready = cacheUsable(origin, landing)
+    local preview = ready and L.Ready.stops or rayRoute(origin, landing)
     showNodes(preview)
-    StatusHops.Text = ("preview: %d hop%s · %s on release")
-        :format(#preview, #preview == 1 and "" or "s", L.Pathfind and "navmesh" or "raycast")
+    StatusHops.Text = ("%s · %d hop%s%s"):format(
+        ready and "navmesh READY" or (L.Planning and "planning…" or "raycast"),
+        #preview, #preview == 1 and "" or "s",
+        ready and " · instant" or "")
+    StatusHops.TextColor3 = ready and T.GREEN or T.PURPLE
 end)
 
 ----------------------------------------------------------------------
@@ -885,8 +1064,10 @@ UIS.InputEnded:Connect(function(input)
 
     if landing and lockedDir then
         local target, face = landing, lockedDir
+        local root = hrp()
+        local route = root and instantRoute(root.Position, target) or nil
         task.spawn(function()
-            local ok, hops = dashTo(target, face, true)
+            local ok, hops = dashTo(target, face, true, route)
             if ok then
                 StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
                 RingStroke.Transparency = 0.3
@@ -969,6 +1150,8 @@ task.spawn(function()
         PathRow.Set(L.Pathfind)
         StealRow.Set(L.AutoSteal)
         NodeRow.Set(L.ShowPath)
+        SlimRow.Set(L.Slim)
+        if L.Slim then applyScale(true) end
         L.Notify("Dash online", T.HIGH, "hold " .. L.Key.Name .. " to aim")
     end)
 end)
