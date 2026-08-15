@@ -114,10 +114,39 @@ L.FindRedeemRemote = function()
     return nil
 end
 
+L.EXPECTED_NOTIFY_INDEX = 146
+
+L.IsHashedEventName = function(name)
+    return #name == 67 and name:match("^RE/%x+$") ~= nil
+end
+
+L.FindNotifyRemote = function()
+    if not L.Net then return nil end
+    local seen = 0
+    for _, c in ipairs(L.Net:GetChildren()) do
+        if c:IsA("RemoteEvent") and L.IsHashedEventName(c.Name) then
+            seen += 1
+            if seen == L.EXPECTED_NOTIFY_INDEX then return c, seen end
+        end
+    end
+    return nil
+end
+
 L.ResolveRemotes = function()
     if not alive(L.Remotes.Notify.instance) then
-        local inst = L.Net and L.Net:FindFirstChild("RE/" .. L.Keys.Notify)
-        if inst then L.Remotes.Notify = {key = L.Keys.Notify, instance = inst, class = inst.ClassName} end
+        local inst, idx = L.FindNotifyRemote()
+        if inst then
+            L.Remotes.Notify = {key = inst.Name:gsub("^RE/", ""), instance = inst,
+                                class = inst.ClassName, index = idx}
+            L.NotifyIndexOk = true
+        else
+            local plain = L.Net and L.Net:FindFirstChild("RE/" .. L.Keys.Notify)
+            if plain then
+                L.Remotes.Notify = {key = L.Keys.Notify, instance = plain,
+                                    class = plain.ClassName, index = nil}
+                L.NotifyIndexOk = false
+            end
+        end
     end
     if not alive(L.Remotes.Redeem.instance) then
         local inst, idx = L.FindRedeemRemote()
