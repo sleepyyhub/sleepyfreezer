@@ -72,6 +72,7 @@ L.Flicker    = false
 L.FlickRadius= 16
 L.FlickHz    = 0.02
 L.FlickBusy  = false
+L.FlickHide  = true
 L.StepDelay  = 0.02
 L.AutoSteal  = true
 L.ShowPath   = true
@@ -707,48 +708,55 @@ end
 ----------------------------------------------------------------------
 -- FLICKER
 --
--- A follower reads your root position each frame and moves to it. It cannot
--- chase a position you are not at, so the trick is to spend most frames
--- somewhere you are not.
+-- A follower reads your root position and moves to it. It cannot chase a
+-- position you are not at, so the trick is to not be where you appear to be.
 --
--- Each cycle re-reads an anchor, throws the root to a random point on a ring
--- around it for one frame, then puts it back. Roblox replicates whatever the
--- part holds at the end of a frame, so the position leaving your client
--- alternates between decoy and truth. Anything sampling it lands on the ring,
--- not on you.
+-- The whole thing turns on WHEN in a frame each position is written. Roblox
+-- orders a frame like this:
 --
--- The anchor is re-read every cycle rather than stored once, so your own
--- movement still accumulates normally between flickers instead of being
--- pinned in place.
+--     RenderStepped -> camera -> render -> physics -> Heartbeat -> replicate
 --
--- Offsets are ground-settled, so a decoy never places you inside geometry,
--- and the whole thing stands down while a dash or steal is running rather
--- than fighting those writes.
+-- so writing the decoy on Heartbeat puts it into the packet that goes to the
+-- server, and writing the truth back on RenderStepped restores it before your
+-- own camera and renderer ever look at it. The server sees a body skipping
+-- around a ring; you see yourself standing still.
+--
+-- The restore is bound one priority below Camera specifically so it lands
+-- before the camera samples the subject. Bound after, the camera would follow
+-- the decoy and the view would shake even though the body did not.
+--
+-- With FlickHide off it degrades to plain flicker: you see the jitter too.
 ----------------------------------------------------------------------
-task.spawn(function()
-    while true do
-        if L.Flicker and not L.FlickBusy then
-            local root = hrp()
-            if root then
-                local anchor = root.Position
-                local rot = root.CFrame - root.CFrame.Position
-                local a = math.random() * math.pi * 2
-                local r = L.FlickRadius * (0.55 + math.random() * 0.45)
-                local decoy = groundAt(anchor + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r))
+local FlickAnchor = nil
+local FlickRot = nil
 
-                root.CFrame = rot + decoy
-                root.AssemblyLinearVelocity = Vector3.zero
-                RunS.RenderStepped:Wait()
+local function flickerActive()
+    return L.Flicker and not L.FlickBusy and hrp() ~= nil
+end
 
-                local back = hrp()
-                if back and L.Flicker and not L.FlickBusy then
-                    back.CFrame = rot + anchor
-                    back.AssemblyLinearVelocity = Vector3.zero
-                end
-            end
-        end
-        task.wait(L.FlickHz)
-    end
+-- End of frame: swap in the decoy, so that is what replicates.
+RunS.Heartbeat:Connect(function()
+    if not flickerActive() then FlickAnchor = nil return end
+    local root = hrp()
+    FlickAnchor = root.Position
+    FlickRot = root.CFrame - root.CFrame.Position
+
+    local a = math.random() * math.pi * 2
+    local r = L.FlickRadius * (0.55 + math.random() * 0.45)
+    local decoy = groundAt(FlickAnchor + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r))
+    root.CFrame = FlickRot + decoy
+    root.AssemblyLinearVelocity = Vector3.zero
+end)
+
+-- Start of the next frame, before the camera reads anything: put the truth
+-- back so both the view and the body render where you actually are.
+RunS:BindToRenderStep("LumiFlickerRestore", Enum.RenderPriority.Camera.Value - 1, function()
+    if not L.FlickHide then return end
+    if not flickerActive() or not FlickAnchor then return end
+    local root = hrp()
+    if not root then return end
+    root.CFrame = FlickRot + FlickAnchor
+    root.AssemblyLinearVelocity = Vector3.zero
 end)
 
 ----------------------------------------------------------------------
@@ -1138,7 +1146,14 @@ local FlickRow = ToggleRow("flicker",      11, L.Flicker,   function(on)
              or "position reads true again")
 end)
 
-local FlickSizeRow, FlickSizeVal = ValueRow("flicker range", 12, L.FlickRadius .. "st", function()
+local HideRow = ToggleRow("smooth view",  12, L.FlickHide, function(on)
+    L.FlickHide = on
+    L.Notify(on and "Smooth view on" or "Smooth view off", on and T.GREEN or T.ORANGE,
+        on and "you see yourself still, server sees the ring"
+             or "raw flicker, you see it too")
+end)
+
+local FlickSizeRow, FlickSizeVal = ValueRow("flicker range", 13, L.FlickRadius .. "st", function()
     local steps = {8, 16, 24, 36, 50}
     local i = 1
     for k, v in ipairs(steps) do if v == L.FlickRadius then i = k break end end
@@ -1146,7 +1161,7 @@ local FlickSizeRow, FlickSizeVal = ValueRow("flicker range", 12, L.FlickRadius .
     return L.FlickRadius .. "st"
 end)
 
-local HoldRow, HoldVal = ValueRow("hold position", 13, L.Retries .. "x", function()
+local HoldRow, HoldVal = ValueRow("hold position", 14, L.Retries .. "x", function()
     local steps = {0, 3, 5, 7, 10, 15}
     local i = 1
     for k, v in ipairs(steps) do if v == L.Retries then i = k break end end
@@ -1154,7 +1169,7 @@ local HoldRow, HoldVal = ValueRow("hold position", 13, L.Retries .. "x", functio
     return L.Retries .. "x"
 end)
 
-local SlimRow  = ToggleRow("slim avatar", 14, L.Slim,      function(on)
+local SlimRow  = ToggleRow("slim avatar", 15, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
@@ -1497,6 +1512,7 @@ task.spawn(function()
         StealRow.Set(L.AutoSteal)
         NodeRow.Set(L.ShowPath)
         FlickRow.Set(L.Flicker)
+        HideRow.Set(L.FlickHide)
         SlimRow.Set(L.Slim)
         if L.Slim then applyScale(true) end
         L.Notify("Dash online", T.HIGH, "hold " .. L.Key.Name .. " to aim")
