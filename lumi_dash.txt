@@ -64,14 +64,16 @@ L.Pathfind   = true
 L.HopDelay   = 0
 L.Stepped    = false
 L.PreviewHz  = 0.12
-L.StopShort  = 10
-L.StepDelay  = 0.2
+L.StopShort  = 20
+L.StepDelay  = 0.02
 L.AutoSteal  = true
 L.ShowPath   = true
 L.Aiming     = false
 L.Target     = nil
 L.Engine     = "-"
 L.LastRoute  = {}
+L.HomeReady  = nil
+L.HomeHz     = 0.35
 
 local T = {
     VOID     = Color3.fromRGB(6, 9, 18),
@@ -90,6 +92,8 @@ local T = {
     WHITE    = Color3.fromRGB(255, 255, 255),
     PURPLE   = Color3.fromRGB(175, 135, 255),
 }
+
+local groundAt   -- forward declaration: world helpers settle points with it
 
 local function safe(fn) local ok, r = pcall(fn); return ok and r or nil end
 local function alive(i) return i and typeof(i) == "Instance" and i.Parent ~= nil end
@@ -184,6 +188,21 @@ local function myPad()
     return nil
 end
 
+-- Why pathing to the delivery hitbox failed.
+--
+-- DeliveryHitbox is a trigger volume, roughly 47 x 17 x 14, CanCollide false
+-- and invisible. Its CENTRE therefore floats around eight studs above the
+-- floor, in mid air, nowhere near the navmesh. PathfindingService plans
+-- between points on the mesh, so asking it to reach a point hanging inside an
+-- empty box returns NoPath every time -- the target was never reachable, the
+-- planner was right to refuse.
+--
+-- The fix is to aim at the floor under the volume instead of at the volume.
+local function padPoint(pad)
+    if not pad or not pad.part then return nil end
+    return groundAt(pad.part.Position)
+end
+
 -- Land short of a target rather than on top of it. A single jump that ends
 -- exactly inside the delivery volume is the shape a server rejects; finishing
 -- a few studs out and closing the gap on foot is not. Pulled back along the
@@ -253,7 +272,7 @@ end
 -- point's OWN height, not the player's, or a roof above the destination is
 -- mistaken for its floor; and skip non-collidable hits, since the map is full
 -- of decorative parts a raycast reports but you would fall straight through.
-local function groundAt(pos)
+function groundAt(pos)
     local params = rayParams()
     local ignore = {char(), workspace:FindFirstChild("LUMI_DASH")}
     local from = pos + Vector3.new(0, 6, 0)
@@ -305,9 +324,18 @@ end
 local function navRoute(from, to)
     local base = agentRadius()
     local wps
+    -- Widen the agent, then give ground on the target itself. A destination a
+    -- few studs short is still a route; NoPath is not.
     for _, mult in ipairs({1, 1.35, 1.8, 2.4}) do
         wps = rawNav(from, to, base * mult)
         if wps then break end
+    end
+    if not wps then
+        for _, back in ipairs({6, 14, 24}) do
+            local relaxed = pullBack(from, to, back)
+            wps = rawNav(from, relaxed, base * 1.35)
+            if wps then to = relaxed break end
+        end
     end
     if not wps then return nil end
 
@@ -455,6 +483,37 @@ task.spawn(function()
             L.Ready = nil
         end
         task.wait(0.08)
+    end
+end)
+
+-- The route home, kept permanently warm.
+--
+-- Auto steal used to call buildRoute inside PromptTriggered, which meant
+-- ComputeAsync yielded right at the moment that has to be instant. Planning
+-- runs on its own clock instead, so the handler only ever reads a finished
+-- answer. Nothing in the steal path is allowed to yield.
+L.HomePlanning = false
+task.spawn(function()
+    while true do
+        if L.AutoSteal and L.Pathfind then
+            local root, pad = hrp(), myPad()
+            if root and pad and not L.HomePlanning then
+                local from = root.Position
+                local to = pullBack(from, padPoint(pad) or pad.part.Position, L.StopShort)
+                local stale = (not L.HomeReady)
+                    or (L.HomeReady.from - from).Magnitude > 12
+                    or (L.HomeReady.to - to).Magnitude > 12
+                if stale then
+                    L.HomePlanning = true
+                    local stops = navRoute(from, to)
+                    L.HomeReady = stops and {stops = stops, from = from, to = to} or nil
+                    L.HomePlanning = false
+                end
+            end
+        else
+            L.HomeReady = nil
+        end
+        task.wait(L.HomeHz)
     end
 end)
 
@@ -1074,8 +1133,8 @@ RunS.RenderStepped:Connect(function()
 
     local point
     if pad then
-        local p = pad.part.Position
-        point = Vector3.new(p.X, p.Y, p.Z)
+        local p = padPoint(pad) or pad.part.Position
+        point = p
         local to = Vector3.new(p.X - origin.X, 0, p.Z - origin.Z)
         if to.Magnitude > 0.01 then dir = to.Unit end
         point = pullBack(origin, point, L.StopShort)
@@ -1127,18 +1186,33 @@ PPS.PromptTriggered:Connect(function(prompt, player)
     local txt = ((prompt.ObjectText or "") .. " " .. (prompt.ActionText or "")):lower()
     if not txt:find("steal", 1, true) then return end
 
+    local root = hrp()
     local pad = myPad()
-    if not pad then
+    if not (root and pad) then
         L.Notify("Auto steal", T.RED, "no owned base found")
         return
     end
-    local root = hrp()
-    if not root then return end
-    local p = pad.part.Position
-    local to = Vector3.new(p.X - root.Position.X, 0, p.Z - root.Position.Z)
+
+    -- Everything below is synchronous. The warm route is used when it still
+    -- describes where we are; otherwise we settle for a straight drop to the
+    -- floor short of the pad, which needs no planner at all. Either way the
+    -- character moves on this frame.
+    local origin = root.Position
+    local target = pullBack(origin, padPoint(pad) or pad.part.Position, L.StopShort)
+
+    local route = nil
+    local warm = L.HomeReady
+    if warm and (warm.from - origin).Magnitude <= 12 and (warm.to - target).Magnitude <= 12 then
+        route = warm.stops
+        L.Engine = "navmesh (warm)"
+    else
+        route = {{pos = target, kind = "land"}}
+        L.Engine = "direct"
+    end
+
+    local to = Vector3.new(target.X - origin.X, 0, target.Z - origin.Z)
     local dir = (to.Magnitude > 0.01) and to.Unit or aimDir()
-    local landPoint = groundAt(pullBack(root.Position, p, L.StopShort))
-    local ok, hops = dashTo(landPoint, dir, true)
+    local ok, hops = dashTo(target, dir, false, route)
     if ok then
         L.Notify("Stole → home", T.GREEN, ("%s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s"))
         StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
