@@ -65,6 +65,7 @@ L.HopDelay   = 0
 L.Stepped    = false
 L.PreviewHz  = 0.12
 L.StopShort  = 20
+L.StealShort = 40
 L.StepDelay  = 0.02
 L.AutoSteal  = true
 L.ShowPath   = true
@@ -503,7 +504,7 @@ task.spawn(function()
             local root, pad = hrp(), myPad()
             if root and pad and not L.HomePlanning then
                 local from = root.Position
-                local to = pullBack(from, padPoint(pad) or pad.part.Position, L.StopShort)
+                local to = pullBack(from, padPoint(pad) or pad.part.Position, L.StealShort)
                 local stale = (not L.HomeReady)
                     or (L.HomeReady.from - from).Magnitude > 12
                     or (L.HomeReady.to - to).Magnitude > 12
@@ -1055,7 +1056,16 @@ local ShortRow, ShortVal = ValueRow("stop short", 8, L.StopShort .. "st", functi
     return L.StopShort .. "st"
 end)
 
-local StepRow, StepVal = ValueRow("hop mode", 9, "instant", function()
+local StealShortRow, StealShortVal = ValueRow("steal stop", 9, L.StealShort .. "st", function()
+    local steps = {10, 20, 30, 40, 60, 80}
+    local i = 1
+    for k, v in ipairs(steps) do if v == L.StealShort then i = k break end end
+    L.StealShort = steps[(i % #steps) + 1]
+    L.HomeReady = nil
+    return L.StealShort .. "st"
+end)
+
+local StepRow, StepVal = ValueRow("hop mode", 10, "instant", function()
     if not L.Stepped then
         L.Stepped, L.HopDelay = true, L.StepDelay
         L.Notify("Stepped hops", T.ORANGE, ("real frames, %.2fs apart"):format(L.StepDelay))
@@ -1066,7 +1076,7 @@ local StepRow, StepVal = ValueRow("hop mode", 9, "instant", function()
     return "instant"
 end)
 
-local HoldRow, HoldVal = ValueRow("hold position", 10, L.Retries .. "x", function()
+local HoldRow, HoldVal = ValueRow("hold position", 11, L.Retries .. "x", function()
     local steps = {0, 3, 5, 7, 10, 15}
     local i = 1
     for k, v in ipairs(steps) do if v == L.Retries then i = k break end end
@@ -1074,7 +1084,7 @@ local HoldRow, HoldVal = ValueRow("hold position", 10, L.Retries .. "x", functio
     return L.Retries .. "x"
 end)
 
-local SlimRow  = ToggleRow("slim avatar", 11, L.Slim,      function(on)
+local SlimRow  = ToggleRow("slim avatar", 12, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
@@ -1247,8 +1257,11 @@ PPS.PromptTriggered:Connect(function(prompt, player)
     -- describes where we are; otherwise we settle for a straight drop to the
     -- floor short of the pad, which needs no planner at all. Either way the
     -- character moves on this frame.
+    -- Stealing lands further out than a manual dash. The steal jump is the
+    -- one the server scrutinises hardest, and it is also the one you can
+    -- afford to finish on foot, so it gets its own distance.
     local origin = root.Position
-    local target = pullBack(origin, padPoint(pad) or pad.part.Position, L.StopShort)
+    local target = pullBack(origin, padPoint(pad) or pad.part.Position, L.StealShort)
 
     local route = nil
     local warm = L.HomeReady
