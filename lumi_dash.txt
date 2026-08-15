@@ -74,6 +74,10 @@ L.Engine     = "-"
 L.LastRoute  = {}
 L.HomeReady  = nil
 L.HomeHz     = 0.35
+L.Retries    = 7
+L.RetryTol   = 12
+L.RetryGap   = 0.05
+L.Retried    = 0
 
 local T = {
     VOID     = Color3.fromRGB(6, 9, 18),
@@ -607,6 +611,42 @@ end
 ----------------------------------------------------------------------
 -- DASH
 ----------------------------------------------------------------------
+-- Rubber-band guard.
+--
+-- The server can reject a jump and snap the character back. Writing the
+-- CFrame once and walking away means you silently end up where you started.
+-- This re-checks shortly after arrival and, if you have drifted further than
+-- the tolerance, writes again -- up to Retries times, spaced by RetryGap.
+--
+-- Horizontal distance only: settling a few studs vertically onto the floor is
+-- normal and is not a snap-back. It gives up as soon as one check passes, so
+-- a teleport the server accepted costs a single comparison.
+local function enforce(target, dir)
+    if L.Retries <= 0 then return end
+    task.spawn(function()
+        for i = 1, L.Retries do
+            task.wait(L.RetryGap)
+            local root = hrp()
+            if not root then return end
+            local d = root.Position - target
+            local flat = Vector3.new(d.X, 0, d.Z).Magnitude
+            if flat <= L.RetryTol then
+                if i > 1 then L.Retried = i - 1 end
+                return
+            end
+            root.CFrame = CFrame.lookAt(target, target + dir)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            L.Retried = i
+        end
+        L.Retried = L.Retries
+        if L.Notify then
+            L.Notify("Snapped back", T.ORANGE,
+                ("held %d/%d · server is rejecting the jump"):format(L.Retries, L.Retries))
+        end
+    end)
+end
+
 local function dashTo(landing, dir, allowNav, prebuilt)
     local root, hum = hrp(), humanoid()
     if not root then return false, 0 end
@@ -650,6 +690,8 @@ local function dashTo(landing, dir, allowNav, prebuilt)
 
     root.AssemblyLinearVelocity = Vector3.zero
     root.AssemblyAngularVelocity = Vector3.zero
+    L.Retried = 0
+    enforce(final, dir)
     return true, #stops
 end
 
@@ -1024,7 +1066,15 @@ local StepRow, StepVal = ValueRow("hop mode", 9, "instant", function()
     return "instant"
 end)
 
-local SlimRow  = ToggleRow("slim avatar", 10, L.Slim,      function(on)
+local HoldRow, HoldVal = ValueRow("hold position", 10, L.Retries .. "x", function()
+    local steps = {0, 3, 5, 7, 10, 15}
+    local i = 1
+    for k, v in ipairs(steps) do if v == L.Retries then i = k break end end
+    L.Retries = steps[(i % #steps) + 1]
+    return L.Retries .. "x"
+end)
+
+local SlimRow  = ToggleRow("slim avatar", 11, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
