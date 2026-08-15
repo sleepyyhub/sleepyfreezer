@@ -71,9 +71,10 @@ L.FlickRadius= 16
 L.FlickHz    = 0.02
 L.FlickBusy  = false
 L.FlickHide  = true
-L.FastPrompt = true
+L.FastPrompt = false
 L.HoldTime   = 0.1
 L.FlickSteal = true
+L.FlickAt    = 0.92
 L.StepDelay  = 0.02
 L.AutoSteal  = true
 L.ShowPath   = true
@@ -738,6 +739,48 @@ PPS.PromptShown:Connect(speedPrompt)
 PPS.PromptButtonHoldBegan:Connect(speedPrompt)
 
 ----------------------------------------------------------------------
+-- HOLD PROGRESS
+--
+-- ProximityPrompt reports the start and the end of a hold but never the
+-- fraction in between, so progress is timed rather than read: note when the
+-- hold began, note the prompt's own HoldDuration, and fire at FlickAt of it.
+--
+-- Firing slightly before completion is the point. The flicker is already
+-- running by the time the steal registers, so the moment you become worth
+-- chasing there is nothing stable to chase. The prompt itself is untouched
+-- and keeps its full duration.
+--
+-- The token guards against a hold that was released early: only the timer
+-- belonging to the most recent hold on that prompt is allowed to act.
+----------------------------------------------------------------------
+local HoldToken = {}
+
+PPS.PromptButtonHoldBegan:Connect(function(prompt, player)
+    if player ~= LP then return end
+    if not L.FlickSteal or not isSteal(prompt) then return end
+
+    local dur = prompt.HoldDuration
+    if dur <= 0 then return end
+
+    local token = (HoldToken[prompt] or 0) + 1
+    HoldToken[prompt] = token
+
+    task.delay(dur * L.FlickAt, function()
+        if HoldToken[prompt] ~= token then return end
+        if L.Flicker then return end
+        L.Flicker = true
+        if L.SyncFlicker then L.SyncFlicker(true) end
+        L.Notify("Flicker armed", T.ACCENT,
+            ("%d%% through the hold"):format(math.floor(L.FlickAt * 100)))
+    end)
+end)
+
+PPS.PromptButtonHoldEnded:Connect(function(prompt, player)
+    if player ~= LP then return end
+    HoldToken[prompt] = (HoldToken[prompt] or 0) + 1
+end)
+
+----------------------------------------------------------------------
 -- FLICKER
 --
 -- A follower reads your root position and moves to it. It cannot chase a
@@ -1206,7 +1249,16 @@ local FastRow = ToggleRow("fast prompts", 14, L.FastPrompt, function(on)
         on and ("steal holds cut to " .. L.HoldTime .. "s") or "original hold times restored")
 end)
 
-local HoldTimeRow, HoldTimeVal = ValueRow("hold time", 15, L.HoldTime .. "s", function()
+local FlickAtRow, FlickAtVal = ValueRow("flick at", 15, math.floor(L.FlickAt * 100) .. "%", function()
+    local steps = {50, 70, 80, 92, 98}
+    local cur = math.floor(L.FlickAt * 100)
+    local i = 1
+    for k, v in ipairs(steps) do if v == cur then i = k break end end
+    L.FlickAt = steps[(i % #steps) + 1] / 100
+    return math.floor(L.FlickAt * 100) .. "%"
+end)
+
+local HoldTimeRow, HoldTimeVal = ValueRow("hold time", 16, L.HoldTime .. "s", function()
     local steps = {0.05, 0.1, 0.2, 0.35, 0.5}
     local i = 1
     for k, v in ipairs(steps) do if v == L.HoldTime then i = k break end end
@@ -1214,11 +1266,11 @@ local HoldTimeRow, HoldTimeVal = ValueRow("hold time", 15, L.HoldTime .. "s", fu
     return L.HoldTime .. "s"
 end)
 
-local StealFlickRow = ToggleRow("flick on steal", 16, L.FlickSteal, function(on)
+local StealFlickRow = ToggleRow("flick on steal", 17, L.FlickSteal, function(on)
     L.FlickSteal = on
 end)
 
-local HoldRow, HoldVal = ValueRow("hold position", 17, L.Retries .. "x", function()
+local HoldRow, HoldVal = ValueRow("hold position", 18, L.Retries .. "x", function()
     local steps = {0, 3, 5, 7, 10, 15}
     local i = 1
     for k, v in ipairs(steps) do if v == L.Retries then i = k break end end
@@ -1226,7 +1278,7 @@ local HoldRow, HoldVal = ValueRow("hold position", 17, L.Retries .. "x", functio
     return L.Retries .. "x"
 end)
 
-local SlimRow  = ToggleRow("slim avatar", 18, L.Slim,      function(on)
+local SlimRow  = ToggleRow("slim avatar", 19, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
@@ -1391,8 +1443,9 @@ PPS.PromptTriggered:Connect(function(prompt, player)
     local pad = myPad()
     if not root then return end
 
-    -- Arm the flicker as part of the escape, not after it. FlickBusy keeps it
-    -- quiet through the write, and it takes over immediately afterwards.
+    -- Normally the hold timer already armed this at FlickAt. This is the
+    -- fallback for a prompt with no hold at all, where there was no progress
+    -- to fire on.
     if L.FlickSteal and not L.Flicker then
         L.Flicker = true
         if L.SyncFlicker then L.SyncFlicker(true) end
