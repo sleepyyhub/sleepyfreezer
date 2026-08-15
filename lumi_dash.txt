@@ -58,6 +58,7 @@ L.Precompute = true
 L.Ready      = nil
 L.MaxHops    = 64
 L.AutoAim    = true
+L.LockBase   = true
 L.MineOnly   = false
 L.Pathfind   = true
 L.HopDelay   = 0
@@ -204,6 +205,14 @@ end
 
 local function pickTarget(origin, dir)
     if not L.AutoAim then return nil end
+
+    -- Hard lock. Your own base is the only thing worth flinging to, so it wins
+    -- outright: no cone, no angle scoring, no dependence on where the camera
+    -- happens to point. Aim anywhere and the route still goes home.
+    if L.LockBase then
+        local mine = myPad()
+        if mine then return mine end
+    end
     local best, bestScore = nil, math.huge
     local limit = math.cos(math.rad(L.Cone))
     for _, pad in ipairs(deliveryPads()) do
@@ -923,16 +932,21 @@ local function ToggleRow(label, order, get, onChange)
     return entry
 end
 
-local AimRow   = ToggleRow("auto-aim",     2, L.AutoAim,   function(on) L.AutoAim = on end)
-local MineRow  = ToggleRow("my base only", 3, L.MineOnly,  function(on) L.MineOnly = on end)
-local PathRow  = ToggleRow("pathfinding",  4, L.Pathfind,  function(on)
+local LockRow  = ToggleRow("lock to base", 2, L.LockBase, function(on)
+    L.LockBase = on
+    L.Notify(on and "Base lock on" or "Base lock off", on and T.GREEN or T.MUTED,
+        on and "aims home from any direction" or "uses camera aim cone")
+end)
+local AimRow   = ToggleRow("auto-aim",     3, L.AutoAim,   function(on) L.AutoAim = on end)
+local MineRow  = ToggleRow("my base only", 4, L.MineOnly,  function(on) L.MineOnly = on end)
+local PathRow  = ToggleRow("pathfinding",  5, L.Pathfind,  function(on)
     L.Pathfind = on
     L.Notify(on and "Pathfinding on" or "Pathfinding off", on and T.GREEN or T.MUTED,
         on and "navmesh route, falls back to raycast" or "raycast routing only")
 end)
-local StealRow = ToggleRow("auto steal",   5, L.AutoSteal, function(on) L.AutoSteal = on end)
-local NodeRow  = ToggleRow("path nodes",   6, L.ShowPath,  function(on) L.ShowPath = on end)
-local ShortRow, ShortVal = ValueRow("stop short", 7, L.StopShort .. "st", function()
+local StealRow = ToggleRow("auto steal",   6, L.AutoSteal, function(on) L.AutoSteal = on end)
+local NodeRow  = ToggleRow("path nodes",   7, L.ShowPath,  function(on) L.ShowPath = on end)
+local ShortRow, ShortVal = ValueRow("stop short", 8, L.StopShort .. "st", function()
     local steps = {0, 5, 10, 15, 20, 30}
     local i = 1
     for k, v in ipairs(steps) do if v == L.StopShort then i = k break end end
@@ -940,7 +954,7 @@ local ShortRow, ShortVal = ValueRow("stop short", 7, L.StopShort .. "st", functi
     return L.StopShort .. "st"
 end)
 
-local StepRow, StepVal = ValueRow("hop mode", 8, "instant", function()
+local StepRow, StepVal = ValueRow("hop mode", 9, "instant", function()
     if not L.Stepped then
         L.Stepped, L.HopDelay = true, L.StepDelay
         L.Notify("Stepped hops", T.ORANGE, ("real frames, %.2fs apart"):format(L.StepDelay))
@@ -951,7 +965,7 @@ local StepRow, StepVal = ValueRow("hop mode", 8, "instant", function()
     return "instant"
 end)
 
-local SlimRow  = ToggleRow("slim avatar",  9, L.Slim,      function(on)
+local SlimRow  = ToggleRow("slim avatar", 10, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
@@ -1067,7 +1081,8 @@ RunS.RenderStepped:Connect(function()
         point = pullBack(origin, point, L.StopShort)
         Glow.Adornee = pad.part
         Glow.Enabled = true
-        StatusSub.Text = ("%s base · %dst%s"):format(pad.mine and "your" or pad.plot.Name:sub(1, 6),
+        StatusSub.Text = ("%s base%s · %dst%s"):format(pad.mine and "your" or pad.plot.Name:sub(1, 6),
+            (L.LockBase and pad.mine) and " [LOCK]" or "",
             math.floor((p - origin).Magnitude),
             L.StopShort > 0 and (" · stop " .. L.StopShort .. "st short") or "")
         StatusSub.TextColor3 = pad.mine and T.GREEN or T.HIGH
@@ -1233,6 +1248,7 @@ task.spawn(function()
     end
 
     task.delay(0.7, function()
+        LockRow.Set(L.LockBase)
         AimRow.Set(L.AutoAim)
         MineRow.Set(L.MineOnly)
         PathRow.Set(L.Pathfind)
