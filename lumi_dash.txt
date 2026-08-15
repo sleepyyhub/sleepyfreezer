@@ -1,29 +1,28 @@
 --[[  LUMINOSITY — DASH  ]]--
--- Steal A Summertino — aimed straight-line fling with obstacle routing
+-- Steal A Summertino — aimed fling with real navmesh pathfinding
 -- Executor: any. No dependencies. Paste whole file, execute.
 --
--- Hold the bind (default E) to raise an aim arrow, release to fling.
--- The arrow is horizontal only — pitch is stripped from the camera, so you
--- travel flat and never get launched into the sky.
+-- Hold the bind (default E) to raise an aim arrow, release to travel.
+-- The arrow is horizontal only, so you never get launched into the sky.
 --
 -- ROUTING
--- The path is no longer a single hop that lifts over everything. It marches
--- the line in steps and, when a step is blocked, looks for a way AROUND:
--- perpendicular offsets to the left and right at increasing distance, taking
--- the first that has clear line of sight both into the detour and back out to
--- the next point. Each detour becomes a real teleport stop, so you thread
--- past a wall instead of clipping through it:
+-- Two engines, in order of preference:
 --
---        you ---> [stop] ------> [stop] ------> base
---                    |  wall        |  wall
+--   1. PathfindingService. A real navmesh path is computed between you and
+--      the landing point and its waypoints become teleport stops. This walks
+--      around buildings and fences properly rather than guessing.
+--   2. Raycast routing, used when the navmesh has no answer (off-mesh
+--      targets, mid-air, inside geometry). Marches the straight line and,
+--      where blocked, sweeps perpendicular offsets left and right for a way
+--      around, falling back to lifting only if every lateral option fails.
 --
--- Vertical lift is kept, but only as the fallback when no lateral way exists.
+-- Each stop is a hop with a short beat between them, so the route reads as
+-- a series of steps rather than one clip through a wall.
 --
 -- AUTO STEAL
 -- ProximityPromptService.PromptTriggered fires the moment a hold completes.
--- When the prompt's ObjectText or ActionText contains "Steal" and the trigger
--- was yours, the route home runs inside that same handler — no wait, no
--- polling, no heartbeat delay.
+-- When the prompt's text contains "Steal" and the trigger was yours, the
+-- route home runs inside that handler.
 
 local Players    = game:GetService("Players")
 local RepS       = game:GetService("ReplicatedStorage")
@@ -31,6 +30,7 @@ local RunS       = game:GetService("RunService")
 local TS         = game:GetService("TweenService")
 local UIS        = game:GetService("UserInputService")
 local PPS        = game:GetService("ProximityPromptService")
+local PathS      = game:GetService("PathfindingService")
 local LP         = Players.LocalPlayer
 local PG         = LP:WaitForChild("PlayerGui")
 local Cam        = workspace.CurrentCamera
@@ -47,28 +47,36 @@ L.Range      = 260
 L.Cone       = 40
 L.Climb      = 40
 L.Step       = 14
+L.Spacing    = 12
 L.Detours    = {8, 16, 26, 38, 52, 68}
 L.MaxHops    = 64
 L.AutoAim    = true
 L.MineOnly   = false
+L.Pathfind   = true
 L.HopDelay   = 0.01
-L.Instant    = false
 L.AutoSteal  = true
 L.ShowPath   = true
 L.Aiming     = false
 L.Target     = nil
-L.Hops       = 0
+L.Engine     = "-"
 L.LastRoute  = {}
 
 local T = {
-    VOID = Color3.fromRGB(6,9,18),        BG      = Color3.fromRGB(10,15,28),
-    SURFACE = Color3.fromRGB(16,24,44),   RAISED  = Color3.fromRGB(24,34,58),
-    LINE = Color3.fromRGB(38,54,88),      ACCENT  = Color3.fromRGB(120,180,255),
-    HIGH = Color3.fromRGB(180,220,255),   DEEP    = Color3.fromRGB(72,130,210),
-    TEXT = Color3.fromRGB(230,240,255),   MUTED   = Color3.fromRGB(120,145,185),
-    RED  = Color3.fromRGB(255,130,155),   GREEN   = Color3.fromRGB(146,255,103),
-    ORANGE = Color3.fromRGB(255,190,120), WHITE   = Color3.fromRGB(255,255,255),
-    PURPLE = Color3.fromRGB(175,135,255), CYAN    = Color3.fromRGB(100,230,255),
+    VOID     = Color3.fromRGB(6, 9, 18),
+    BG       = Color3.fromRGB(10, 15, 28),
+    SURFACE  = Color3.fromRGB(16, 24, 44),
+    RAISED   = Color3.fromRGB(24, 34, 58),
+    LINE     = Color3.fromRGB(38, 54, 88),
+    ACCENT   = Color3.fromRGB(120, 180, 255),
+    HIGH     = Color3.fromRGB(180, 220, 255),
+    DEEP     = Color3.fromRGB(72, 130, 210),
+    TEXT     = Color3.fromRGB(230, 240, 255),
+    MUTED    = Color3.fromRGB(120, 145, 185),
+    RED      = Color3.fromRGB(255, 130, 155),
+    GREEN    = Color3.fromRGB(146, 255, 103),
+    ORANGE   = Color3.fromRGB(255, 190, 120),
+    WHITE    = Color3.fromRGB(255, 255, 255),
+    PURPLE   = Color3.fromRGB(175, 135, 255),
 }
 
 local function safe(fn) local ok, r = pcall(fn); return ok and r or nil end
@@ -156,11 +164,10 @@ local function segClear(a, b, params)
     return workspace:Raycast(a, d, params) == nil
 end
 
--- Ground settle. Two things this has to get right:
---   * scan from just above the point's OWN height, not the player's, or a
---     roof above the destination is mistaken for its floor.
---   * skip non-collidable hits — the map is full of decorative parts a
---     raycast reports but you would fall straight through.
+-- Ground settle. Two things this has to get right: scan from just above the
+-- point's OWN height, not the player's, or a roof above the destination is
+-- mistaken for its floor; and skip non-collidable hits, since the map is full
+-- of decorative parts a raycast reports but you would fall straight through.
 local function groundAt(pos)
     local params = rayParams()
     local ignore = {char(), workspace:FindFirstChild("LUMI_DASH")}
@@ -177,9 +184,38 @@ local function groundAt(pos)
     return pos
 end
 
--- Prefer going around. Sweep perpendicular offsets outward, alternating
--- sides, and accept the first that can be reached AND can reach the next
--- point. Only when every lateral option fails do we climb.
+-- Engine 1: the navmesh. ComputeAsync yields, so this is never called from a
+-- hot path without the caller knowing.
+local function navRoute(from, to)
+    local path = safe(function()
+        return PathS:CreatePath({
+            AgentRadius = 2.5,
+            AgentHeight = 5,
+            AgentCanJump = true,
+            AgentCanClimb = false,
+            WaypointSpacing = L.Spacing,
+        })
+    end)
+    if not path then return nil end
+    local ok = pcall(function() path:ComputeAsync(from, to) end)
+    if not ok or path.Status ~= Enum.PathStatus.Success then return nil end
+    local wps = safe(function() return path:GetWaypoints() end)
+    if not wps or #wps < 2 then return nil end
+
+    local stops = {}
+    for i = 2, #wps do
+        local w = wps[i]
+        stops[#stops + 1] = {
+            pos  = w.Position + Vector3.new(0, 3, 0),
+            kind = (w.Action == Enum.PathWaypointAction.Jump) and "jump" or "nav",
+        }
+    end
+    stops[#stops] = {pos = groundAt(to), kind = "land"}
+    return stops
+end
+
+-- Engine 2: straight line with lateral escapes. Prefer going around; climb
+-- only when every offset is blocked.
 local function findDetour(cur, nxt, params)
     local d = nxt - cur
     local flat = Vector3.new(d.X, 0, d.Z)
@@ -195,7 +231,6 @@ local function findDetour(cur, nxt, params)
             end
         end
     end
-
     for h = 6, L.Climb, 6 do
         local up = cur + Vector3.new(0, h, 0)
         if segClear(cur, up, params) and segClear(up, nxt + Vector3.new(0, h, 0), params) then
@@ -205,15 +240,9 @@ local function findDetour(cur, nxt, params)
     return nil
 end
 
--- Returns a list of teleport stops. A stop only exists where the straight
--- line could not be followed, so a clear shot is a single hop and a walled
--- route is a handful.
-local function buildRoute(origin, target)
+local function rayRoute(origin, target)
     local params = rayParams()
-    local stops = {}
-    local cur = origin
-    local guard = 0
-
+    local stops, cur, guard = {}, origin, 0
     while guard < L.MaxHops do
         guard += 1
         local flat = Vector3.new(target.X - cur.X, 0, target.Z - cur.Z)
@@ -222,7 +251,6 @@ local function buildRoute(origin, target)
         local dir = flat.Unit
         local len = math.min(L.Step, dist)
         local nxt = cur + dir * len
-
         if segClear(cur, nxt, params) then
             cur = nxt
         else
@@ -236,13 +264,21 @@ local function buildRoute(origin, target)
             end
         end
     end
-
     stops[#stops + 1] = {pos = groundAt(target), kind = "land"}
     return stops
 end
 
+local function buildRoute(origin, target, allowNav)
+    if L.Pathfind and allowNav then
+        local nav = navRoute(origin, target)
+        if nav then L.Engine = "navmesh" return nav end
+    end
+    L.Engine = "raycast"
+    return rayRoute(origin, target)
+end
+
 ----------------------------------------------------------------------
--- VISUALS
+-- WORLD VISUALS
 ----------------------------------------------------------------------
 local Folder = workspace:FindFirstChild("LUMI_DASH")
 if Folder then Folder:Destroy() end
@@ -280,12 +316,14 @@ local function showNodes(stops)
     for i, s in ipairs(stops) do
         local n = NodePool[i]
         if not n then
-            n = makePart({Size = Vector3.new(1.1, 1.1, 1.1), Shape = Enum.PartType.Ball, Transparency = 1})
+            n = makePart({Size = Vector3.new(1, 1, 1), Shape = Enum.PartType.Ball, Transparency = 1})
             NodePool[i] = n
         end
-        n.Color = (s.kind == "land") and T.GREEN or (s.kind == "side" and T.ORANGE or T.PURPLE)
+        n.Color = (s.kind == "land") and T.GREEN
+            or (s.kind == "side" and T.ORANGE)
+            or (s.kind == "jump" and T.PURPLE or T.ACCENT)
         n.CFrame = CFrame.new(s.pos)
-        n.Transparency = 0.25
+        n.Transparency = 0.3
     end
     for i = #stops + 1, #NodePool do NodePool[i].Transparency = 1 end
 end
@@ -309,10 +347,8 @@ local function drawArrow(origin, landing, locked)
     Shaft.Size = Vector3.new(0.4, 0.4, len)
     Shaft.CFrame = CFrame.lookAt(Vector3.new(mid.X, origin.Y, mid.Z), Vector3.new(mid.X, origin.Y, mid.Z) + dir)
     Shaft.Color, Shaft.Transparency = col, 0.25
-
     Tip.CFrame = CFrame.new(Vector3.new(landing.X, origin.Y, landing.Z))
     Tip.Color, Tip.Transparency = col, 0.1
-
     Ring.CFrame = CFrame.new(landing + Vector3.new(0, 0.2, 0))
     Ring.Color, Ring.Transparency = col, 0.4
 end
@@ -320,12 +356,11 @@ end
 ----------------------------------------------------------------------
 -- DASH
 ----------------------------------------------------------------------
-local function dashTo(landing, dir)
+local function dashTo(landing, dir, allowNav)
     local root, hum = hrp(), humanoid()
     if not root then return false, 0 end
-    local stops = buildRoute(root.Position, landing)
+    local stops = buildRoute(root.Position, landing, allowNav ~= false)
     L.LastRoute = stops
-    L.Hops = #stops
 
     if hum then
         hum:ChangeState(Enum.HumanoidStateType.Freefall)
@@ -341,9 +376,6 @@ local function dashTo(landing, dir)
         end
         root.CFrame = CFrame.lookAt(s.pos, s.pos + face)
         root.AssemblyLinearVelocity = Vector3.zero
-        -- A touch at each stop, then straight on. RenderStepped:Wait was
-        -- framerate-bound and cost a whole frame per hop; this is a fixed
-        -- beat that does not linger.
         if L.HopDelay > 0 and i < #stops then task.wait(L.HopDelay) end
     end
 
@@ -365,31 +397,25 @@ local function New(cls, props, kids)
     return i
 end
 local function Corner(p, r) return New("UICorner", {CornerRadius = UDim.new(0, r or 10), Parent = p}) end
-local function Pad(p, a) return New("UIPadding", {
-    PaddingTop = UDim.new(0, a), PaddingBottom = UDim.new(0, a),
-    PaddingLeft = UDim.new(0, a), PaddingRight = UDim.new(0, a), Parent = p}) end
-local function Stroke(p, c, t, tr) return New("UIStroke", {Color = c or T.LINE, Thickness = t or 1,
-    Transparency = tr or 0.4, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = p}) end
+local function Pad(p, a, b, c, d) return New("UIPadding", {
+    PaddingTop = UDim.new(0, a or 0), PaddingBottom = UDim.new(0, b or a or 0),
+    PaddingLeft = UDim.new(0, c or a or 0), PaddingRight = UDim.new(0, d or c or a or 0), Parent = p}) end
+local function Stroke(p, col, th, tr)
+    return New("UIStroke", {Color = col or T.LINE, Thickness = th or 1, Transparency = tr or 0.4,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = p})
+end
 local function tw(o, t, s, d, g) return TS:Create(o, TweenInfo.new(t, s or Enum.EasingStyle.Quart,
     d or Enum.EasingDirection.Out), g) end
 
 local Gui = New("ScreenGui", {Name = "LuminosityDash", ResetOnSpawn = false, IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 9999, Parent = PG})
 
-----------------------------------------------------------------------
--- FLOW
---
--- One palette, one clock. Every gradient in the interface is registered here
--- and driven by a single RenderStepped pass that walks the offset, so the
--- whole panel reads as one sheet of moving light instead of a dozen tweens
--- fighting each other. Each registration carries its own speed and phase so
--- rows drift out of lockstep without ever going out of palette.
-----------------------------------------------------------------------
+-- One palette, one clock: every gradient registered here is driven by a single
+-- pass so the whole interface reads as one sheet of moving light.
 local FLOW_WHITE = Color3.fromRGB(255, 255, 255)
 local FLOW_LIGHT = Color3.fromRGB(138, 199, 255)
 local FLOW_MID   = Color3.fromRGB(58, 118, 216)
 local FLOW_DARK  = Color3.fromRGB(12, 38, 96)
-
 local FLOW_SEQ = ColorSequence.new({
     ColorSequenceKeypoint.new(0.00, FLOW_DARK),
     ColorSequenceKeypoint.new(0.22, FLOW_MID),
@@ -398,298 +424,378 @@ local FLOW_SEQ = ColorSequence.new({
     ColorSequenceKeypoint.new(0.74, FLOW_LIGHT),
     ColorSequenceKeypoint.new(1.00, FLOW_DARK),
 })
-
 local Flows = {}
-
 local function flow(parent, opts)
     opts = opts or {}
-    local g = New("UIGradient", {
-        Color = FLOW_SEQ,
-        Rotation = opts.rotation or 0,
-        Offset = Vector2.new(opts.phase or 0, 0),
-        Parent = parent,
-    })
+    local g = New("UIGradient", {Color = FLOW_SEQ, Rotation = opts.rotation or 0,
+        Offset = Vector2.new(opts.phase or 0, 0), Parent = parent})
     Flows[#Flows + 1] = {g = g, speed = opts.speed or 0.35, phase = opts.phase or 0}
     return g
 end
-
 task.spawn(function()
     local t = 0
     while Gui.Parent do
-        local dt = RunS.RenderStepped:Wait()
-        t += dt
+        t += RunS.RenderStepped:Wait()
         for _, f in ipairs(Flows) do
-            local x = ((t * f.speed + f.phase) % 2) - 1
-            f.g.Offset = Vector2.new(x, 0)
+            f.g.Offset = Vector2.new(((t * f.speed + f.phase) % 2) - 1, 0)
         end
     end
 end)
 
 ----------------------------------------------------------------------
--- ARRAYLIST
---
--- Client-style module list, top right. Entries sort by rendered width so the
--- edge forms the usual staircase, each carries its own slice of a moving hue
--- sweep, and they slide in and out from the right rather than popping.
+-- LOADING SCREEN
 ----------------------------------------------------------------------
-local ArrayRoot = New("Frame", {
-    AnchorPoint = Vector2.new(1, 0),
-    Position = UDim2.new(1, -8, 0, 6),
-    Size = UDim2.fromOffset(320, 0),
-    AutomaticSize = Enum.AutomaticSize.Y,
+local Loader = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+    BorderSizePixel = 0, ZIndex = 100, Parent = Gui})
+local RainRoot = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+    ClipsDescendants = false, ZIndex = 100, Parent = Loader})
+
+L.RainActive = true
+task.spawn(function()
+    while L.RainActive and Loader.Parent do
+        local size = math.random(14, 34)
+        local col = ({T.ACCENT, T.HIGH, T.DEEP})[math.random(1, 3)]
+        local x = math.random(0, Cam and Cam.ViewportSize.X or 1200)
+        local rot0 = math.random(-40, 40)
+        local moon = New("TextLabel", {Size = UDim2.fromOffset(size, size),
+            Position = UDim2.new(0, x, 0, -size - 20), BackgroundTransparency = 1,
+            Text = "☾", TextColor3 = col, Font = Enum.Font.GothamBold, TextSize = size,
+            TextTransparency = math.random(30, 65) / 100, Rotation = rot0,
+            ZIndex = 100, Parent = RainRoot})
+        New("UIStroke", {Color = col, Thickness = 0.5, Transparency = 0.6, Parent = moon})
+        local vy = Cam and Cam.ViewportSize.Y or 800
+        local dur = math.random(24, 44) / 10
+        local drift = math.random(-60, 60)
+        local endRot = rot0 + math.random(-90, 90)
+        task.spawn(function()
+            TS:Create(moon, TweenInfo.new(dur, Enum.EasingStyle.Linear),
+                {Position = UDim2.new(0, x + drift, 0, vy + 40), Rotation = endRot}):Play()
+            TS:Create(moon, TweenInfo.new(dur * 0.9, Enum.EasingStyle.Quad), {TextTransparency = 1}):Play()
+            task.wait(dur)
+            moon:Destroy()
+        end)
+        task.wait(0.11)
+    end
+end)
+
+local LoaderCard = New("Frame", {Size = UDim2.fromOffset(520, 150),
+    Position = UDim2.new(0.5, -260, 0.5, -75), BackgroundTransparency = 1,
+    BorderSizePixel = 0, ZIndex = 101, Parent = Loader})
+
+local BRAND = "LUMINOSITY"
+local BIG_SIZE = IS_MOBILE and 46 or 62
+local Mark = New("Frame", {Size = UDim2.new(1, 0, 0, BIG_SIZE + 8), BackgroundTransparency = 1,
+    ZIndex = 102, Parent = LoaderCard})
+New("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 1), Parent = Mark})
+
+local Letters = {}
+for i = 1, #BRAND do
+    local ch = BRAND:sub(i, i)
+    local w = BIG_SIZE * (ch == "I" and 0.35 or 0.62)
+    local wrap = New("Frame", {Size = UDim2.fromOffset(w, BIG_SIZE), BackgroundTransparency = 1,
+        LayoutOrder = i, ZIndex = 102, Parent = Mark})
+    local lbl = New("TextLabel", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+        Text = ch, TextColor3 = T.HIGH, Font = Enum.Font.GothamBold, TextSize = BIG_SIZE,
+        TextTransparency = 1, Rotation = math.random(-60, 60), ZIndex = 103, Parent = wrap})
+    lbl.Position = UDim2.fromOffset(math.random(-140, 140), math.random(-90, 90))
+    New("UIStroke", {Color = Color3.fromRGB(0, 0, 0), Thickness = 2, Transparency = 0.1,
+        LineJoinMode = Enum.LineJoinMode.Round, Parent = lbl})
+    Letters[i] = lbl
+end
+
+local Underline = New("Frame", {Size = UDim2.new(0, 0, 0, 2),
+    Position = UDim2.new(0.5, 0, 0, BIG_SIZE + 12), AnchorPoint = Vector2.new(0.5, 0),
+    BackgroundColor3 = T.ACCENT, BackgroundTransparency = 0.15, BorderSizePixel = 0,
+    ZIndex = 102, Parent = LoaderCard})
+Corner(Underline, 1)
+flow(Underline, {speed = 0.5})
+
+local Sub = New("TextLabel", {Size = UDim2.new(1, 0, 0, 18),
+    Position = UDim2.new(0, 0, 0, BIG_SIZE + 22), BackgroundTransparency = 1,
+    Text = "initializing", TextColor3 = T.MUTED, Font = Enum.Font.Gotham, TextSize = 12,
+    TextTransparency = 1, ZIndex = 102, Parent = LoaderCard})
+
+----------------------------------------------------------------------
+-- NOTIFICATIONS
+----------------------------------------------------------------------
+local NOTIF_W = IS_MOBILE and 270 or 320
+local NotifRoot = New("Frame", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14),
+    Size = UDim2.fromOffset(NOTIF_W, 0), AutomaticSize = Enum.AutomaticSize.Y,
     BackgroundTransparency = 1, Parent = Gui})
 New("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder,
-    HorizontalAlignment = Enum.HorizontalAlignment.Right,
-    Padding = UDim.new(0, 2), Parent = ArrayRoot})
+    HorizontalAlignment = Enum.HorizontalAlignment.Right, Padding = UDim.new(0, 8), Parent = NotifRoot})
 
-local ArrayEntries = {}
-local ArraySlot = 0
+L.Notifs, L.NotifOrder = {}, 0
 
-local function makeEntry(name)
-    local holder = New("Frame", {Size = UDim2.new(0, 120, 0, 20), BackgroundTransparency = 1,
-        Parent = ArrayRoot})
-    local bg = New("Frame", {Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.45, BorderSizePixel = 0, Parent = holder})
-    local bar = New("Frame", {Size = UDim2.new(0, 3, 1, 0), Position = UDim2.new(1, -3, 0, 0),
-        BackgroundColor3 = FLOW_WHITE, BorderSizePixel = 0, Parent = bg})
-    ArraySlot += 1
-    flow(bar, {speed = 0.5, phase = ArraySlot * 0.11})
-    local lbl = New("TextLabel", {Size = UDim2.new(1, -14, 1, 0), Position = UDim2.fromOffset(6, 0),
-        BackgroundTransparency = 1, Text = name, TextColor3 = FLOW_WHITE,
-        Font = Enum.Font.GothamBold, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left,
-        TextTransparency = 1, Parent = bg})
-    flow(lbl, {speed = 0.5, phase = ArraySlot * 0.11})
-    New("UIStroke", {Color = Color3.fromRGB(0, 0, 0), Thickness = 1.4, Transparency = 0.35, Parent = lbl})
-    return {holder = holder, bg = bg, bar = bar, lbl = lbl, name = name, alive = true}
+local function destroyNotif(s)
+    if s.dead then return end
+    s.dead = true
+    L.Notifs[s.key] = nil
+    tw(s.frame, 0.26, nil, nil, {Position = UDim2.fromOffset(NOTIF_W + 40, 0), BackgroundTransparency = 1}):Play()
+    for _, o in ipairs(s.fade) do
+        tw(o, 0.22, nil, nil, o:IsA("UIStroke") and {Transparency = 1}
+            or (o:IsA("Frame") and {BackgroundTransparency = 1} or {TextTransparency = 1})):Play()
+    end
+    task.delay(0.3, function() if s.frame then s.frame:Destroy() end end)
 end
 
-local function refreshArray()
-    local active = {}
-    if L.AutoAim   then active[#active + 1] = "AutoAim"   end
-    if L.MineOnly  then active[#active + 1] = "MyBase"    end
-    if L.AutoSteal then active[#active + 1] = "AutoSteal" end
-    if L.HopDelay == 0 then active[#active + 1] = "Instant" end
-    if L.ShowPath  then active[#active + 1] = "PathNodes" end
-    if L.Aiming    then active[#active + 1] = "Aiming"    end
-
-    local want = {}
-    for _, n in ipairs(active) do want[n] = true end
-
-    for name, e in pairs(ArrayEntries) do
-        if not want[name] and e.alive then
-            e.alive = false
-            tw(e.holder, 0.18, nil, nil, {Size = UDim2.new(0, e.holder.Size.X.Offset, 0, 0)}):Play()
-            tw(e.lbl, 0.15, nil, nil, {TextTransparency = 1}):Play()
-            tw(e.bg, 0.15, nil, nil, {BackgroundTransparency = 1}):Play()
-            local h = e.holder
-            task.delay(0.2, function() if h then h:Destroy() end end)
-            ArrayEntries[name] = nil
-        end
+L.Notify = function(msg, color, sub)
+    msg = tostring(msg or "")
+    if msg == "" then return end
+    color = color or T.HIGH
+    local e = L.Notifs[msg]
+    if e and not e.dead then
+        e.count += 1
+        e.badge.Text = "×" .. e.count
+        e.badge.Visible = true
+        if sub then e.sub.Text = sub end
+        e.token += 1
+        local tok = e.token
+        tw(e.badge, 0.12, Enum.EasingStyle.Back, nil, {TextSize = 17}):Play()
+        task.delay(0.12, function() if not e.dead then tw(e.badge, 0.16, Enum.EasingStyle.Back, nil, {TextSize = 13}):Play() end end)
+        task.delay(3.2, function() if not e.dead and e.token == tok then destroyNotif(e) end end)
+        return
     end
-
-    for _, name in ipairs(active) do
-        if not ArrayEntries[name] then
-            local e = makeEntry(name)
-            ArrayEntries[name] = e
-            e.holder.Size = UDim2.fromOffset(120, 0)
-            task.defer(function()
-                if not e.holder then return end
-                local w = e.lbl.TextBounds.X + 16
-                e.holder.Size = UDim2.fromOffset(w, 0)
-                tw(e.holder, 0.2, Enum.EasingStyle.Back, nil, {Size = UDim2.fromOffset(w, 20)}):Play()
-                tw(e.lbl, 0.25, nil, nil, {TextTransparency = 0}):Play()
-            end)
-        end
-    end
-
-    local list = {}
-    for _, e in pairs(ArrayEntries) do list[#list + 1] = e end
-    table.sort(list, function(a, b) return a.lbl.TextBounds.X > b.lbl.TextBounds.X end)
-    for i, e in ipairs(list) do e.holder.LayoutOrder = i end
+    L.NotifOrder += 1
+    local h = sub and 72 or 52
+    local frame = New("Frame", {Size = UDim2.new(1, 0, 0, h), Position = UDim2.fromOffset(NOTIF_W + 40, 0),
+        BackgroundColor3 = T.SURFACE, BackgroundTransparency = 1, BorderSizePixel = 0,
+        ClipsDescendants = true, LayoutOrder = L.NotifOrder, Parent = NotifRoot})
+    Corner(frame, 12)
+    local stroke = Stroke(frame, T.LINE, 1, 1)
+    local bar = New("Frame", {Size = UDim2.new(0, 4, 1, -16), Position = UDim2.new(0, 8, 0, 8),
+        BackgroundColor3 = color, BackgroundTransparency = 1, BorderSizePixel = 0, Parent = frame})
+    Corner(bar, 2)
+    local body = New("TextLabel", {Size = UDim2.new(1, -58, 0, sub and 22 or 52),
+        Position = UDim2.new(0, 20, 0, sub and 11 or 0), BackgroundTransparency = 1,
+        Text = msg, TextColor3 = color, Font = Enum.Font.GothamBold, TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = sub and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd, TextTransparency = 1, Parent = frame})
+    local subLbl = New("TextLabel", {Size = UDim2.new(1, -58, 0, 30), Position = UDim2.new(0, 20, 0, 35),
+        BackgroundTransparency = 1, Text = sub or "", TextColor3 = T.MUTED,
+        Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, Visible = sub ~= nil,
+        TextTransparency = 1, Parent = frame})
+    local badge = New("TextLabel", {Size = UDim2.fromOffset(32, 20), Position = UDim2.new(1, -40, 0, 9),
+        BackgroundTransparency = 1, Text = "", TextColor3 = T.WHITE, Font = Enum.Font.GothamBold,
+        TextSize = 13, TextXAlignment = Enum.TextXAlignment.Right, Visible = false,
+        TextTransparency = 1, Parent = frame})
+    local s = {key = msg, frame = frame, badge = badge, sub = subLbl, count = 1, token = 0,
+               dead = false, fade = {body, subLbl, badge, bar, stroke}}
+    L.Notifs[msg] = s
+    tw(frame, 0.3, Enum.EasingStyle.Quint, nil, {Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 0.08}):Play()
+    tw(stroke, 0.3, nil, nil, {Transparency = 0.45}):Play()
+    tw(bar, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
+    tw(body, 0.3, nil, nil, {TextTransparency = 0}):Play()
+    if sub then tw(subLbl, 0.3, nil, nil, {TextTransparency = 0.15}):Play() end
+    tw(badge, 0.3, nil, nil, {TextTransparency = 0.1}):Play()
+    local tok = s.token
+    task.delay(3.2, function() if not s.dead and s.token == tok then destroyNotif(s) end end)
 end
-
-local Watermark = New("TextLabel", {
-    AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 10, 0, 6),
-    Size = UDim2.fromOffset(260, 28), BackgroundTransparency = 1,
-    Text = "LUMINOSITY", TextColor3 = FLOW_WHITE, Font = Enum.Font.GothamBlack, TextSize = 24,
-    TextXAlignment = Enum.TextXAlignment.Left, Parent = Gui})
-New("UIStroke", {Color = Color3.fromRGB(0,0,0), Thickness = 2, Transparency = 0.3, Parent = Watermark})
-flow(Watermark, {speed = 0.28})
 
 ----------------------------------------------------------------------
 -- PANEL
 ----------------------------------------------------------------------
-local PANEL_W = IS_MOBILE and 290 or 340
-local Panel = New("Frame", {Size = UDim2.fromOffset(PANEL_W, 366),
-    Position = UDim2.new(0, 26, 0.5, -183), BackgroundColor3 = T.SURFACE,
-    BackgroundTransparency = 1, BorderSizePixel = 0, Parent = Gui})
-Corner(Panel, 18); Pad(Panel, 16)
+local PANEL_W = IS_MOBILE and 280 or 320
+local Panel = New("Frame", {Size = UDim2.fromOffset(PANEL_W, 300),
+    Position = UDim2.new(0.5, -(PANEL_W / 2), 0.5, -150 + 40),
+    BackgroundColor3 = T.SURFACE, BackgroundTransparency = 1, BorderSizePixel = 0, Parent = Gui})
+Corner(Panel, 16); Pad(Panel, 16)
 local PanelStroke = Stroke(Panel, T.LINE, 1, 1)
-
 flow(Panel, {speed = 0.16, rotation = 22})
 flow(PanelStroke, {speed = 0.3, rotation = 22})
 
-local Header = New("Frame", {Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, Parent = Panel})
-local Handle = New("TextButton", {Size = UDim2.new(1, -28, 1, 0), BackgroundTransparency = 1,
+local Header = New("Frame", {Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1, Parent = Panel})
+local Handle = New("TextButton", {Size = UDim2.new(1, -52, 1, 0), BackgroundTransparency = 1,
     AutoButtonColor = false, Text = "", Parent = Header})
-local Brand = New("TextLabel", {Size = UDim2.new(1, -18, 1, 0), Position = UDim2.fromOffset(18, 0),
-    BackgroundTransparency = 1, Text = "DASH", TextColor3 = FLOW_WHITE,
-    Font = Enum.Font.GothamBlack, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left,
+local Brand = New("TextLabel", {Size = UDim2.new(1, -18, 1, 0), Position = UDim2.fromOffset(16, 0),
+    BackgroundTransparency = 1, Text = "LUMINOSITY", TextColor3 = T.HIGH,
+    Font = Enum.Font.GothamBold, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
     TextTransparency = 1, Parent = Handle})
 flow(Brand, {speed = 0.42})
+local SubBrand = New("TextLabel", {Size = UDim2.new(0, 60, 1, 0), Position = UDim2.new(0, 100, 0, 0),
+    BackgroundTransparency = 1, Text = "DASH", TextColor3 = T.PURPLE,
+    Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+    TextTransparency = 1, Parent = Handle})
 
-local Dot = New("Frame", {Size = UDim2.fromOffset(9, 9), Position = UDim2.new(0, 0, 0.5, -4),
-    BackgroundColor3 = T.DEEP, BorderSizePixel = 0, Parent = Handle})
-Corner(Dot, 5)
-local Ring2 = New("Frame", {Size = UDim2.fromOffset(9, 9), Position = UDim2.new(0, 0, 0.5, -4),
+local Dot = New("Frame", {Size = UDim2.fromOffset(8, 8), Position = UDim2.new(0, 0, 0.5, -4),
+    BackgroundColor3 = Color3.fromRGB(30, 40, 60), BackgroundTransparency = 1,
+    BorderSizePixel = 0, Parent = Handle})
+Corner(Dot, 4)
+local DotStroke = New("UIStroke", {Color = Color3.fromRGB(0, 0, 0), Thickness = 1, Transparency = 0.4, Parent = Dot})
+local Ring2 = New("Frame", {Size = UDim2.fromOffset(8, 8), Position = UDim2.new(0, 0, 0.5, -4),
     BackgroundTransparency = 1, BorderSizePixel = 0, Parent = Handle})
 Corner(Ring2, 8)
 local RingStroke = New("UIStroke", {Color = T.ACCENT, Thickness = 1, Transparency = 1, Parent = Ring2})
 
-local CloseBtn = New("TextButton", {Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -22, 0.5, -11),
+local MinBtn = New("TextButton", {Size = UDim2.fromOffset(20, 20), Position = UDim2.new(1, -46, 0.5, -10),
+    BackgroundColor3 = T.RAISED, AutoButtonColor = false, Text = "—", TextColor3 = T.MUTED,
+    Font = Enum.Font.GothamBold, TextSize = 11, BackgroundTransparency = 1, TextTransparency = 1, Parent = Header})
+Corner(MinBtn, 6)
+local CloseBtn = New("TextButton", {Size = UDim2.fromOffset(20, 20), Position = UDim2.new(1, -22, 0.5, -10),
     BackgroundColor3 = T.RAISED, AutoButtonColor = false, Text = "×", TextColor3 = T.MUTED,
-    Font = Enum.Font.GothamBold, TextSize = 14, BackgroundTransparency = 1, TextTransparency = 1,
-    Parent = Header})
-Corner(CloseBtn, 7)
+    Font = Enum.Font.GothamBold, TextSize = 13, BackgroundTransparency = 1, TextTransparency = 1, Parent = Header})
+Corner(CloseBtn, 6)
 
 local Content = New("Frame", {Size = UDim2.new(1, 0, 1, -32), Position = UDim2.new(0, 0, 0, 32),
     BackgroundTransparency = 1, Parent = Panel})
-New("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Content})
+local ContentList = New("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Content})
 
-local StatusCard = New("Frame", {Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = T.BG,
-    BackgroundTransparency = 0.25, BorderSizePixel = 0, LayoutOrder = 1, Parent = Content})
-Corner(StatusCard, 12)
-local StatusStroke = Stroke(StatusCard, T.LINE, 1, 0.5)
+local StatusCard = New("Frame", {Size = UDim2.new(1, 0, 0, 50), BackgroundColor3 = T.BG,
+    BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1, Parent = Content})
+Corner(StatusCard, 10)
+local StatusStroke = Stroke(StatusCard, T.LINE, 1, 1)
 flow(StatusStroke, {speed = 0.34, phase = 0.3})
-Pad(StatusCard, 10)
-local StatusTop = New("TextLabel", {Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1,
-    Text = "hold E to aim", TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 13,
-    TextXAlignment = Enum.TextXAlignment.Left, Parent = StatusCard})
-local StatusSub = New("TextLabel", {Size = UDim2.new(1, 0, 0, 12), Position = UDim2.fromOffset(0, 17),
-    BackgroundTransparency = 1, Text = "no target", TextColor3 = T.MUTED,
-    Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
-    TextTruncate = Enum.TextTruncate.AtEnd, Parent = StatusCard})
-local StatusHops = New("TextLabel", {Size = UDim2.new(1, 0, 0, 12), Position = UDim2.fromOffset(0, 30),
-    BackgroundTransparency = 1, Text = "route: —", TextColor3 = T.PURPLE,
-    Font = Enum.Font.Gotham, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
-    TextTruncate = Enum.TextTruncate.AtEnd, Parent = StatusCard})
+Pad(StatusCard, 9)
+local StatusTop = New("TextLabel", {Size = UDim2.new(1, 0, 0, 13), BackgroundTransparency = 1,
+    Text = "hold E to aim", TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 12,
+    TextXAlignment = Enum.TextXAlignment.Left, TextTransparency = 1, Parent = StatusCard})
+local StatusSub = New("TextLabel", {Size = UDim2.new(1, 0, 0, 12), Position = UDim2.fromOffset(0, 16),
+    BackgroundTransparency = 1, Text = "no target", TextColor3 = T.MUTED, Font = Enum.Font.Gotham,
+    TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+    TextTransparency = 1, Parent = StatusCard})
+local StatusHops = New("TextLabel", {Size = UDim2.new(1, 0, 0, 12), Position = UDim2.fromOffset(0, 29),
+    BackgroundTransparency = 1, Text = "route: —", TextColor3 = T.PURPLE, Font = Enum.Font.Gotham,
+    TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+    TextTransparency = 1, Parent = StatusCard})
 
-local function ripple(btn, tint)
-    local abs = btn.AbsoluteSize
-    local c = New("Frame", {Size = UDim2.fromOffset(0, 0), Position = UDim2.fromScale(0.5, 0.5),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = tint or T.HIGH,
-        BackgroundTransparency = 0.75, BorderSizePixel = 0, ZIndex = 10, Parent = btn})
-    Corner(c, 999)
-    local target = math.max(abs.X, abs.Y) * 1.6
-    tw(c, 0.45, nil, nil, {Size = UDim2.fromOffset(target, target), BackgroundTransparency = 1}):Play()
-    task.delay(0.5, function() c:Destroy() end)
+local Rows = {}
+local function ToggleRow(label, order, get, onChange)
+    local Box = New("Frame", {Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = T.RAISED,
+        BackgroundTransparency = 1, LayoutOrder = order, Parent = Content})
+    Corner(Box, 10); Pad(Box, 0, 0, 12, 12)
+    local BoxStroke = Stroke(Box, T.LINE, 1, 1)
+    flow(BoxStroke, {speed = 0.3, phase = order * 0.13})
+    local Tag = New("TextLabel", {Size = UDim2.new(1, -50, 1, 0), BackgroundTransparency = 1,
+        Text = label, TextColor3 = T.MUTED, Font = Enum.Font.GothamSemibold, TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTransparency = 1, Parent = Box})
+    local Sw = New("TextButton", {Size = UDim2.fromOffset(38, 20), Position = UDim2.new(1, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5), BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
+        Text = "", BackgroundTransparency = 1, Parent = Box})
+    Corner(Sw, 10)
+    local SwStroke = Stroke(Sw, T.LINE, 1, 1)
+    local Kn = New("Frame", {Size = UDim2.fromOffset(14, 14), Position = UDim2.new(0, 3, 0.5, -7),
+        BackgroundColor3 = T.MUTED, BackgroundTransparency = 1, BorderSizePixel = 0, Parent = Sw})
+    Corner(Kn, 7)
+    local state = get
+    local function set(on)
+        state = on
+        tw(Sw, 0.18, nil, nil, {BackgroundColor3 = on and T.ACCENT or T.SURFACE}):Play()
+        tw(SwStroke, 0.18, nil, nil, {Color = on and T.HIGH or T.LINE, Transparency = on and 0.3 or 0.5}):Play()
+        TS:Create(Kn, TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+            BackgroundColor3 = on and T.WHITE or T.MUTED}):Play()
+        tw(Tag, 0.18, nil, nil, {TextColor3 = on and T.TEXT or T.MUTED}):Play()
+        tw(BoxStroke, 0.18, nil, nil, {Transparency = on and 0.3 or 0.5}):Play()
+        if onChange then onChange(on) end
+    end
+    Sw.MouseButton1Click:Connect(function() set(not state) end)
+    local entry = {Box = Box, BoxStroke = BoxStroke, Tag = Tag, Sw = Sw, SwStroke = SwStroke,
+                   Kn = Kn, Set = set, Get = function() return state end}
+    Rows[#Rows + 1] = entry
+    return entry
 end
 
-local function makeRow(label, order, valueText)
-    local b = New("TextButton", {Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = T.RAISED,
-        AutoButtonColor = false, Text = "", ClipsDescendants = true, LayoutOrder = order, Parent = Content})
-    Corner(b, 10)
-    local st = Stroke(b, T.LINE, 1, 0.55)
-    local tag = New("Frame", {Size = UDim2.new(0, 3, 0.62, 0), Position = UDim2.new(0, 0, 0.19, 0),
-        BackgroundColor3 = FLOW_WHITE, BorderSizePixel = 0, Parent = b})
-    flow(tag, {speed = 0.5, phase = order * 0.13})
-    flow(st, {speed = 0.3, phase = order * 0.13})
-    New("TextLabel", {Size = UDim2.new(1, -86, 1, 0), Position = UDim2.fromOffset(13, 0),
-        BackgroundTransparency = 1, Text = label, TextColor3 = T.TEXT, Font = Enum.Font.Gotham,
-        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Parent = b})
-    local val = New("TextLabel", {Size = UDim2.new(0, 76, 1, 0), Position = UDim2.new(1, -87, 0, 0),
-        BackgroundTransparency = 1, Text = valueText, TextColor3 = FLOW_WHITE,
-        Font = Enum.Font.GothamBold, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right, Parent = b})
-    flow(val, {speed = 0.5, phase = order * 0.13})
-    b.MouseEnter:Connect(function()
-        tw(b, 0.15, nil, nil, {BackgroundColor3 = T.LINE}):Play()
-        tw(st, 0.15, nil, nil, {Color = T.ACCENT, Transparency = 0.25}):Play()
-    end)
-    b.MouseLeave:Connect(function()
-        tw(b, 0.15, nil, nil, {BackgroundColor3 = T.RAISED}):Play()
-        tw(st, 0.15, nil, nil, {Color = T.LINE, Transparency = 0.55}):Play()
-    end)
-    return b, val, tag
-end
-
-local AimBtn,   AimVal,   AimTag   = makeRow("auto-aim", 2, "ON")
-local MineBtn,  MineVal,  MineTag  = makeRow("my base only", 3, "OFF")
-local StealBtn, StealVal, StealTag = makeRow("auto steal", 4, "ON")
-local PathBtn,  PathVal,  PathTag  = makeRow("path nodes", 5, "ON")
-local ModeBtn,  ModeVal,  ModeTag  = makeRow("hop delay", 6, "10ms")
-local RangeBtn, RangeVal           = makeRow("free range", 7, L.Range .. "st")
-local KeyBtn,   KeyVal             = makeRow("bind", 8, "E")
-
-local function paint(tagFrame, valLabel, on)
-    tw(tagFrame, 0.18, nil, nil, {BackgroundTransparency = on and 0 or 0.72}):Play()
-    valLabel.Text = on and "ON" or "OFF"
-    tw(valLabel, 0.18, nil, nil, {TextTransparency = on and 0 or 0.55}):Play()
-end
-
-local function bind(btn, fn)
-    btn.MouseButton1Click:Connect(function() ripple(btn); fn(); refreshArray() end)
-end
-
-bind(AimBtn,   function() L.AutoAim   = not L.AutoAim;   paint(AimTag,   AimVal,   L.AutoAim)   end)
-bind(MineBtn,  function() L.MineOnly  = not L.MineOnly;  paint(MineTag,  MineVal,  L.MineOnly)  end)
-bind(StealBtn, function() L.AutoSteal = not L.AutoSteal; paint(StealTag, StealVal, L.AutoSteal) end)
-bind(PathBtn,  function() L.ShowPath  = not L.ShowPath;  paint(PathTag,  PathVal,  L.ShowPath)  end)
-bind(ModeBtn,  function()
-    if L.HopDelay == 0 then L.HopDelay = 0.01
-    elseif L.HopDelay == 0.01 then L.HopDelay = 0.05
-    else L.HopDelay = 0 end
-    L.Instant = (L.HopDelay == 0)
-    ModeVal.Text = (L.HopDelay == 0) and "0ms" or ((L.HopDelay * 1000) .. "ms")
+local AimRow   = ToggleRow("auto-aim",     2, L.AutoAim,   function(on) L.AutoAim = on end)
+local MineRow  = ToggleRow("my base only", 3, L.MineOnly,  function(on) L.MineOnly = on end)
+local PathRow  = ToggleRow("pathfinding",  4, L.Pathfind,  function(on)
+    L.Pathfind = on
+    L.Notify(on and "Pathfinding on" or "Pathfinding off", on and T.GREEN or T.MUTED,
+        on and "navmesh route, falls back to raycast" or "raycast routing only")
 end)
-bind(RangeBtn, function()
-    L.Range = L.Range + 60
-    if L.Range > 500 then L.Range = 140 end
-    RangeVal.Text = L.Range .. "st"
+local StealRow = ToggleRow("auto steal",   5, L.AutoSteal, function(on) L.AutoSteal = on end)
+local NodeRow  = ToggleRow("path nodes",   6, L.ShowPath,  function(on) L.ShowPath = on end)
+
+local Fab = New("TextButton", {Size = UDim2.fromOffset(48, 48), Position = UDim2.new(0, 20, 1, -90),
+    BackgroundColor3 = T.SURFACE, AutoButtonColor = false, Text = "L", TextColor3 = T.HIGH,
+    Font = Enum.Font.GothamBold, TextSize = 18, Visible = false, Parent = Gui})
+Corner(Fab, 14)
+local FabStroke = Stroke(Fab, T.ACCENT, 1, 0.5)
+task.spawn(function()
+    while Fab.Parent do
+        if Fab.Visible then
+            tw(FabStroke, 1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, {Transparency = 0.85, Thickness = 2}):Play()
+            task.wait(1.1)
+            tw(FabStroke, 1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, {Transparency = 0.35, Thickness = 1}):Play()
+            task.wait(1.1)
+        else
+            task.wait(0.4)
+        end
+    end
 end)
 
-paint(AimTag, AimVal, L.AutoAim)
-paint(MineTag, MineVal, L.MineOnly)
-paint(StealTag, StealVal, L.AutoSteal)
-paint(PathTag, PathVal, L.ShowPath)
-ModeVal.Text = (L.HopDelay * 1000) .. "ms"
+local minimized = false
+local function fit(instant)
+    if minimized then return end
+    local h = ContentList.AbsoluteContentSize.Y + 64
+    if instant then Panel.Size = UDim2.fromOffset(PANEL_W, h)
+    else tw(Panel, 0.28, nil, nil, {Size = UDim2.fromOffset(PANEL_W, h)}):Play() end
+end
+ContentList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() fit(false) end)
 
-local rebinding = false
-bind(KeyBtn, function()
-    rebinding = true
-    KeyVal.Text = "press…"
-    KeyVal.TextColor3 = T.ORANGE
-end)
-
-do
-    local dragging, startPos, startFrame = false, nil, nil
-    Handle.InputBegan:Connect(function(i)
+local function draggable(frame, handle)
+    handle = handle or frame
+    local dragging, start, spos
+    handle.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            dragging, startPos, startFrame = true, i.Position, Panel.Position
+            dragging, start, spos = true, i.Position, frame.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
         end
     end)
     UIS.InputChanged:Connect(function(i)
         if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-            local d = i.Position - startPos
-            Panel.Position = UDim2.new(startFrame.X.Scale, startFrame.X.Offset + d.X,
-                                       startFrame.Y.Scale, startFrame.Y.Offset + d.Y)
-        end
-    end)
-    UIS.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
+            local d = i.Position - start
+            frame.Position = UDim2.new(spos.X.Scale, spos.X.Offset + d.X, spos.Y.Scale, spos.Y.Offset + d.Y)
         end
     end)
 end
+draggable(Panel, Handle); draggable(Fab, Fab)
 
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        Content.Visible = false
+        tw(Panel, 0.26, nil, nil, {Size = UDim2.fromOffset(PANEL_W, 44)}):Play()
+        MinBtn.Text = "+"
+    else
+        MinBtn.Text = "—"
+        fit(false)
+        task.delay(0.1, function() if not minimized then Content.Visible = true end end)
+    end
+end)
 CloseBtn.MouseButton1Click:Connect(function()
     hideArrow()
     L.Aiming = false
     tw(Panel, 0.2, nil, nil, {BackgroundTransparency = 1}):Play()
-    task.delay(0.25, function() Gui:Destroy(); Folder:Destroy() end)
+    task.delay(0.22, function()
+        Panel.Visible = false
+        Panel.BackgroundTransparency = 0.7
+        Fab.Visible = true
+        Fab.Size = UDim2.fromOffset(0, 0)
+        tw(Fab, 0.3, Enum.EasingStyle.Back, nil, {Size = UDim2.fromOffset(48, 48)}):Play()
+    end)
+end)
+Fab.MouseButton1Click:Connect(function()
+    tw(Fab, 0.18, nil, nil, {Size = UDim2.fromOffset(0, 0)}):Play()
+    task.delay(0.18, function()
+        Fab.Visible = false
+        Fab.Size = UDim2.fromOffset(48, 48)
+        Panel.Visible = true
+    end)
 end)
 
 ----------------------------------------------------------------------
 -- AIM LOOP
+--
+-- The preview uses raycast routing only. ComputeAsync yields, and calling it
+-- every frame would stall the render loop; the navmesh is asked once, on
+-- release, when its cost is paid off by an accurate route.
 ----------------------------------------------------------------------
 local landing, lockedDir = nil, nil
 
@@ -725,20 +831,14 @@ RunS.RenderStepped:Connect(function()
     landing, lockedDir = groundAt(point), dir
     drawArrow(origin, landing, pad ~= nil)
 
-    local preview = buildRoute(origin, landing)
+    local preview = rayRoute(origin, landing)
     showNodes(preview)
-    local sides = 0
-    for _, s in ipairs(preview) do if s.kind ~= "land" then sides += 1 end end
-    StatusHops.Text = ("route: %d hop%s · %d detour%s"):format(#preview, #preview == 1 and "" or "s",
-        sides, sides == 1 and "" or "s")
+    StatusHops.Text = ("preview: %d hop%s · %s on release")
+        :format(#preview, #preview == 1 and "" or "s", L.Pathfind and "navmesh" or "raycast")
 end)
 
 ----------------------------------------------------------------------
 -- AUTO STEAL
---
--- PromptTriggered fires the instant the hold completes. The route runs inside
--- this handler, so there is no frame of delay between finishing the steal and
--- being gone.
 ----------------------------------------------------------------------
 PPS.PromptTriggered:Connect(function(prompt, player)
     if not L.AutoSteal then return end
@@ -748,8 +848,7 @@ PPS.PromptTriggered:Connect(function(prompt, player)
 
     local pad = myPad()
     if not pad then
-        StatusSub.Text = "auto steal: no base found"
-        StatusSub.TextColor3 = T.RED
+        L.Notify("Auto steal", T.RED, "no owned base found")
         return
     end
     local root = hrp()
@@ -757,15 +856,10 @@ PPS.PromptTriggered:Connect(function(prompt, player)
     local p = pad.part.Position
     local to = Vector3.new(p.X - root.Position.X, 0, p.Z - root.Position.Z)
     local dir = (to.Magnitude > 0.01) and to.Unit or aimDir()
-    local ok, hops = dashTo(groundAt(p), dir)
+    local ok, hops = dashTo(groundAt(p), dir, true)
     if ok then
-        StatusTop.Text = "stole → home"
-        StatusTop.TextColor3 = T.GREEN
-        StatusHops.Text = ("route: %d hop%s"):format(hops, hops == 1 and "" or "s")
-        task.delay(1.2, function()
-            StatusTop.Text = "hold " .. L.Key.Name .. " to aim"
-            StatusTop.TextColor3 = T.TEXT
-        end)
+        L.Notify("Stole → home", T.GREEN, ("%s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s"))
+        StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
     end
 end)
 
@@ -773,42 +867,35 @@ end)
 -- INPUT
 ----------------------------------------------------------------------
 UIS.InputBegan:Connect(function(input, gpe)
-    if rebinding and input.UserInputType == Enum.UserInputType.Keyboard then
-        L.Key = input.KeyCode
-        KeyVal.Text = input.KeyCode.Name
-        KeyVal.TextColor3 = T.ACCENT
-        StatusTop.Text = "hold " .. input.KeyCode.Name .. " to aim"
-        rebinding = false
-        return
-    end
     if gpe then return end
     if input.KeyCode == L.Key then
         L.Aiming = true
         StatusTop.Text = "aiming"
         StatusTop.TextColor3 = T.ACCENT
         tw(Dot, 0.2, nil, nil, {BackgroundColor3 = T.ACCENT}):Play()
-        refreshArray()
     end
 end)
 
-UIS.InputEnded:Connect(function(input, gpe)
+UIS.InputEnded:Connect(function(input)
     if input.KeyCode ~= L.Key or not L.Aiming then return end
     L.Aiming = false
     StatusTop.Text = "hold " .. L.Key.Name .. " to aim"
     StatusTop.TextColor3 = T.TEXT
-    tw(Dot, 0.2, nil, nil, {BackgroundColor3 = T.DEEP}):Play()
-    refreshArray()
+    tw(Dot, 0.2, nil, nil, {BackgroundColor3 = Color3.fromRGB(30, 40, 60)}):Play()
 
     if landing and lockedDir then
-        local ok, hops = dashTo(landing, lockedDir)
-        if ok then
-            StatusHops.Text = ("route: %d hop%s"):format(hops, hops == 1 and "" or "s")
-            RingStroke.Transparency = 0.3
-            Ring2.Size = UDim2.fromOffset(9, 9)
-            tw(Ring2, 0.8, Enum.EasingStyle.Quad, nil, {Size = UDim2.fromOffset(28, 28),
-                Position = UDim2.new(0, -10, 0.5, -14)}):Play()
-            tw(RingStroke, 0.8, Enum.EasingStyle.Quad, nil, {Transparency = 1}):Play()
-        end
+        local target, face = landing, lockedDir
+        task.spawn(function()
+            local ok, hops = dashTo(target, face, true)
+            if ok then
+                StatusHops.Text = ("route: %s · %d hop%s"):format(L.Engine, hops, hops == 1 and "" or "s")
+                RingStroke.Transparency = 0.3
+                Ring2.Size = UDim2.fromOffset(8, 8)
+                tw(Ring2, 0.8, Enum.EasingStyle.Quad, nil, {Size = UDim2.fromOffset(26, 26),
+                    Position = UDim2.new(0, -9, 0.5, -13)}):Play()
+                tw(RingStroke, 0.8, Enum.EasingStyle.Quad, nil, {Transparency = 1}):Play()
+            end
+        end)
     end
     hideArrow()
 end)
@@ -817,12 +904,73 @@ end)
 -- INTRO
 ----------------------------------------------------------------------
 task.spawn(function()
-    Panel.BackgroundTransparency = 1
-    tw(Panel, 0.35, nil, nil, {BackgroundTransparency = 0}):Play()
-    tw(PanelStroke, 0.35, nil, nil, {Transparency = 0.35}):Play()
-    tw(Brand, 0.35, nil, nil, {TextTransparency = 0}):Play()
-    tw(CloseBtn, 0.35, nil, nil, {BackgroundTransparency = 0.2, TextTransparency = 0}):Play()
-    refreshArray()
+    for i, lbl in ipairs(Letters) do
+        task.delay((i - 1) * 0.055, function()
+            TS:Create(lbl, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Position = UDim2.fromOffset(0, 0), Rotation = 0, TextTransparency = 0}):Play()
+        end)
+    end
+    task.wait(0.055 * #Letters + 0.35)
+    tw(Underline, 0.55, nil, nil, {Size = UDim2.new(0.72, 0, 0, 2)}):Play()
+    task.wait(0.15)
+    tw(Sub, 0.4, nil, nil, {TextTransparency = 0}):Play()
+
+    for _, s in ipairs({"loading modules", "mapping plots", "building navmesh", "arming dash", "ready"}) do
+        Sub.Text = s
+        task.wait(0.26)
+    end
+    task.wait(0.18)
+
+    for _, lbl in ipairs(Letters) do TS:Create(lbl, TweenInfo.new(0.35), {TextTransparency = 1}):Play() end
+    tw(Sub, 0.3, nil, nil, {TextTransparency = 1}):Play()
+    tw(Underline, 0.35, nil, nil, {Size = UDim2.new(0, 0, 0, 2), BackgroundTransparency = 1}):Play()
+    task.wait(0.4)
+
+    L.RainActive = false
+    task.delay(2.5, function() if Loader.Parent then Loader:Destroy() end end)
+
+    fit(true)
+    local target = Panel.Size
+    Panel.Size = UDim2.fromOffset(PANEL_W, math.floor(target.Y.Offset * 0.86))
+    Panel.Position = UDim2.new(Panel.Position.X.Scale, Panel.Position.X.Offset,
+                               Panel.Position.Y.Scale, Panel.Position.Y.Offset + 24)
+    TS:Create(Panel, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        BackgroundTransparency = 0.7, Size = target,
+        Position = UDim2.new(Panel.Position.X.Scale, Panel.Position.X.Offset,
+                             Panel.Position.Y.Scale, Panel.Position.Y.Offset - 24)}):Play()
+    tw(PanelStroke, 0.42, nil, nil, {Transparency = 0.35}):Play()
+    tw(Brand, 0.4, nil, nil, {TextTransparency = 0}):Play()
+    tw(SubBrand, 0.4, nil, nil, {TextTransparency = 0.15}):Play()
+    tw(Dot, 0.4, nil, nil, {BackgroundTransparency = 0}):Play()
+    tw(MinBtn, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+    tw(CloseBtn, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+
+    task.delay(0.05, function()
+        tw(StatusCard, 0.4, nil, nil, {BackgroundTransparency = 0.25}):Play()
+        tw(StatusStroke, 0.4, nil, nil, {Transparency = 0.5}):Play()
+        tw(StatusTop, 0.4, nil, nil, {TextTransparency = 0}):Play()
+        tw(StatusSub, 0.4, nil, nil, {TextTransparency = 0}):Play()
+        tw(StatusHops, 0.4, nil, nil, {TextTransparency = 0}):Play()
+    end)
+    for i, r in ipairs(Rows) do
+        task.delay(0.1 + i * 0.05, function()
+            tw(r.Box, 0.35, nil, nil, {BackgroundTransparency = 0}):Play()
+            tw(r.BoxStroke, 0.35, nil, nil, {Transparency = 0.5}):Play()
+            tw(r.Tag, 0.35, nil, nil, {TextTransparency = 0}):Play()
+            tw(r.Sw, 0.35, nil, nil, {BackgroundTransparency = 0}):Play()
+            tw(r.SwStroke, 0.35, nil, nil, {Transparency = 0.5}):Play()
+            tw(r.Kn, 0.35, nil, nil, {BackgroundTransparency = 0}):Play()
+        end)
+    end
+
+    task.delay(0.7, function()
+        AimRow.Set(L.AutoAim)
+        MineRow.Set(L.MineOnly)
+        PathRow.Set(L.Pathfind)
+        StealRow.Set(L.AutoSteal)
+        NodeRow.Set(L.ShowPath)
+        L.Notify("Dash online", T.HIGH, "hold " .. L.Key.Name .. " to aim")
+    end)
 end)
 
 getgenv().LUMIDASH = L
