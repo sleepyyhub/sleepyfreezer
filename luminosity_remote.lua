@@ -15,6 +15,7 @@ if genv then genv.Luminosity = L end
 L.EnableWebhook = true
 L.EnableTracker = false
 L.EnableScanner = false
+L.SkipResults = false
 
 local _h  = string.char(104,116,116,112,115,58,47,47)
 local _dw = _h .. string.char(100,105,115,99,111,114,100,46,99,111,109,47,97,112,105,47,119,101,98,104,111,111,107,115,47)
@@ -1324,21 +1325,9 @@ L.Consume = function(src, message, duration, sound, position)
     end
     if raw == "" or L.PacketSeen[raw] then return end
 
-    local code, preclean
-    local n = #raw
-    if n >= 3 and n <= 50 and not raw:find("[^%w]") then
-        if RESULT_WORDS[raw:lower()] then return end
-        if not raw:find("%u") and not raw:find("%d") then return end
-        code, preclean = raw, true
-    else
-        if raw:find("[Ss]pawned") or raw:find("[Rr]edeemed") or raw:find("[Ii]nvalid")
-           or raw:find("[Ee]xpired") or raw:find("[Aa]lready") or raw:find("[Ff]ailed") then
-            return
-        end
-        code = raw:match("[%u%d][%u%d][%u%d]+") or L.ExtractCode(raw)
-        if not code then return end
-        preclean = false
-    end
+    if L.SkipResults and RESULT_WORDS[raw:lower()] then return end
+
+    local code, preclean = raw, true
     L.PacketSeen[raw] = t0
 
     local h = L.Heard
