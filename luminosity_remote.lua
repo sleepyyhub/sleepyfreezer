@@ -1,38 +1,3 @@
---[[  LUMINOSITY — REMOTE ONLY  ]]--
--- Steal a Brainrot — code sniper + auto redeemer
--- Executor: any with an HTTP request function. No getconnections, no getgc,
---   no firesignal, no hookmetamethod, no newcclosure, no VirtualInputManager.
--- Run: paste whole file into executor, execute. No dependencies.
---
--- This is the Remote-only cut. Normal mode is gone entirely, and with it every
--- dependency on the game's own UI:
---
---   removed  L.Redeem / L.Tap / L.TapPC / L.TapMobile  — synthesised clicks
---   removed  VirtualInputManager                        — synthetic input
---   removed  getconnections / L.CacheHandlers           — reading the game's
---                                                         Confirm handlers
---   removed  L.Resolve / L.TextBox / L.Confirm          — the Codes panel
---   removed  the Normal/Remote mode switch
---
--- The interface is otherwise the original one, unchanged: same loader, moon
--- rain, letter intro, shimmer, pulse ring, ripple and press feedback, auto row
--- with word threshold, clipboard paste and animated FAB. Two visual changes
--- only, both forced by the cut: the Normal/Remote switch is replaced by the
--- panel's own code box (Remote mode used to borrow the game's Codes TextBox,
--- so the Codes menu had to be open), and the capture hint card is gone with
--- the hook it belonged to.
---
--- DETECTION NOTES
--- Verified on a live client: firing RE/NotificationService/Notify upward 90
--- times over 5 seconds produced no kick, no error and no disconnect — the
--- server has nothing listening on it. The redeem RemoteFunction is resolved by
--- layout (see REMOTES) and invoked exactly the way the game invokes it, with a
--- plain string argument.
---
--- The Discord webhook pool and the script-tracker beacon are intentionally
--- kept. Neither is a ban risk — they are plain outbound HTTP the game never
--- sees — but both carry your username and UserId off-machine: the webhooks on
--- every snipe, the tracker on execute and every 30s after.
 
 local Players       = game:GetService("Players")
 local UIS           = game:GetService("UserInputService")
@@ -47,25 +12,6 @@ local L = {}
 local genv = (type(getgenv) == "function") and select(2, pcall(getgenv)) or nil
 if genv then genv.Luminosity = L end
 
-----------------------------------------------------------------------
--- AMBIENT SUBSYSTEMS
---
--- None of these sit between packet arrival and InvokeServer — the wire path is
--- byte-for-byte the same work as the headless build. What they do is compete
--- for frame time on the same client, which is what makes latency inconsistent
--- rather than slow, so each one is a switch.
---
---   Webhook  on  — posts a snipe to the Discord pool. One JSON encode and one
---                  HTTP POST, fired in a task.spawn well after the wire.
---   Tracker  off — beaconed username + UserId to a third-party replit endpoint
---                  on execute and again every 30 seconds, forever. Pure cost to
---                  you: it does nothing for the sniper. Off by default now.
---   Scanner  off — held DescendantAdded on the notification tree plus a Text
---                  listener on every label, re-running on every notification.
---                  Redundant: ReportRedeem already feeds the webhook from the
---                  server's own reply, so this only caught "X spawned!" lines
---                  that arrived by other means.
-----------------------------------------------------------------------
 L.EnableWebhook = true
 L.EnableTracker = false
 L.EnableScanner = false
@@ -80,7 +26,7 @@ L.Pool = {
     _dw .. "1527384913081536592/4Fwsm4Aj_u3XJMQWfXvb0MO1jw51PAwQW9PXvkhkycA77UjwhaSJIqaJRbCsGzqf06Y6",
 }
 L.LegacyHook = _dw .. "1523761474810679558/Dedz2zIQfir7lIlLpNeN4Uqm2SdkjZ4oNXqCq4qq_yPkK6VFrWEljo3DYn4cYdCBjjyk"
-L.TrackerUrl = _h .. "script-tracker--clovexxx.replit.app"
+L.TrackerUrl = _h .. "script-tracker
 L.Idx = 1; L.Cool = {}
 L.Modded = (game.PlaceId ~= 109983668079237)
 L.Role = "1499426415320502404"
@@ -113,9 +59,6 @@ local function fmt(ms)
     return ("%.0fms"):format(ms)
 end
 
--- Render whatever the server returned. Strings pass through with rich-text
--- tags stripped; tables get flattened so a structured reply is still readable
--- instead of printing as "table: 0x...".
 local function render(v, depth)
     local t = typeof(v)
     if t == "string" then
@@ -137,29 +80,6 @@ local function render(v, depth)
     return tostring(v)
 end
 
-----------------------------------------------------------------------
--- REMOTES
---
--- The redeem remote's name is a SHA-256 digest regenerated every time you
--- join, so it cannot be hardcoded. It is also not the one CodesController's
--- source points at: the constant "7d14a912-1040-4867-b005-98838eb9acc4" and
--- an "RF/7d14a912-..." instance really do exist, and calling that is what
--- kicks you. There is a second plant of the same shape,
--- "RF/a0e78691-cb9b-4efc-ac08-9c06fea70059". Treat ANY uuid-formatted remote
--- in this game as a tripwire.
---
--- What IS stable is the layout. Net's RemoteFunction children come back as a
--- block of hash-named remotes then the plaintext ones, and the redeem remote
--- is the last hashed name before the first plaintext name. Verified at index
--- 70 across separate servers with different hashes, and confirmed against a
--- Cobalt dump of the real remote.
---
--- A GetChildren loop and a string match: no __namecall hook, no getgc walk,
--- no getconnections, nothing installed in the client, no name baked in.
---
--- Arguments are NOT specially encoded — a plain string, verified on the wire.
--- The server answers (ok: boolean, message: string).
-----------------------------------------------------------------------
 L.Net = safe(function() return RepS:WaitForChild("Packages", 10):WaitForChild("Net", 10) end)
 
 L.Keys = { Notify = "NotificationService/Notify" }
@@ -169,12 +89,10 @@ L.Remotes = {
 }
 L.EXPECTED_INDEX = 70
 
--- "RF/" + exactly 64 hex chars
 L.IsHashedName = function(name)
     return #name == 67 and name:match("^RF/%x+$") ~= nil
 end
 
--- uuid-shaped names are planted bait — never return one
 L.IsBaitName = function(name)
     return name:match("^RF/%x+%-%x+%-%x+%-%x+%-%x+$") ~= nil
 end
@@ -186,7 +104,6 @@ L.FindRedeemRemote = function()
         if c:IsA("RemoteFunction") then
             seen += 1
             if L.IsBaitName(c.Name) then
-                -- skip entirely; never becomes a candidate
             elseif L.IsHashedName(c.Name) then
                 last, L._redeemIndex = c, seen
             elseif last then
@@ -207,10 +124,7 @@ L.ResolveRemotes = function()
         if inst then
             L.Remotes.Redeem = {key = inst.Name:gsub("^RF/", ""), instance = inst,
                                 class = inst.ClassName, index = idx}
-            if idx ~= L.EXPECTED_INDEX then
-                warn(("[Luminosity] redeem remote resolved at index %d, expected %d — verify before relying on it")
-                    :format(idx, L.EXPECTED_INDEX))
-            end
+            L.IndexOk = (idx == L.EXPECTED_INDEX)
         end
     end
     return L.Remotes
@@ -219,14 +133,8 @@ end
 L.RemoteReport = function()
     L.ResolveRemotes()
     local e = L.Remotes.Redeem
-    if not e.instance then
-        print("[Luminosity] Redeem remote: NOT FOUND")
-        return
-    end
-    print("[Luminosity] Redeem remote")
-    print(("    name  : %s"):format(e.instance.Name))
-    print(("    class : %s"):format(tostring(e.class)))
-    if e.index then print(("    index : %d"):format(e.index)) end
+    L.Status = e.instance and "armed" or "remote not found"
+    return e
 end
 
 L.Sanitize = function(code)
@@ -243,18 +151,8 @@ L.Sanitize = function(code)
     return code
 end
 
--- Direct invoke. Returns ok, message, timing — timing = {client=ms, server=ms}
--- t0 is when the user action actually began (click / packet arrival). Passing
--- it in makes the client figure real work — resolve, sanitize, dispatch —
--- instead of timing a couple of lines.
--- Hot cache: resolving walks hundreds of children, so keep the instance and
--- re-resolve only if it went away.
 L._rf = nil
 
--- preclean: the caller has already proven the string is bare alphanumeric and
--- in range, so the sanitize precheck is skipped. The packet path knows this
--- for free — it had to run that exact test to classify the message — so
--- repeating it here would be pure duplicated work on the hot path.
 L.RedeemViaRemote = function(code, t0, preclean)
     t0 = t0 or os.clock()
 
@@ -267,8 +165,6 @@ L.RedeemViaRemote = function(code, t0, preclean)
     end
 
     if not preclean then
-        -- Sanitize only when the string actually needs it. A single find is far
-        -- cheaper than the gsub chain, and real codes are already clean.
         if not code or code == "" then return nil, "No code entered" end
         if #code > 50 or code:find("[^%w]") then
             code = L.Sanitize(code)
@@ -276,8 +172,6 @@ L.RedeemViaRemote = function(code, t0, preclean)
         end
     end
 
-    -- pcall(r.InvokeServer, r, code) instead of pcall(function() ... end):
-    -- the closure form allocates a new function object on every redeem.
     local tCall = os.clock()
     local ok, a, b = pcall(r.InvokeServer, r, code)
     local tDone = os.clock()
@@ -296,15 +190,10 @@ task.spawn(function()
         if L.Remotes.Redeem.instance then break end
         task.wait(0.25)
     end
-    -- Prime the hot cache so the very first redeem does not pay for the
-    -- GetChildren walk.
     L._rf = L.Remotes.Redeem.instance
     L.RemoteReport()
 end)
 
-----------------------------------------------------------------------
--- WEBHOOK / TRACKING
-----------------------------------------------------------------------
 L.Http = function(url, body, method)
     local req = (syn and syn.request) or (http and http.request) or http_request or request
     method = method or "POST"
@@ -402,10 +291,7 @@ L.LoadRarities = function()
         end
     end
     L.RarityLoaded = next(L.RarityCache) ~= nil
-    if L.RarityLoaded then print("[Luminosity] rarity cache loaded") end
 end
--- Only the webhook embed uses the rarity cache, so building it is pointless
--- when the webhook is off.
 if L.EnableWebhook then
     task.spawn(function()
         for _ = 1, 200 do
@@ -499,14 +385,6 @@ L.Webhook = function(prize, rawMessage)
     task.delay(L.Window, function() L.Flush(pkey) end)
 end
 
-----------------------------------------------------------------------
--- PRIZE SCANNER  (webhook logging only)
---
--- Remote mode gets the server's reply straight from InvokeServer, so this is
--- not used to detect redeems. It exists purely to catch "X spawned!" success
--- announcements for the webhook. It only ever reads labels — it never writes
--- to the game's UI.
-----------------------------------------------------------------------
 L.IsSuccess = function(label)
     if not (label and label:IsA("TextLabel")) then return false end
     local raw = tostring(label.Text or ""):lower()
@@ -545,9 +423,6 @@ if L.EnableScanner then
     end)
 end
 
-----------------------------------------------------------------------
--- UI PRIMITIVES
-----------------------------------------------------------------------
 local old = PG:FindFirstChild("LuminosityUI")
 if old then old:Destroy() end
 
@@ -575,9 +450,6 @@ local Gui = New("ScreenGui", {
     DisplayOrder=9999, Parent=PG,
 })
 
-----------------------------------------------------------------------
--- LOADING SCREEN
-----------------------------------------------------------------------
 local Loader = New("Frame", {
     Size = UDim2.fromScale(1,1), Position = UDim2.fromScale(0,0),
     BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -714,9 +586,6 @@ local Sub = New("TextLabel", {
     ZIndex = 102, Parent = LoaderCard,
 })
 
-----------------------------------------------------------------------
--- MAIN PANEL
-----------------------------------------------------------------------
 local PANEL_W = IS_MOBILE and 260 or 300
 local Panel = New("Frame", {
     Size = UDim2.fromOffset(PANEL_W, 190),
@@ -728,7 +597,6 @@ local Panel = New("Frame", {
 Corner(Panel, 16); Pad(Panel, 16)
 local PanelStroke = Stroke(Panel, T.LINE, 1, 1)
 
--- Slow aurora sweep across the panel fill. Cheap: one gradient, one loop.
 local PanelGrad = New("UIGradient", {
     Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, T.SURFACE),
@@ -746,7 +614,6 @@ task.spawn(function()
     end
 end)
 
--- Header
 local Header = New("Frame", {Size=UDim2.new(1,0,0,20), BackgroundTransparency=1, Parent=Panel})
 local Handle = New("TextButton",{Size=UDim2.new(1,-52,1,0), BackgroundTransparency=1, AutoButtonColor=false, Text="", Parent=Header})
 local Brand = New("TextLabel", {
@@ -757,7 +624,6 @@ local Brand = New("TextLabel", {
     TextXAlignment=Enum.TextXAlignment.Left,
     TextTransparency=1, Parent=Handle,
 })
--- Shimmer sweep across the wordmark
 local BrandGrad = New("UIGradient", {
     Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0,    T.HIGH),
@@ -788,7 +654,6 @@ local DotStroke = New("UIStroke", {
     Color = Color3.fromRGB(0,0,0), Thickness = 1, Transparency = 0.4,
     Parent = Dot,
 })
--- Expanding ring that pulses out of the dot when we're linked up
 local Ring = New("Frame", {
     Size = UDim2.fromOffset(8, 8),
     Position = UDim2.new(0, 0, 0.5, -4),
@@ -804,8 +669,6 @@ L.Linked = false
 task.spawn(function()
     while true do
         if L.DotReady then
-            -- "Linked" now means the redeem remote resolved, since there is no
-            -- game TextBox/Confirm to bind to any more.
             local linked = alive(L.Remotes.Redeem.instance)
             if linked ~= L.Linked then
                 L.Linked = linked
@@ -848,20 +711,12 @@ local CloseBtn = New("TextButton", {
 })
 Corner(CloseBtn, 6)
 
--- Content
 local Content = New("Frame", {
     Size=UDim2.new(1,0,1,-32), Position=UDim2.new(0,0,0,32),
     BackgroundTransparency=1, Parent=Panel,
 })
 local ContentList = New("UIListLayout", {Padding=UDim.new(0,10), SortOrder=Enum.SortOrder.LayoutOrder, Parent=Content})
 
-----------------------------------------------------------------------
--- NOTIFICATIONS  (top-right stack, dedupe with ×N)
---
--- Identical messages don't stack up as duplicates — the live card gets a
--- ×N badge, its timer resets and it pulses. Each card carries an accent
--- bar on the left tinted to its kind, and an optional timing footer.
-----------------------------------------------------------------------
 local NOTIF_W = IS_MOBILE and 270 or 320
 local NotifRoot = New("Frame", {
     AnchorPoint = Vector2.new(1, 0),
@@ -896,15 +751,11 @@ local function destroyNotif(state)
     task.delay(0.3, function() if state.frame then state.frame:Destroy() end end)
 end
 
--- msg   : body text
--- color : accent colour
--- timing: optional string shown small underneath
 L.Notify = function(msg, color, timing)
     msg = tostring(msg or "")
     if msg == "" then return end
     color = color or T.HIGH
 
-    -- dedupe: same body text while still on screen -> bump the counter
     local existing = L.Notifs[msg]
     if existing and not existing.dead then
         existing.count += 1
@@ -942,7 +793,6 @@ L.Notify = function(msg, color, timing)
     Corner(frame, 12)
     local stroke = Stroke(frame, T.LINE, 1, 1)
 
-    -- accent bar down the left edge
     local bar = New("Frame", {
         Size = UDim2.new(0, 4, 1, -16),
         Position = UDim2.new(0, 8, 0, 8),
@@ -1015,13 +865,6 @@ L.Notify = function(msg, color, timing)
     end)
 end
 
-----------------------------------------------------------------------
--- CODE BOX
---
--- Sits where the Normal/Remote switch used to. Remote mode previously read the
--- code out of the game's own Codes TextBox, which meant that menu had to be
--- open; the panel owns its input now so nothing touches the game's UI.
-----------------------------------------------------------------------
 local BoxFrame = New("Frame", {
     Size = UDim2.new(1, 0, 0, 30),
     BackgroundColor3 = T.BG,
@@ -1049,14 +892,12 @@ CodeBox.FocusLost:Connect(function()
     tw(BoxStroke, 0.22, nil, nil, {Color = T.LINE, Transparency = 0.5}):Play()
 end)
 
--- breathing room between the code box and what follows
 New("Frame", {
     Size = UDim2.new(1, 0, 0, 6),
     BackgroundTransparency = 1,
     LayoutOrder = 2, Parent = Content,
 })
 
--- Primary redeem button
 local RedeemBtn = New("TextButton", {
     Size = UDim2.new(1, 0, 0, 44),
     BackgroundColor3 = T.ACCENT,
@@ -1079,7 +920,6 @@ local RedeemGrad = New("UIGradient", {
 })
 local RedeemStroke = Stroke(RedeemBtn, T.HIGH, 1, 1)
 
--- Auto Redeemer row
 local AutoBox = New("Frame", {
     Size = UDim2.new(1, 0, 0, 44),
     BackgroundColor3 = T.RAISED,
@@ -1162,7 +1002,6 @@ local SendBtn = New("TextButton", {
 })
 Corner(SendBtn, 10)
 
--- FAB (when closed)
 local Fab = New("TextButton", {
     Size = UDim2.fromOffset(48, 48),
     Position = UDim2.new(0, 20, 1, -90),
@@ -1186,13 +1025,8 @@ task.spawn(function()
     end
 end)
 
-----------------------------------------------------------------------
--- INTERACTION HELPERS
-----------------------------------------------------------------------
 local minimized = false
 
--- Panel height follows its content instead of being hardcoded, so rows can
--- grow/shrink without anything overlapping.
 local function fit(instant)
     if minimized then return end
     local h = ContentList.AbsoluteContentSize.Y + 64
@@ -1224,7 +1058,6 @@ local function draggable(frame, handle)
 end
 draggable(Panel, Handle); draggable(Fab, Fab)
 
--- Circular ripple from the click point. Purely cosmetic, self-cleaning.
 local function ripple(btn, tint)
     btn.MouseButton1Down:Connect(function(x, y)
         local abs = btn.AbsolutePosition
@@ -1274,7 +1107,6 @@ hoverFill(MinBtn,  T.RAISED,  T.RAISED:Lerp(T.ACCENT, 0.2))
 hoverFill(CloseBtn,T.RAISED,  Color3.fromRGB(50, 22, 34))
 hoverFill(Fab,     T.SURFACE, T.RAISED)
 
--- Hero button gets a stroke glow instead of a fill shift
 RedeemBtn.MouseEnter:Connect(function()
     tw(RedeemStroke, 0.15, nil, nil, {Transparency = 0.15, Thickness = 2}):Play()
     tw(RedeemGrad, 0.3, nil, nil, {Rotation = 45}):Play()
@@ -1284,32 +1116,19 @@ RedeemBtn.MouseLeave:Connect(function()
     tw(RedeemGrad, 0.3, nil, nil, {Rotation = 90}):Play()
 end)
 
-----------------------------------------------------------------------
--- REDEEM
-----------------------------------------------------------------------
--- Everything here runs AFTER the invoke has returned, so none of it lands in
--- the client figure.
 L.ReportRedeem = function(ok, reply, t)
     local line
     if t then
-        -- Noise only ever adds time, so the minimum seen converges on the real
-        -- cost. If "best" sits far below the current reading, the current
-        -- reading is jitter, not work.
         if not L.BestClient or t.client < L.BestClient then L.BestClient = t.client end
         line = ("client %s (best %s) · server %s · total %s")
             :format(fmt(t.client), fmt(L.BestClient), fmt(t.server), fmt(t.client + t.server))
     end
 
-    -- Show the server's own words. Only fall back to our text when it returned
-    -- nothing at all.
     local text = render(reply)
     if ok == nil then
         L.Notify(text or "Request failed", T.RED, line)
     elseif ok then
         L.Notify(text or "Code redeemed", T.GREEN, line)
-        -- Remote mode never waits on the notification UI, so feed the webhook
-        -- from the server's own reply. L.Notified dedupes against the prize
-        -- scanner, so a message arriving both ways sends once.
         if text and text ~= "" then
             task.spawn(function() L.Webhook(L.Prize(text), text) end)
         end
@@ -1329,7 +1148,7 @@ RedeemBtn.MouseButton1Click:Connect(function()
     local t0 = os.clock()
     local code = CodeBox.Text
     if not code or code == "" then L.Notify("Enter a code first", T.MUTED); return end
-    task.spawn(function() L.DoRedeem(code, t0) end)   -- InvokeServer yields
+    task.spawn(function() L.DoRedeem(code, t0) end)
     CodeBox.Text = ""
 end)
 CodeBox.FocusLost:Connect(function(enter)
@@ -1341,9 +1160,6 @@ CodeBox.FocusLost:Connect(function(enter)
     CodeBox.Text = ""
 end)
 
-----------------------------------------------------------------------
--- AUTO REDEEMER LOGIC
-----------------------------------------------------------------------
 L.AutoOn = false
 L.Threshold = 1; L.Sent = 0
 L.RecentRedeem = 0
@@ -1418,9 +1234,6 @@ SendBtn.MouseButton1Click:Connect(function()
     L.Notify("Pasted from clipboard", T.HIGH)
 end)
 
-----------------------------------------------------------------------
--- PANEL MIN / CLOSE
-----------------------------------------------------------------------
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     if minimized then
@@ -1459,38 +1272,9 @@ Fab.MouseButton1Click:Connect(function()
     end)
 end)
 
-----------------------------------------------------------------------
--- PACKET PATH
---
--- The notify RemoteEvent carries the announcement text to the client. This is
--- an ordinary :Connect on an event the client already subscribes to — nothing
--- is replaced or wrapped. It gets the text the moment the packet lands, which
--- is the earliest any client code can possibly see an announcement: the UI
--- scanner only runs once NotificationController has cloned its template,
--- applied rich text and parented a label, a frame or more later.
---
--- Everything in this handler is ordered around one rule: nothing that is not
--- required to decide "fire or not" may run before InvokeServer. Measured on a
--- live client, the old ordering carried ~6.3us of avoidable work in front of
--- the wire, and 4.67us of that was a single TweenService:Create + Play from
--- refreshing the counter label. All display work is now deferred behind the
--- invoke, so it lands after the packet is already gone.
---
---   filter    6 pattern finds  1.07us  ->  bare-token test + hash  0.35us
---   sanitize  precheck         0.18us  ->  skipped via preclean    0.00us
---   counter   gmatch           0.32us  ->  skipped when threshold<=1
---   UI        tween            4.67us  ->  deferred behind the wire
---
--- Worth being straight about the scale: the server round trip measured 1210ms,
--- so this is ~6us shaved off ~1.2 million. It costs nothing to do it right,
--- but the packet path itself — arriving a frame earlier than the UI — is where
--- the real win already was.
-----------------------------------------------------------------------
 L.PacketSeen = {}
 L.PacketHooked = false
 
--- Bare tokens that are results, not codes. A single hash lookup replaces six
--- pattern scans for the common case.
 local RESULT_WORDS = {
     spawned = true, redeemed = true, invalid = true,
     expired = true, already = true, failed = true,
@@ -1515,16 +1299,12 @@ L.HookNotifyPacket = function()
         end
         if raw == "" or L.PacketSeen[raw] then return end
 
-        -- Classify first. A real code is a single bare alphanumeric token, and
-        -- that one test also proves the string needs no sanitizing downstream,
-        -- so it is worth doing before anything else.
         local code, preclean
         local n = #raw
         if n >= 3 and n <= 50 and not raw:find("[^%w]") then
             if RESULT_WORDS[raw:lower()] then return end
             code, preclean = raw, true
         else
-            -- Uncommon shape: sentences, punctuation, rich text remnants.
             if raw:find("[Ss]pawned") or raw:find("[Rr]edeemed") or raw:find("[Ii]nvalid")
                or raw:find("[Ee]xpired") or raw:find("[Aa]lready") or raw:find("[Ff]ailed") then
                 return
@@ -1535,8 +1315,6 @@ L.HookNotifyPacket = function()
         end
         L.PacketSeen[raw] = t0
 
-        -- Threshold gate. At the default of 1 there is nothing to count, so the
-        -- word scan is skipped entirely rather than computed and discarded.
         if L.Threshold > 1 then
             local w = 0
             for _ in code:gmatch("%S+") do w += 1 end
@@ -1548,12 +1326,8 @@ L.HookNotifyPacket = function()
             L.Sent = 0
         end
 
-        -- ---- WIRE ----
-        -- No task.spawn: this handler already owns a thread, so yielding here
-        -- costs nothing and skips a thread + closure allocation.
         local ok, reply, t = L.RedeemViaRemote(code, t0, preclean)
 
-        -- ---- everything below lands after the packet is already gone ----
         L.LastDetect = t0
         L.RecentRedeem = t0
         task.defer(function()
@@ -1561,7 +1335,6 @@ L.HookNotifyPacket = function()
             L.ReportRedeem(ok, reply, t)
         end)
     end)
-    print("[Luminosity] packet path active")
 end
 
 task.spawn(function()
@@ -1572,9 +1345,6 @@ task.spawn(function()
     end
 end)
 
-----------------------------------------------------------------------
--- INTRO SEQUENCE
-----------------------------------------------------------------------
 task.spawn(function()
     for i, lbl in ipairs(Letters) do
         task.delay((i - 1) * 0.055, function()
@@ -1608,7 +1378,6 @@ task.spawn(function()
     L.RainActive = false
     task.delay(2.5, function() if Loader.Parent then Loader:Destroy() end end)
 
-    -- Panel springs up from slightly below and slightly small
     fit(true)
     local target = Panel.Size
     Panel.Size = UDim2.fromOffset(PANEL_W, math.floor(target.Y.Offset * 0.86))
