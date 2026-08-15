@@ -68,6 +68,10 @@ L.StopShort  = 20
 L.StealShort = 40
 L.StealHop   = 20
 L.StealHang  = 0.2
+L.Flicker    = false
+L.FlickRadius= 16
+L.FlickHz    = 0.02
+L.FlickBusy  = false
 L.StepDelay  = 0.02
 L.AutoSteal  = true
 L.ShowPath   = true
@@ -653,6 +657,7 @@ end
 local function dashTo(landing, dir, allowNav, prebuilt)
     local root, hum = hrp(), humanoid()
     if not root then return false, 0 end
+    L.FlickBusy = true
 
     -- Route is only used to choose WHERE to land, not how to get there.
     -- Everything below happens inside one frame, and Roblox only replicates
@@ -695,8 +700,56 @@ local function dashTo(landing, dir, allowNav, prebuilt)
     root.AssemblyAngularVelocity = Vector3.zero
     L.Retried = 0
     enforce(final, dir)
+    task.delay(0.15, function() L.FlickBusy = false end)
     return true, #stops
 end
+
+----------------------------------------------------------------------
+-- FLICKER
+--
+-- A follower reads your root position each frame and moves to it. It cannot
+-- chase a position you are not at, so the trick is to spend most frames
+-- somewhere you are not.
+--
+-- Each cycle re-reads an anchor, throws the root to a random point on a ring
+-- around it for one frame, then puts it back. Roblox replicates whatever the
+-- part holds at the end of a frame, so the position leaving your client
+-- alternates between decoy and truth. Anything sampling it lands on the ring,
+-- not on you.
+--
+-- The anchor is re-read every cycle rather than stored once, so your own
+-- movement still accumulates normally between flickers instead of being
+-- pinned in place.
+--
+-- Offsets are ground-settled, so a decoy never places you inside geometry,
+-- and the whole thing stands down while a dash or steal is running rather
+-- than fighting those writes.
+----------------------------------------------------------------------
+task.spawn(function()
+    while true do
+        if L.Flicker and not L.FlickBusy then
+            local root = hrp()
+            if root then
+                local anchor = root.Position
+                local rot = root.CFrame - root.CFrame.Position
+                local a = math.random() * math.pi * 2
+                local r = L.FlickRadius * (0.55 + math.random() * 0.45)
+                local decoy = groundAt(anchor + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r))
+
+                root.CFrame = rot + decoy
+                root.AssemblyLinearVelocity = Vector3.zero
+                RunS.RenderStepped:Wait()
+
+                local back = hrp()
+                if back and L.Flicker and not L.FlickBusy then
+                    back.CFrame = rot + anchor
+                    back.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end
+        task.wait(L.FlickHz)
+    end
+end)
 
 ----------------------------------------------------------------------
 -- UI PRIMITIVES
@@ -1078,7 +1131,22 @@ local StepRow, StepVal = ValueRow("hop mode", 10, "instant", function()
     return "instant"
 end)
 
-local HoldRow, HoldVal = ValueRow("hold position", 11, L.Retries .. "x", function()
+local FlickRow = ToggleRow("flicker",      11, L.Flicker,   function(on)
+    L.Flicker = on
+    L.Notify(on and "Flicker on" or "Flicker off", on and T.GREEN or T.MUTED,
+        on and ("decoy ring " .. L.FlickRadius .. "st every " .. (L.FlickHz * 1000) .. "ms")
+             or "position reads true again")
+end)
+
+local FlickSizeRow, FlickSizeVal = ValueRow("flicker range", 12, L.FlickRadius .. "st", function()
+    local steps = {8, 16, 24, 36, 50}
+    local i = 1
+    for k, v in ipairs(steps) do if v == L.FlickRadius then i = k break end end
+    L.FlickRadius = steps[(i % #steps) + 1]
+    return L.FlickRadius .. "st"
+end)
+
+local HoldRow, HoldVal = ValueRow("hold position", 13, L.Retries .. "x", function()
     local steps = {0, 3, 5, 7, 10, 15}
     local i = 1
     for k, v in ipairs(steps) do if v == L.Retries then i = k break end end
@@ -1086,7 +1154,7 @@ local HoldRow, HoldVal = ValueRow("hold position", 11, L.Retries .. "x", functio
     return L.Retries .. "x"
 end)
 
-local SlimRow  = ToggleRow("slim avatar", 12, L.Slim,      function(on)
+local SlimRow  = ToggleRow("slim avatar", 14, L.Slim,      function(on)
     L.Slim = on
     local applied = applyScale(on)
     L.Notify(on and "Slim avatar on" or "Slim avatar off",
@@ -1257,6 +1325,7 @@ PPS.PromptTriggered:Connect(function(prompt, player)
     -- Nothing above this line yields, so the lift lands on the same frame the
     -- prompt completed. The route home was planned in advance precisely so
     -- this handler never has to wait on a planner.
+    L.FlickBusy = true
     local origin = root.Position
     local rot = root.CFrame - root.CFrame.Position
     local up = origin + Vector3.new(0, L.StealHop, 0)
@@ -1427,6 +1496,7 @@ task.spawn(function()
         PathRow.Set(L.Pathfind)
         StealRow.Set(L.AutoSteal)
         NodeRow.Set(L.ShowPath)
+        FlickRow.Set(L.Flicker)
         SlimRow.Set(L.Slim)
         if L.Slim then applyScale(true) end
         L.Notify("Dash online", T.HIGH, "hold " .. L.Key.Name .. " to aim")
