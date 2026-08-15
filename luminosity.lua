@@ -342,19 +342,193 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------------
--- TEXT HELPERS
---
--- No webhooks, no tracker. The old build POSTed your username, UserId,
--- place id and every prize you sniped to a pool of Discord webhooks, and
--- beaconed your name + UserId to a replit "script-tracker" on execute and
--- again every 30 seconds. All of that outbound traffic is gone -- nothing
--- here leaves the client. L.Strip is the only survivor: it cleans rich-text
--- tags out of an announcement so the success scanner can read it.
+-- WEBHOOK / TRACKING
 ----------------------------------------------------------------------
+L.Http = function(url, body, method)
+    local req = (syn and syn.request) or (http and http.request) or http_request or request
+    method = method or "POST"
+    if req then
+        local ok, res = pcall(function()
+            return req({Url=url, Method=method,
+                Headers={["Content-Type"]="application/json"}, Body=body})
+        end)
+        if not ok then return false, 0 end
+        local s = (res and res.StatusCode) or 0
+        return (s >= 200 and s < 300), s
+    end
+    if method == "POST" and HttpService.PostAsync then
+        local ok = pcall(function() HttpService:PostAsync(url, body or "", Enum.HttpContentType.ApplicationJson) end)
+        return ok, ok and 200 or 0
+    end
+    return false, 0
+end
+
+L.Pick = function()
+    local now = os.clock()
+    for i = 1, #L.Pool do
+        local idx = ((L.Idx - 1 + i - 1) % #L.Pool) + 1
+        if (L.Cool[idx] or 0) <= now then
+            L.Idx = (idx % #L.Pool) + 1
+            return idx, L.Pool[idx]
+        end
+    end
+    return 1, L.Pool[1]
+end
+
+L.SendPool = function(body)
+    for _ = 1, #L.Pool do
+        local idx, url = L.Pick()
+        local ok, status = L.Http(url, body)
+        if ok then return true, idx end
+        L.Cool[idx] = os.clock() + (status == 429 and 8 or 2)
+    end
+    return false, 0
+end
+
+L.Enc = function(v)
+    v = tostring(v or "")
+    return (v:gsub("([^%w%-_%.~])", function(c) return string.format("%%%02X", string.byte(c)) end))
+end
+L.Track = function(action)
+    if not LP then return end
+    local url = L.TrackerUrl .. "/track?action=" .. L.Enc(action)
+        .. "&script=" .. L.Enc("Luminosity")
+        .. "&username=" .. L.Enc(LP.Name)
+        .. "&userid=" .. L.Enc(LP.UserId)
+    task.spawn(function() L.Http(url, nil, "GET") end)
+end
+task.spawn(function()
+    L.Track("execute")
+    while task.wait(30) do L.Track("heartbeat") end
+end)
+
 L.Strip = function(t)
     t = tostring(t or "")
     t = t:gsub("<br%s*/>", "\n"):gsub("<[^>]->", "")
     return (t:gsub("^%s+",""):gsub("%s+$",""))
+end
+L.Prize = function(msg)
+    local clean = L.Strip(msg)
+    clean = clean:gsub("%s*spawned!?%s*$", ""):gsub("%s*redeemed!?%s*$", "")
+    return clean ~= "" and clean or L.Strip(msg)
+end
+
+L.ThumbUrl = "https://cdn.discordapp.com/attachments/1528464001535840328/1532121435861028976/0d0521ca36cffa1f4445c10108aa0293.webp"
+L.WikiBase = "https://stealabr.fandom.com/wiki/Special:FilePath/"
+
+L.RarityCache = {}
+L.RarityLoaded = false
+L.LoadRarities = function()
+    if L.RarityLoaded then return end
+    local mod = safe(function() return RepS.Datas.Animals end)
+    if not mod then return end
+    local data = safe(function() return require(mod) end)
+    if type(data) ~= "table" then return end
+    for key, info in pairs(data) do
+        local rarity
+        if type(info) == "table" then
+            local r = info.Rarity or info.RarityName or info.RarityData or info.Tier
+            if type(r) == "string" then rarity = r
+            elseif type(r) == "table" then rarity = r.DisplayName or r.Name or r.Id or r.Value end
+        end
+        if rarity then
+            if type(key) == "string" then L.RarityCache[key:lower()] = rarity end
+            if type(info) == "table" and type(info.DisplayName) == "string" then
+                L.RarityCache[info.DisplayName:lower()] = rarity
+            end
+        end
+    end
+    L.RarityLoaded = next(L.RarityCache) ~= nil
+    if L.RarityLoaded then print("[Luminosity] rarity cache loaded") end
+end
+task.spawn(function()
+    for _ = 1, 200 do
+        L.LoadRarities()
+        if L.RarityLoaded then return end
+        task.wait(0.25)
+    end
+end)
+
+L.RarityColors = {
+    common      = 10461087,
+    uncommon    = 5763719,
+    rare        = 3447003,
+    epic        = 10181046,
+    legendary   = 15844367,
+    mythic      = 15277667,
+    ["brainrot god"] = 15158332,
+    secret      = 2895667,
+    divine      = 16766720,
+    ["og"]      = 16777215,
+}
+
+L.ThumbForPrize = function(prize)
+    if not prize or prize == "" then return L.ThumbUrl end
+    local slug = prize:lower()
+        :gsub("<[^>]->", "")
+        :gsub("[^%w]+", "_")
+        :gsub("^_+", "")
+        :gsub("_+$", "")
+    if slug == "" then return L.ThumbUrl end
+    return L.WikiBase .. "Clear_background_clear_" .. slug .. "_image.png"
+end
+
+L.Build = function(prize, count)
+    local txt = tostring(prize or "Unknown")
+    if count and count > 1 then txt = txt .. "  x" .. count end
+    local rarity = L.RarityCache[tostring(prize or ""):lower()]
+    local color
+    if L.Modded then
+        color = 15105570
+    elseif rarity and L.RarityColors[rarity:lower()] then
+        color = L.RarityColors[rarity:lower()]
+    else
+        color = 7910655
+    end
+    local fields = {
+        {name="User",   value="@" .. LP.Name .. " (`" .. tostring(LP.UserId) .. "`)", inline=true},
+        {name="Place",  value="`" .. tostring(game.PlaceId) .. "`",                    inline=true},
+    }
+    if rarity then
+        table.insert(fields, 1, {name="Rarity", value="**" .. rarity .. "**", inline=false})
+    end
+    local body = {
+        embeds = {{
+            description = "**" .. txt .. "**",
+            color       = color,
+            thumbnail   = {url = L.ThumbUrl},
+            image       = {url = L.ThumbForPrize(prize)},
+            fields = fields,
+            footer = {text = L.Modded and "Modded place · Luminosity" or "Luminosity"},
+            timestamp = DateTime.now():ToIsoDate(),
+        }}
+    }
+    if not L.Modded then
+        body.content = "<@&" .. L.Role .. ">\nLuminosity snipes ez"
+        body.allowed_mentions = {roles = {L.Role}}
+    else
+        body.content = "Luminosity snipes ez"
+        body.allowed_mentions = {parse = {}}
+    end
+    return body
+end
+L.Flush = function(key)
+    local entry = L.Pending[key]
+    if not entry then return end
+    L.Pending[key] = nil
+    local body = HttpService:JSONEncode(L.Build(entry.prize, entry.count))
+    task.spawn(function() L.SendPool(body) end)
+end
+L.Webhook = function(prize, rawMessage)
+    local key = tostring(rawMessage or prize or "")
+    if key == "" or L.Notified[key] then return end
+    L.Notified[key] = true
+    local pkey = tostring(prize or "?"):lower()
+    local entry = L.Pending[pkey]
+    if entry then entry.count = entry.count + 1; return end
+    entry = {prize = tostring(prize or "Unknown"), count = 1}
+    L.Pending[pkey] = entry
+    task.delay(L.Window, function() L.Flush(pkey) end)
 end
 
 L.IsSuccess = function(label)
