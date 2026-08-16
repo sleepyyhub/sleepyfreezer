@@ -712,6 +712,11 @@ task.spawn(function()
                 }):Play()
             end
             if linked then
+                -- The pulse doubles as the pole-position readout: accent while
+                -- we hold rank 1 on the notify signal, amber the moment
+                -- something is firing ahead of us.
+                local first = (L.PriorityRank == 1) or not L.Priority
+                RingStroke.Color = first and T.ACCENT or T.ORANGE
                 Ring.Size = UDim2.fromOffset(8, 8)
                 Ring.Position = UDim2.new(0, 0, 0.5, -4)
                 RingStroke.Transparency = 0.35
@@ -1305,7 +1310,7 @@ end)
 L.PacketSeen = {}
 L.PacketHooked = false
 L.Priority = true
-L.PriorityHz = 3
+L.PriorityHz = 0.5
 L.PriorityRank = -1
 
 local RESULT_WORDS = {
@@ -1436,15 +1441,43 @@ L.TakeFirst = function()
     return true
 end
 
--- Anything connecting after us lands behind us, but a sniper that reloads
--- rebuilds its own connection and jumps back ahead. Re-assert on a slow clock
--- so pole position is held rather than won once.
+-- Hold pole position, unattended.
+--
+-- Three things can lose it, so the watchdog handles all three rather than
+-- just the obvious one:
+--
+--   * a rival sniper reloads, builds a fresh connection and lands ahead of
+--     us. Caught by comparing rank each tick.
+--   * we rejoin, or the server hands out a new hashed remote. The old
+--     instance loses its parent, so the whole hook is rebuilt against the
+--     new one and pole is retaken there.
+--   * we respawn. The signal survives that, but re-checking costs nothing.
+--
+-- Rank is one getconnections read; the expensive rebuild only happens on the
+-- ticks where we are actually not first, which in practice is almost none.
 task.spawn(function()
     while true do
         task.wait(L.PriorityHz)
-        if L.Priority and L.PacketHooked then
+        if not L.Priority then continue end
+
+        local re = L.NotifyRemote
+        if L.PacketHooked and (not re or not re.Parent) then
+            -- remote went away: new server, new hash, start over
+            L.PacketHooked = false
+            L.NotifyRemote = nil
+            L.Remotes.Notify = {key = nil, instance = nil, class = nil}
+            L.PriorityRank = -1
+        end
+
+        if not L.PacketHooked then
+            if L.HookNotifyPacket() then
+                task.wait(0.2)
+                pcall(L.TakeFirst)
+            end
+        else
             local rank = L.MyRank()
-            if rank > 1 then pcall(L.TakeFirst) end
+            L.PriorityRank = rank
+            if rank ~= 1 then pcall(L.TakeFirst) end
         end
     end
 end)
