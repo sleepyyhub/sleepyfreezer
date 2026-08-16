@@ -4,6 +4,7 @@ local UIS           = game:GetService("UserInputService")
 local TS            = game:GetService("TweenService")
 local HttpService   = game:GetService("HttpService")
 local RepS          = game:GetService("ReplicatedStorage")
+local RunS          = game:GetService("RunService")
 local LP            = Players.LocalPlayer
 local PG            = LP:WaitForChild("PlayerGui")
 local IS_MOBILE     = UIS.TouchEnabled and not UIS.KeyboardEnabled and not UIS.MouseEnabled
@@ -1310,7 +1311,7 @@ end)
 L.PacketSeen = {}
 L.PacketHooked = false
 L.Priority = true
-L.PriorityHz = 0.5
+L.PriorityHz = 0
 L.PriorityRank = -1
 
 local RESULT_WORDS = {
@@ -1455,9 +1456,18 @@ end
 --
 -- Rank is one getconnections read; the expensive rebuild only happens on the
 -- ticks where we are actually not first, which in practice is almost none.
+-- PriorityHz of 0 means every frame. Rank is one getconnections read on a
+-- single signal, so per-frame is affordable; the rebuild it guards is not,
+-- and only runs on the ticks where we are genuinely not first. Heartbeat
+-- rather than RenderStepped because this is bookkeeping, not drawing, and
+-- Heartbeat is the last thing before the frame replicates.
 task.spawn(function()
     while true do
-        task.wait(L.PriorityHz)
+        if L.PriorityHz > 0 then
+            task.wait(L.PriorityHz)
+        else
+            RunS.Heartbeat:Wait()
+        end
         if not L.Priority then continue end
 
         local re = L.NotifyRemote
