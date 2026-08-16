@@ -1304,6 +1304,9 @@ end)
 
 L.PacketSeen = {}
 L.PacketHooked = false
+L.Priority = true
+L.PriorityHz = 3
+L.PriorityRank = -1
 
 local RESULT_WORDS = {
     spawned = true, redeemed = true, invalid = true,
@@ -1358,6 +1361,10 @@ L.Consume = function(src, message, duration, sound, position)
     end)
 end
 
+L.NotifyHandler = function(a, b, c, d)
+    if typeof(a) == "string" then L.Consume(L.NotifyRemoteName, a, b, c, d) end
+end
+
 L.HookNotifyPacket = function()
     if L.PacketHooked then return true end
     L.ResolveRemotes()
@@ -1367,16 +1374,88 @@ L.HookNotifyPacket = function()
     L.NotifyRemote = re
     L.NotifyRemoteName = re.Name
     L.Channels = 1
-    local nm = re.Name
-    re.OnClientEvent:Connect(function(a, b, c, d)
-        if typeof(a) == "string" then L.Consume(nm, a, b, c, d) end
-    end)
+    L.NotifyConn = re.OnClientEvent:Connect(L.NotifyHandler)
     return true
 end
 
+L.MyRank = function()
+    local re = L.NotifyRemote
+    if not re or typeof(getconnections) ~= "function" then return -1 end
+    local ok, conns = pcall(getconnections, re.OnClientEvent)
+    if not ok then return -1 end
+    for i, c in ipairs(conns) do
+        local okf, f = pcall(function() return c.Function end)
+        if okf and f == L.NotifyHandler then return i end
+    end
+    return -1
+end
+
+-- Take first position on the signal.
+--
+-- OnClientEvent connections run in the order they were established and there
+-- is no way to insert at the front, so being late to connect means being late
+-- to redeem no matter how fast the handler is. Every listener on that signal
+-- queues its InvokeServer in turn, and for a one-stock code the second packet
+-- queued is the one that loses.
+--
+-- The queue can be rebuilt though: capture the existing listeners, drop them,
+-- connect ours, then put them back behind us. Net effect is our handler moves
+-- to index 1 and everything else keeps working, one place further down.
+--
+-- Only listeners whose Function can actually be read are touched. Anything
+-- opaque is left connected and therefore left ahead of us, because silently
+-- destroying a handler we cannot restore would break whatever owns it -- the
+-- game's own notification controller included.
+L.TakeFirst = function()
+    if not L.Priority then return false end
+    local re = L.NotifyRemote
+    if not re or typeof(getconnections) ~= "function" then return false end
+
+    local ok, conns = pcall(getconnections, re.OnClientEvent)
+    if not ok or type(conns) ~= "table" then return false end
+    if #conns <= 1 then return true end
+
+    local restore, skipped = {}, 0
+    for _, c in ipairs(conns) do
+        local okf, f = pcall(function() return c.Function end)
+        if okf and type(f) == "function" then
+            if f ~= L.NotifyHandler then restore[#restore + 1] = f end
+            pcall(function() c:Disconnect() end)
+        else
+            skipped += 1
+        end
+    end
+
+    L.NotifyConn = re.OnClientEvent:Connect(L.NotifyHandler)
+    for _, f in ipairs(restore) do
+        pcall(function() re.OnClientEvent:Connect(f) end)
+    end
+
+    L.PriorityRank = L.MyRank()
+    L.PrioritySkipped = skipped
+    return true
+end
+
+-- Anything connecting after us lands behind us, but a sniper that reloads
+-- rebuilds its own connection and jumps back ahead. Re-assert on a slow clock
+-- so pole position is held rather than won once.
+task.spawn(function()
+    while true do
+        task.wait(L.PriorityHz)
+        if L.Priority and L.PacketHooked then
+            local rank = L.MyRank()
+            if rank > 1 then pcall(L.TakeFirst) end
+        end
+    end
+end)
+
 task.spawn(function()
     for _ = 1, 600 do
-        if L.HookNotifyPacket() then return end
+        if L.HookNotifyPacket() then
+            task.wait(0.25)
+            pcall(L.TakeFirst)
+            return
+        end
         task.wait(0.15)
     end
 end)
