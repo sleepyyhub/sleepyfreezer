@@ -961,7 +961,7 @@ local function addCard(entry, rarity)
             if setclipboard then pcall(setclipboard, tostring(uid)) end
             L.Sent[uid] = nil
             trade.Text = "..."
-            L.Fire(uid, ("%s (%s)"):format(tostring(name or uid), tostring(uid)), os.clock(), true)
+            L.Fire(uid, tostring(name or uid), os.clock(), true)
             task.delay(1.2, function() if trade.Parent then trade.Text = "Trade" end end)
         end)
     else
@@ -987,14 +987,62 @@ local function addCard(entry, rarity)
 end
 
 local function refreshStats()
-    StatsLbl.Text = ("seen %d  fired %d  ok %d  fail %d  skip %d%s"):format(
-        L.Stats.seen, L.Stats.fired, L.Stats.ok, L.Stats.fail, L.Stats.skipped,
-        L.BestDispatch and ("   best " .. fmt(L.BestDispatch)) or "")
+    local base = ("%d seen   %d sent   %d skipped"):format(
+        L.Stats.seen, L.Stats.ok, L.Stats.skipped + L.Stats.fail)
+    if L.Debug and L.BestDispatch then
+        base = base .. ("   best %s"):format(fmt(L.BestDispatch))
+    end
+    StatsLbl.Text = base
 end
 
 ----------------------------------------------------------------
 -- hot path
 ----------------------------------------------------------------
+
+----------------------------------------------------------------
+-- user-facing messages
+-- Nothing raw from the server reaches the UI: no remote names, no return
+-- values, no error strings, no timings. Everything is mapped to plain
+-- language. Flip L.Debug for the underlying detail while developing.
+----------------------------------------------------------------
+
+L.Debug = false
+
+function L.Friendly(raw)
+    local w = tostring(raw or ""):lower()
+    if w == "" then return "Couldn't send that invite" end
+    if w:find("cooldown") or w:find("wait") or w:find("too fast") or w:find("spam") then
+        return "Please wait before trading again"
+    end
+    if w:find("busy") or w:find("already") or w:find("in a trade") or w:find("trading") then
+        return "They're busy right now"
+    end
+    if w:find("offline") or w:find("not found") or w:find("left") or w:find("no longer") then
+        return "That player isn't available"
+    end
+    if w:find("disabled") or w:find("setting") or w:find("not accepting") or w:find("privacy") then
+        return "They aren't accepting trades"
+    end
+    if w:find("full") or w:find("limit") or w:find("max") then
+        return "Their trades are full"
+    end
+    if w:find("friend") then return "They only trade with friends" end
+    if w:find("level") or w:find("requirement") or w:find("locked") then
+        return "You don't meet their requirements"
+    end
+    return "Couldn't send that invite"
+end
+
+-- detail line: empty unless debugging
+function L.Detail(...)
+    if not L.Debug then return nil end
+    local parts = {}
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if v ~= nil and v ~= "" then parts[#parts + 1] = tostring(v) end
+    end
+    return #parts > 0 and table.concat(parts, "  \u{00B7}  ") or nil
+end
 
 -- rolling-window throttle: returns nil if allowed, else the reason
 function L.ThrottleReason()
@@ -1005,21 +1053,22 @@ function L.ThrottleReason()
     end
     L.FireLog = keep
     if L.LastTradeAt and (now - L.LastTradeAt) < L.TradeCooldown then
-        return ("trade cooldown %.0fs"):format(L.TradeCooldown - (now - L.LastTradeAt))
+        return ("Please wait %ds before trading again"):format(
+            math.ceil(L.TradeCooldown - (now - L.LastTradeAt)))
     end
     if #keep >= L.MaxPerMin then
-        return ("rate cap %d/min"):format(L.MaxPerMin)
+        return "Slowing down for a moment"
     end
     local last = keep[#keep]
     if last and (now - last) < L.MinGap then
-        return ("min gap %.1fs"):format(L.MinGap - (now - last))
+        return ("Please wait %ds"):format(math.ceil(L.MinGap - (now - last)))
     end
     return nil
 end
 
 function L.Fire(userId, label, t0, manual)
     if not L.InviteRF then
-        L.Notify("Invite remote unavailable", T.RED)
+        L.Notify("Trading isn't available right now", T.RED)
         return
     end
 
@@ -1028,7 +1077,7 @@ function L.Fire(userId, label, t0, manual)
         local why = L.ThrottleReason()
         if why then
             L.Stats.skipped += 1
-            addLine(("HELD \u{2192} %s"):format(label), T.ORANGE, why)
+            addLine(why, T.ORANGE, label)
             refreshStats()
             return
         end
@@ -1043,15 +1092,15 @@ function L.Fire(userId, label, t0, manual)
         -- walk the same path the real UI walks: search, pause, then invite.
         -- inviting a userId the server never saw you search is the clearest
         -- automation tell there is, so we don't do that.
-        local searchNote = "no search"
+        local searchNote
         if L.SearchFirst and L.SearchRF then
             local okS, sOk, sFound = pcall(L.SearchRF.InvokeServer, L.SearchRF, L.SearchGUID, userId)
-            searchNote = okS and ("search ok=%s found=%s"):format(tostring(sOk), tostring(sFound))
-                             or "search errored"
+            searchNote = L.Detail(okS and ("search ok=%s found=%s"):format(tostring(sOk), tostring(sFound))
+                                      or "search errored")
             if okS and sOk and sFound == false then
                 L.SetStatus(userId, "busy")
                 L.Stats.skipped += 1
-                addLine(("SKIP \u{2192} %s"):format(label), T.MUTED, "not tradeable")
+                addLine(("SKIPPED \u{2192} %s"):format(label), T.MUTED, "Not available to trade")
                 refreshStats()
                 return
             end
@@ -1063,24 +1112,27 @@ function L.Fire(userId, label, t0, manual)
         local tCall = os.clock()
         local ok, a, b = pcall(L.InviteRF.InvokeServer, L.InviteRF, L.InviteGUID, userId)
         local rtt = (os.clock() - tCall) * 1000
-        local line = ("dispatch %s \u{00B7} server %s \u{00B7} %s"):format(fmt(dispatch), fmt(rtt), searchNote)
+        local detail = L.Detail(("dispatch %s"):format(fmt(dispatch)),
+                                ("server %s"):format(fmt(rtt)), searchNote)
         if ok and a then
             L.Stats.ok += 1
             L.LastTradeAt = os.clock()          -- start the trade cooldown
             L.SetStatus(userId, "busy")         -- they now have our invite open
-            addLine(("SENT \u{2192} %s"):format(label), T.GREEN, line)
-            L.Notify((manual and "Manual invite \u{2192} " or "Sniped \u{2192} ") .. label, T.GREEN, line)
+            addLine(("SENT \u{2192} %s"):format(label), T.GREEN, detail)
+            L.Notify("Trade sent to " .. label, T.GREEN, detail)
         else
             L.Stats.fail += 1
-            local why = tostring(ok and b or a)
-            local w = why:lower()
-            if w:find("trad") or w:find("busy") or w:find("already") then
+            -- raw reason is used only to classify status; never shown
+            local raw = tostring(ok and b or a):lower()
+            if raw:find("trad") or raw:find("busy") or raw:find("already") then
                 L.SetStatus(userId, "busy")
-            elseif w:find("offline") or w:find("not found") or w:find("left") then
+            elseif raw:find("offline") or raw:find("not found") or raw:find("left") then
                 L.SetStatus(userId, "offline")
             end
-            addLine(("FAIL \u{2192} %s"):format(label), T.RED, line .. "  \u{00B7}  " .. why)
-            L.Notify("Invite failed: " .. why, T.RED, line)
+            local msg = L.Friendly(raw)
+            addLine(("%s \u{2192} %s"):format(msg, label), T.ORANGE,
+                L.Detail(detail, "raw: " .. tostring(ok and b or a)))
+            L.Notify(msg, T.ORANGE, detail)
         end
         refreshStats()
     end)
@@ -1108,7 +1160,7 @@ function L.OnEntry(entry)
     if last and (os.clock() - last) < L.Cooldown then L.Stats.skipped += 1 refreshStats() return end
     L.Sent[uid] = os.clock()
 
-    L.Fire(uid, ("%s (%s)"):format(tostring(name or uid), tostring(uid)), t0, false)
+    L.Fire(uid, tostring(name or uid), t0, false)
 end
 
 if L.NewEntry then
@@ -1299,8 +1351,8 @@ task.spawn(function()
 
     local steps = {
         "loading modules",
-        L.NewEntry and "liveboard hooked" or "liveboard MISSING",
-        L.InviteRF and "invite remote resolved" or "invite remote MISSING",
+        L.NewEntry and "connecting to feed" or "feed unavailable",
+        L.InviteRF and "preparing trades" or "trading unavailable",
         "arming filters",
         "ready",
     }
@@ -1357,11 +1409,11 @@ task.spawn(function()
     task.delay(0.6, function() L.DotReady = true end)
     task.delay(0.7, function()
         if L.Ready then
-            L.Notify("Liveboard sniper online", T.HIGH)
+            L.Notify("Ready", T.HIGH)
         else
-            L.Notify("Online, but a remote is missing", T.RED,
-                ("NewEntry %s \u{00B7} Invite %s"):format(
-                    L.NewEntry and "ok" or "MISSING", L.InviteRF and "ok" or "MISSING"))
+            L.Notify("Some features are unavailable", T.ORANGE,
+                L.Detail(("NewEntry %s"):format(L.NewEntry and "ok" or "missing"),
+                         ("Invite %s"):format(L.InviteRF and "ok" or "missing")))
         end
     end)
 end)
@@ -1375,7 +1427,7 @@ if L.GetEntries then
             for _, e in pairs(data) do
                 if type(e) == "table" then n += 1 L.OnEntry(e) end
             end
-            if n > 0 then L.Notify(("Backfilled %d entries"):format(n), T.MUTED) end
+            if n > 0 then L.Notify(("Loaded %d recent drops"):format(n), T.MUTED) end
         end
     end)
 end
