@@ -267,10 +267,10 @@ local Sub = New("TextLabel", {
 -- panel
 ----------------------------------------------------------------
 
-local PANEL_W = IS_MOBILE and 300 or 340
+local PANEL_W = IS_MOBILE and 340 or 400
 local Panel = New("Frame", {
-    Size = UDim2.fromOffset(PANEL_W, 320),
-    Position = UDim2.new(0.5, -(PANEL_W / 2), 0.5, -160 + 40),
+    Size = UDim2.fromOffset(PANEL_W, 380),
+    Position = UDim2.new(0.5, -(PANEL_W / 2), 0.5, -190 + 40),
     BackgroundColor3 = T.SURFACE, BackgroundTransparency = 1,
     BorderSizePixel = 0, Parent = Gui,
 })
@@ -382,7 +382,7 @@ local Content = New("Frame", {
     Size = UDim2.new(1, 0, 1, -32), Position = UDim2.new(0, 0, 0, 32),
     BackgroundTransparency = 1, Parent = Panel,
 })
-local ContentList = New("UIListLayout", {Padding = UDim.new(0, 10),
+local ContentList = New("UIListLayout", {Padding = UDim.new(0, 12),
     SortOrder = Enum.SortOrder.LayoutOrder, Parent = Content})
 
 ----------------------------------------------------------------
@@ -504,7 +504,7 @@ end
 ----------------------------------------------------------------
 
 local AutoBox = New("Frame", {
-    Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = T.RAISED,
+    Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.RAISED,
     BackgroundTransparency = 1, LayoutOrder = 1, Parent = Content,
 })
 Corner(AutoBox, 12); Pad(AutoBox, 0, 0, 12, 12)
@@ -536,7 +536,7 @@ Corner(Knob, 7)
 
 -- action row
 local RowBtns = New("Frame", {
-    Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
+    Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1,
     LayoutOrder = 3, Parent = Content,
 })
 New("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
@@ -544,7 +544,7 @@ New("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
 
 local function smallBtn(text, order, width)
     local b = New("TextButton", {
-        Size = UDim2.fromOffset(width, 30), BackgroundColor3 = T.RAISED,
+        Size = UDim2.fromOffset(width, 34), BackgroundColor3 = T.RAISED,
         AutoButtonColor = false, ClipsDescendants = true, Text = text,
         TextColor3 = T.MUTED, Font = Enum.Font.GothamSemibold, TextSize = 11,
         BackgroundTransparency = 1, TextTransparency = 1,
@@ -565,16 +565,16 @@ local StatsLbl = New("TextLabel", {
 })
 
 local FeedFrame = New("ScrollingFrame", {
-    Size = UDim2.new(1, 0, 0, 150), BackgroundColor3 = T.BG,
+    Size = UDim2.new(1, 0, 0, 250), BackgroundColor3 = T.BG,
     BackgroundTransparency = 1, BorderSizePixel = 0,
     ScrollBarThickness = 3, ScrollBarImageColor3 = T.LINE,
     CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
     LayoutOrder = 5, Parent = Content,
 })
-Corner(FeedFrame, 10)
+Corner(FeedFrame, 12)
 local FeedStroke = Stroke(FeedFrame, T.LINE, 1, 1)
-New("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = FeedFrame})
-Pad(FeedFrame, 6)
+New("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder, Parent = FeedFrame})
+Pad(FeedFrame, 8)
 
 ----------------------------------------------------------------
 -- feed rows
@@ -660,7 +660,7 @@ function L.ObtainMethod(entry)
     if entry.IsTrader then return "Los Traders" end
     if entry.IsBeeMerchant then return "Queen Bee" end
     if entry.IsRNGMachine then return "RNG Machine" end
-    return "Natural Spawn"
+    return nil                    -- ordinary spawn: say nothing
 end
 
 local rowOrder = 0
@@ -684,7 +684,7 @@ end
 local function addLine(text, color, sub)
     rowOrder += 1
     local row = New("Frame", {
-        Size = UDim2.new(1, 0, 0, sub and 30 or 20),
+        Size = UDim2.new(1, 0, 0, sub and 36 or 24),
         BackgroundColor3 = T.SURFACE, BackgroundTransparency = 0.45,
         BorderSizePixel = 0, LayoutOrder = -rowOrder, Parent = FeedFrame,
     })
@@ -692,7 +692,7 @@ local function addLine(text, color, sub)
     New("Frame", {Size = UDim2.new(0, 2, 1, -8), Position = UDim2.fromOffset(6, 4),
         BackgroundColor3 = color or T.MUTED, BorderSizePixel = 0, Parent = row})
     New("TextLabel", {
-        Size = UDim2.new(1, -20, 0, sub and 15 or 20), Position = UDim2.fromOffset(14, sub and 2 or 0),
+        Size = UDim2.new(1, -24, 0, sub and 16 or 24), Position = UDim2.fromOffset(16, sub and 4 or 0),
         BackgroundTransparency = 1, Text = text, TextColor3 = color or T.TEXT,
         Font = Enum.Font.GothamSemibold, TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -700,7 +700,7 @@ local function addLine(text, color, sub)
     })
     if sub then
         New("TextLabel", {
-            Size = UDim2.new(1, -20, 0, 12), Position = UDim2.fromOffset(14, 16),
+            Size = UDim2.new(1, -24, 0, 13), Position = UDim2.fromOffset(16, 20),
             BackgroundTransparency = 1, Text = sub, TextColor3 = T.MUTED,
             Font = Enum.Font.Gotham, TextSize = 10,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -715,25 +715,30 @@ end
 --              Obtainment      (o) Player      [ Trade ]
 local function addCard(entry, rarity)
     rowOrder += 1
-    local uid  = entry.OwnerUserId
-    local name = entry.OwnerDisplayName
+    local uid    = entry.OwnerUserId
+    local name   = entry.OwnerDisplayName
+    local obtain = L.ObtainMethod(entry)
+
+    local CARD_H   = 96
+    local RIGHT_W  = 88          -- reserved column for the Trade button, plus clearance
+    local LEFT_X   = 88          -- text column starts after the model box
 
     local card = New("TextButton", {
-        Size = UDim2.new(1, 0, 0, 64),
+        Size = UDim2.new(1, 0, 0, CARD_H),
         BackgroundColor3 = T.SURFACE, BackgroundTransparency = 0.4,
         AutoButtonColor = false, Text = "", BorderSizePixel = 0,
         LayoutOrder = -rowOrder, Parent = FeedFrame,
     })
-    Corner(card, 8)
+    Corner(card, 10)
     local cardStroke = Stroke(card, T.LINE, 1, 0.7)
 
-    -- brainrot model, animated
+    -- model, vertically centred
     local box = New("Frame", {
-        Size = UDim2.fromOffset(50, 50), Position = UDim2.fromOffset(7, 7),
+        Size = UDim2.fromOffset(64, 64), Position = UDim2.fromOffset(12, (CARD_H - 64) / 2),
         BackgroundColor3 = T.BG, BackgroundTransparency = 0.25,
         BorderSizePixel = 0, ClipsDescendants = true, Parent = card,
     })
-    Corner(box, 7)
+    Corner(box, 9)
     local vp = New("ViewportFrame", {
         Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
         Ambient = Color3.fromRGB(200, 214, 235),
@@ -748,11 +753,12 @@ local function addCard(entry, rarity)
         end)
     end
 
-    -- name, through the game's own gradient pipeline
+    -- row 1: name
     local title = New("TextLabel", {
-        Size = UDim2.new(1, -70, 0, 20), Position = UDim2.fromOffset(64, 7),
+        Size = UDim2.new(1, -(LEFT_X + RIGHT_W), 0, 22),
+        Position = UDim2.fromOffset(LEFT_X, 12),
         BackgroundTransparency = 1, Text = entry.BrainrotName,
-        TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 13,
+        TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
     })
@@ -763,56 +769,60 @@ local function addCard(entry, rarity)
         end)
     end
 
-    -- obtainment method
-    New("TextLabel", {
-        Size = UDim2.fromOffset(96, 14), Position = UDim2.fromOffset(64, 30),
-        BackgroundTransparency = 1, Text = L.ObtainMethod(entry),
-        TextColor3 = rarity and (L.TierColor[rarity:lower()] or T.MUTED) or T.MUTED,
-        Font = Enum.Font.GothamSemibold, TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
-    })
-    if rarity then
+    -- row 2: rarity, and obtainment only when it is actually notable
+    local meta = {}
+    if rarity then meta[#meta + 1] = rarity end
+    if obtain then meta[#meta + 1] = obtain end
+    if #meta > 0 then
         New("TextLabel", {
-            Size = UDim2.fromOffset(96, 12), Position = UDim2.fromOffset(64, 45),
-            BackgroundTransparency = 1, Text = rarity, TextColor3 = T.MUTED,
-            Font = Enum.Font.Gotham, TextSize = 9,
+            Size = UDim2.new(1, -(LEFT_X + RIGHT_W), 0, 14),
+            Position = UDim2.fromOffset(LEFT_X, 40),
+            BackgroundTransparency = 1,
+            Text = table.concat(meta, "   \u{00B7}   "),
+            TextColor3 = rarity and (L.TierColor[rarity:lower()] or T.MUTED) or T.MUTED,
+            Font = Enum.Font.GothamSemibold, TextSize = 11,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
         })
     end
 
-    -- owner block: headshot, breathing status dot, name
+    -- row 3: owner
+    local OWNER_Y = 62
     if uid then
         local head = New("ImageLabel", {
-            Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(168, 30),
+            Size = UDim2.fromOffset(24, 24), Position = UDim2.fromOffset(LEFT_X, OWNER_Y),
             BackgroundColor3 = T.BG, BackgroundTransparency = 0.3, BorderSizePixel = 0,
             Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(uid),
             Parent = card,
         })
-        Corner(head, 13)
+        Corner(head, 12)
 
         local state = L.GetStatus(uid)
         local dot = New("Frame", {
-            Size = UDim2.fromOffset(9, 9), Position = UDim2.fromOffset(187, 48),
+            Size = UDim2.fromOffset(10, 10),
+            Position = UDim2.fromOffset(LEFT_X + 17, OWNER_Y + 16),
             BackgroundColor3 = L.StateColor[state] or T.MUTED,
             BackgroundTransparency = 0.15, BorderSizePixel = 0,
             ZIndex = 3, Parent = card,
         })
         Corner(dot, 5)
-        New("UIStroke", {Color = T.SURFACE, Thickness = 1.5, Transparency = 0.2, Parent = dot})
+        New("UIStroke", {Color = T.SURFACE, Thickness = 2, Transparency = 0.1, Parent = dot})
 
-        local who = New("TextLabel", {
-            Size = UDim2.new(1, -262, 0, 13), Position = UDim2.fromOffset(199, 30),
+        local TEXT_X = LEFT_X + 34
+        New("TextLabel", {
+            Size = UDim2.new(1, -(TEXT_X + RIGHT_W), 0, 13),
+            Position = UDim2.fromOffset(TEXT_X, OWNER_Y - 1),
             BackgroundTransparency = 1, Text = tostring(name or uid),
-            TextColor3 = T.TEXT, Font = Enum.Font.GothamSemibold, TextSize = 10,
+            TextColor3 = T.TEXT, Font = Enum.Font.GothamSemibold, TextSize = 11,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
         })
         local stateLbl = New("TextLabel", {
-            Size = UDim2.new(1, -262, 0, 12), Position = UDim2.fromOffset(199, 44),
+            Size = UDim2.new(1, -(TEXT_X + RIGHT_W), 0, 12),
+            Position = UDim2.fromOffset(TEXT_X, OWNER_Y + 13),
             BackgroundTransparency = 1, Text = L.StateLabel[state] or "Unknown",
-            TextColor3 = T.MUTED, Font = Enum.Font.Gotham, TextSize = 9,
+            TextColor3 = L.StateColor[state] or T.MUTED,
+            Font = Enum.Font.Gotham, TextSize = 10,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
         })
@@ -823,14 +833,14 @@ local function addCard(entry, rarity)
             if L.StatusDots[uid] then L.StatusDots[uid][dot] = nil end
         end)
 
-        -- manual trade button
         local trade = New("TextButton", {
-            Size = UDim2.fromOffset(54, 24), Position = UDim2.new(1, -60, 0, 32),
+            Size = UDim2.fromOffset(62, 30),
+            Position = UDim2.new(1, -74, 0, (CARD_H - 30) / 2),
             BackgroundColor3 = T.RAISED, AutoButtonColor = false, ClipsDescendants = true,
             Text = "Trade", TextColor3 = T.HIGH,
-            Font = Enum.Font.GothamBold, TextSize = 10, Parent = card,
+            Font = Enum.Font.GothamBold, TextSize = 11, Parent = card,
         })
-        Corner(trade, 7)
+        Corner(trade, 9)
         local tradeStroke = Stroke(trade, T.LINE, 1, 0.5)
         trade.MouseEnter:Connect(function()
             tw(trade, 0.12, nil, nil, {BackgroundColor3 = T.RAISED:Lerp(T.ACCENT, 0.25)}):Play()
@@ -849,9 +859,10 @@ local function addCard(entry, rarity)
         end)
     else
         New("TextLabel", {
-            Size = UDim2.new(1, -200, 0, 13), Position = UDim2.fromOffset(168, 37),
+            Size = UDim2.new(1, -(LEFT_X + RIGHT_W), 0, 14),
+            Position = UDim2.fromOffset(LEFT_X, OWNER_Y + 5),
             BackgroundTransparency = 1, Text = "UNCLAIMED", TextColor3 = T.RED,
-            Font = Enum.Font.GothamSemibold, TextSize = 10,
+            Font = Enum.Font.GothamSemibold, TextSize = 11,
             TextXAlignment = Enum.TextXAlignment.Left, Parent = card,
         })
     end
@@ -1037,7 +1048,7 @@ local function hoverFill(btn, base, hover)
     btn.MouseLeave:Connect(function() tw(btn, 0.2, nil, nil, {BackgroundColor3 = base}):Play() end)
 end
 
-press(ClearBtn, UDim2.fromOffset(W, 30))
+press(ClearBtn, UDim2.fromOffset(W, 34))
 ripple(ClearBtn, T.ACCENT)
 hoverFill(ClearBtn, T.RAISED, Color3.fromRGB(50, 22, 34))
 hoverFill(MinBtn,   T.RAISED, T.RAISED:Lerp(T.ACCENT, 0.2))
