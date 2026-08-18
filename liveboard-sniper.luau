@@ -27,6 +27,11 @@ if genv then genv.LiveSniper = L end
 L.InviteGUID   = "afb005f9-6e81-4e0a-8bb0-3555938a9658"
 L.AutoOn       = false
 L.Cooldown     = 30          -- per-user resend cooldown, seconds
+L.SearchFirst  = true        -- mimic the real UI: SearchUser before Invite
+L.MaxPerMin    = 6           -- hard ceiling on invites per rolling minute
+L.MinGap       = 4.0         -- minimum seconds between any two invites
+L.Jitter       = 1.5         -- extra random delay, up to this many seconds
+L.FireLog      = {}          -- timestamps of recent invites
 L.IgnoreServer = true        -- [SERVER] entries are ignored; global feed only
 L.Sent         = {}          -- userId -> os.clock()
 L.Blacklist    = {}          -- userId -> true
@@ -88,7 +93,9 @@ L.NewEntry   = L.Net and L.Net:FindFirstChild("RE/Liveboard/NewEntry")
 L.ClaimEntry = L.Net and L.Net:FindFirstChild("RE/Liveboard/ClaimEntry")
 L.GetEntries = L.Net and L.Net:FindFirstChild("RF/Liveboard/GetEntries")
 
-L.InviteRF = nil
+L.InviteRF   = nil
+L.SearchRF   = nil
+L.SearchGUID = "792baf13-54a1-4663-92c4-1edd9da1e3e2"
 do
     local ok, TC = pcall(require, RepS.Controllers.TradeController)
     if ok and type(TC) == "table" and typeof(TC.SendInvite) == "function" then
@@ -99,6 +106,9 @@ do
                 if typeof(v) == "Instance" and v:IsA("RemoteFunction") then L.InviteRF = v break end
             end
         end
+        -- SearchUser sits at upvalue 12 of _createPlayerList
+        local oks, sv = pcall(debug.getupvalue, TC._createPlayerList, 12)
+        if oks and typeof(sv) == "Instance" and sv:IsA("RemoteFunction") then L.SearchRF = sv end
     end
 end
 
@@ -724,20 +734,69 @@ end
 -- hot path
 ----------------------------------------------------------------
 
+-- rolling-window throttle: returns nil if allowed, else the reason
+function L.ThrottleReason()
+    local now = os.clock()
+    local keep = {}
+    for _, t in ipairs(L.FireLog) do
+        if now - t < 60 then keep[#keep + 1] = t end
+    end
+    L.FireLog = keep
+    if #keep >= L.MaxPerMin then
+        return ("rate cap %d/min"):format(L.MaxPerMin)
+    end
+    local last = keep[#keep]
+    if last and (now - last) < L.MinGap then
+        return ("min gap %.1fs"):format(L.MinGap - (now - last))
+    end
+    return nil
+end
+
 function L.Fire(userId, label, t0, manual)
     if not L.InviteRF then
         L.Notify("Invite remote unavailable", T.RED)
         return
     end
+
+    -- manual clicks bypass the throttle; automated ones never do
+    if not manual then
+        local why = L.ThrottleReason()
+        if why then
+            L.Stats.skipped += 1
+            addLine(("HELD \u{2192} %s"):format(label), T.ORANGE, why)
+            refreshStats()
+            return
+        end
+    end
+
     L.Stats.fired += 1
+    L.FireLog[#L.FireLog + 1] = os.clock()
     local dispatch = (os.clock() - t0) * 1000
     if not L.BestDispatch or dispatch < L.BestDispatch then L.BestDispatch = dispatch end
 
     task.spawn(function()
+        -- walk the same path the real UI walks: search, pause, then invite.
+        -- inviting a userId the server never saw you search is the clearest
+        -- automation tell there is, so we don't do that.
+        local searchNote = "no search"
+        if L.SearchFirst and L.SearchRF then
+            local okS, sOk, sFound = pcall(L.SearchRF.InvokeServer, L.SearchRF, L.SearchGUID, userId)
+            searchNote = okS and ("search ok=%s found=%s"):format(tostring(sOk), tostring(sFound))
+                             or "search errored"
+            if okS and sOk and sFound == false then
+                L.Stats.skipped += 1
+                addLine(("SKIP \u{2192} %s"):format(label), T.MUTED, "not tradeable")
+                refreshStats()
+                return
+            end
+            -- human-ish beat between reading a result and clicking invite
+            task.wait(0.35 + math.random() * L.Jitter)
+        end
+
         local tCall = os.clock()
         local ok, a, b = pcall(L.InviteRF.InvokeServer, L.InviteRF, L.InviteGUID, userId)
         local rtt = (os.clock() - tCall) * 1000
-        local line = ("dispatch %s \u{00B7} server %s"):format(fmt(dispatch), fmt(rtt))
+        local line = ("dispatch %s \u{00B7} server %s \u{00B7} %s"):format(fmt(dispatch), fmt(rtt), searchNote)
         if ok and a then
             L.Stats.ok += 1
             addLine(("SENT \u{2192} %s"):format(label), T.GREEN, line)
