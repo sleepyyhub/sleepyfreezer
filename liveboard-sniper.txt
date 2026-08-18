@@ -27,34 +27,12 @@ if genv then genv.LiveSniper = L end
 L.InviteGUID   = "afb005f9-6e81-4e0a-8bb0-3555938a9658"
 L.AutoOn       = false
 L.Cooldown     = 30          -- per-user resend cooldown, seconds
-L.Scope        = "ALL"       -- ALL | GLOBAL | SERVER
-L.MinTier      = 1           -- index into L.Tiers
+L.IgnoreServer = true        -- [SERVER] entries are ignored; global feed only
 L.Sent         = {}          -- userId -> os.clock()
 L.Blacklist    = {}          -- userId -> true
 L.Stats        = {seen = 0, fired = 0, ok = 0, fail = 0, skipped = 0}
 L.BestDispatch = nil
-L.Feed         = {}
-L.MaxRows      = 60
-
-L.Tiers = {
-    "Any", "Common", "Uncommon", "Rare", "Epic", "Legendary",
-    "Mythic", "Brainrot God", "Secret", "Divine", "OG",
-}
-L.TierIndex = {}
-for i, n in ipairs(L.Tiers) do L.TierIndex[n:lower()] = i end
-
-L.TierColor = {
-    ["common"]        = Color3.fromRGB(159, 173, 189),
-    ["uncommon"]      = Color3.fromRGB( 87, 199, 133),
-    ["rare"]          = Color3.fromRGB( 52, 152, 219),
-    ["epic"]          = Color3.fromRGB(155, 110, 200),
-    ["legendary"]     = Color3.fromRGB(241, 196,  15),
-    ["mythic"]        = Color3.fromRGB(233, 121, 163),
-    ["brainrot god"]  = Color3.fromRGB(231,  76,  60),
-    ["secret"]        = Color3.fromRGB( 44, 40,  99),
-    ["divine"]        = Color3.fromRGB(255, 215,   0),
-    ["og"]            = Color3.fromRGB(255, 255, 255),
-}
+L.MaxRows      = 40
 
 local T = {
     VOID     = Color3.fromRGB(6, 9, 18),
@@ -124,7 +102,9 @@ do
     end
 end
 
-L.Animals = safe(function() return require(RepS.Datas.Animals) end)
+L.Animals      = safe(function() return require(RepS.Datas.Animals) end)
+L.SharedAnimals = safe(function() return require(RepS.Shared.Animals) end)
+L.RichText     = safe(function() return require(RepS.Controllers.CustomRichTextController) end)
 
 L.RarityOf = function(brainrotName)
     if not L.Animals or type(brainrotName) ~= "string" then return nil end
@@ -212,7 +192,7 @@ New("UIListLayout", {
     Padding = UDim.new(0, 1), Parent = Mark,
 })
 
-local Letters = {}
+local Letters, LetterStrokes = {}, {}
 for i = 1, #BRAND do
     local ch = BRAND:sub(i, i)
     local w  = BIG_SIZE * (ch == "I" and 0.35 or 0.62)
@@ -227,9 +207,10 @@ for i = 1, #BRAND do
         Rotation = math.random(-60, 60), ZIndex = 103, Parent = wrap,
     })
     lbl.Position = UDim2.fromOffset(math.random(-140, 140), math.random(-90, 90))
-    New("UIStroke", {Color = Color3.fromRGB(0, 0, 0), Thickness = 2, Transparency = 0.1,
+    local st = New("UIStroke", {Color = Color3.fromRGB(0, 0, 0), Thickness = 2, Transparency = 0.1,
         LineJoinMode = Enum.LineJoinMode.Round, Parent = lbl})
     Letters[i] = lbl
+    LetterStrokes[i] = st
 end
 
 local Underline = New("Frame", {
@@ -527,49 +508,13 @@ local Knob = New("Frame", {
 })
 Corner(Knob, 7)
 
--- rarity threshold row
-local TierBox = New("Frame", {
-    Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = T.RAISED,
-    BackgroundTransparency = 1, LayoutOrder = 2, Parent = Content,
-})
-Corner(TierBox, 12); Pad(TierBox, 0, 0, 12, 12)
-local TierStroke = Stroke(TierBox, T.LINE, 1, 1)
-New("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
-    VerticalAlignment = Enum.VerticalAlignment.Center,
-    HorizontalAlignment = Enum.HorizontalAlignment.Left, Parent = TierBox})
-
-local TierTag = New("TextLabel", {
-    Size = UDim2.new(1, -124, 1, 0), BackgroundTransparency = 1,
-    Text = "Min rarity", TextColor3 = T.MUTED,
-    Font = Enum.Font.GothamSemibold, TextSize = 12,
-    TextXAlignment = Enum.TextXAlignment.Left, TextTransparency = 1,
-    LayoutOrder = 1, Parent = TierBox,
-})
-local Minus = New("TextButton", {
-    Size = UDim2.fromOffset(26, 26), BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
-    Text = "\u{2212}", TextColor3 = T.HIGH, Font = Enum.Font.GothamBold, TextSize = 16,
-    BackgroundTransparency = 1, TextTransparency = 1, LayoutOrder = 2, Parent = TierBox,
-})
-Corner(Minus, 8)
-local TierLbl = New("TextLabel", {
-    Size = UDim2.fromOffset(72, 26), BackgroundTransparency = 1,
-    Text = "Any", TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 11,
-    TextTransparency = 1, LayoutOrder = 3, Parent = TierBox,
-})
-local Plus = New("TextButton", {
-    Size = UDim2.fromOffset(26, 26), BackgroundColor3 = T.SURFACE, AutoButtonColor = false,
-    Text = "+", TextColor3 = T.HIGH, Font = Enum.Font.GothamBold, TextSize = 16,
-    BackgroundTransparency = 1, TextTransparency = 1, LayoutOrder = 4, Parent = TierBox,
-})
-Corner(Plus, 8)
-
--- scope + test row
+-- action row
 local RowBtns = New("Frame", {
     Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
     LayoutOrder = 3, Parent = Content,
 })
 New("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
-    Padding = UDim.new(0, 6), VerticalAlignment = Enum.VerticalAlignment.Center, Parent = RowBtns})
+    Padding = UDim.new(0, 8), VerticalAlignment = Enum.VerticalAlignment.Center, Parent = RowBtns})
 
 local function smallBtn(text, order, width)
     local b = New("TextButton", {
@@ -582,10 +527,9 @@ local function smallBtn(text, order, width)
     Corner(b, 10)
     return b
 end
-local W = (PANEL_W - 32 - 12) / 3
-local ScopeBtn = smallBtn("Scope: ALL", 1, W)
-local TestBtn  = smallBtn("Fake log",   2, W)
-local ClearBtn = smallBtn("Clear",      3, W)
+local W = (PANEL_W - 32 - 8) / 2
+local TestBtn  = smallBtn("Fake log", 1, W)
+local ClearBtn = smallBtn("Clear",    2, W)
 
 local StatsLbl = New("TextLabel", {
     Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1,
@@ -612,54 +556,162 @@ Pad(FeedFrame, 6)
 ----------------------------------------------------------------
 
 local rowOrder = 0
-local function addRow(title, color, sub, userId)
+
+local function trimFeed()
+    local kids = FeedFrame:GetChildren()
+    local n = 0
+    for _, c in ipairs(kids) do if c:IsA("GuiObject") then n += 1 end end
+    while n > L.MaxRows do
+        local oldest, ord = nil, math.huge
+        for _, c in ipairs(FeedFrame:GetChildren()) do
+            if c:IsA("GuiObject") and c.LayoutOrder < ord then ord, oldest = c.LayoutOrder, c end
+        end
+        if not oldest then break end
+        oldest:Destroy()
+        n -= 1
+    end
+end
+
+-- slim status line (SENT / FAIL / notices)
+local function addLine(text, color, sub)
     rowOrder += 1
-    local row = New("TextButton", {
-        Size = UDim2.new(1, 0, 0, sub and 34 or 22),
-        BackgroundColor3 = T.SURFACE, BackgroundTransparency = 0.35,
-        AutoButtonColor = false, Text = "", BorderSizePixel = 0,
-        LayoutOrder = -rowOrder, Parent = FeedFrame,
+    local row = New("Frame", {
+        Size = UDim2.new(1, 0, 0, sub and 30 or 20),
+        BackgroundColor3 = T.SURFACE, BackgroundTransparency = 0.45,
+        BorderSizePixel = 0, LayoutOrder = -rowOrder, Parent = FeedFrame,
     })
     Corner(row, 6)
+    New("Frame", {Size = UDim2.new(0, 2, 1, -8), Position = UDim2.fromOffset(6, 4),
+        BackgroundColor3 = color or T.MUTED, BorderSizePixel = 0, Parent = row})
     New("TextLabel", {
-        Size = UDim2.new(1, -10, 0, sub and 16 or 22), Position = UDim2.fromOffset(6, 0),
-        BackgroundTransparency = 1, Text = title, TextColor3 = color or T.TEXT,
+        Size = UDim2.new(1, -20, 0, sub and 15 or 20), Position = UDim2.fromOffset(14, sub and 2 or 0),
+        BackgroundTransparency = 1, Text = text, TextColor3 = color or T.TEXT,
         Font = Enum.Font.GothamSemibold, TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd, Parent = row,
     })
     if sub then
         New("TextLabel", {
-            Size = UDim2.new(1, -10, 0, 14), Position = UDim2.fromOffset(6, 16),
+            Size = UDim2.new(1, -20, 0, 12), Position = UDim2.fromOffset(14, 16),
             BackgroundTransparency = 1, Text = sub, TextColor3 = T.MUTED,
             Font = Enum.Font.Gotham, TextSize = 10,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd, Parent = row,
         })
     end
+    trimFeed()
+end
 
-    row.MouseEnter:Connect(function() tw(row, 0.12, nil, nil, {BackgroundTransparency = 0.15}):Play() end)
-    row.MouseLeave:Connect(function() tw(row, 0.18, nil, nil, {BackgroundTransparency = 0.35}):Play() end)
+-- full entry card: animated model viewport + gradient-rendered name
+local function addCard(entry, rarity, faked)
+    rowOrder += 1
+    local uid  = entry.OwnerUserId
+    local name = entry.OwnerDisplayName
 
-    -- QOL: click a row to manually invite that owner, copy id on the notification
-    if userId then
-        row.MouseButton1Click:Connect(function()
-            if setclipboard then pcall(setclipboard, tostring(userId)) end
-            L.Sent[userId] = nil
-            L.Fire(userId, tostring(userId), os.clock(), true)
+    local card = New("TextButton", {
+        Size = UDim2.new(1, 0, 0, 58),
+        BackgroundColor3 = T.SURFACE, BackgroundTransparency = 0.4,
+        AutoButtonColor = false, Text = "", BorderSizePixel = 0,
+        LayoutOrder = -rowOrder, Parent = FeedFrame,
+    })
+    Corner(card, 8)
+    local cardStroke = Stroke(card, T.LINE, 1, 0.7)
+
+    -- model box
+    local box = New("Frame", {
+        Size = UDim2.fromOffset(46, 46), Position = UDim2.fromOffset(6, 6),
+        BackgroundColor3 = T.BG, BackgroundTransparency = 0.2,
+        BorderSizePixel = 0, ClipsDescendants = true, Parent = card,
+    })
+    Corner(box, 6)
+    local vp = New("ViewportFrame", {
+        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+        Ambient = Color3.fromRGB(200, 214, 235),
+        LightColor = Color3.fromRGB(255, 255, 255),
+        LightDirection = Vector3.new(-0.4, -1, -0.6), Parent = box,
+    })
+    -- the game's own builder: spawns the model, rigs an Animator, loops Idle
+    if L.SharedAnimals then
+        task.spawn(function()
+            pcall(function()
+                L.SharedAnimals:AttachOnViewport(entry.BrainrotName, vp, nil, entry.Mutation)
+            end)
         end)
     end
 
-    local kids = FeedFrame:GetChildren()
-    local count = 0
-    for _, c in ipairs(kids) do if c:IsA("GuiButton") then count += 1 end end
-    if count > L.MaxRows then
-        local oldest, ord = nil, math.huge
-        for _, c in ipairs(kids) do
-            if c:IsA("GuiButton") and c.LayoutOrder < ord then ord, oldest = c.LayoutOrder, c end
-        end
-        if oldest then oldest:Destroy() end
+    -- name, rendered through the game's rich-text gradient pipeline
+    local title = New("TextLabel", {
+        Size = UDim2.new(1, -62, 0, 18), Position = UDim2.fromOffset(58, 5),
+        BackgroundTransparency = 1, Text = entry.BrainrotName,
+        TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+    })
+    if L.RichText and L.SharedAnimals then
+        pcall(function()
+            L.RichText.apply(title, L.SharedAnimals:ColorBrainrotName(entry.BrainrotName),
+                {attachToInstance = true})
+        end)
     end
+
+    -- meta line: scope, mutation, rarity, source tag
+    local bits = {entry.IsLocalServer and "SERVER" or "GLOBAL"}
+    if entry.Mutation then bits[#bits + 1] = tostring(entry.Mutation) end
+    if rarity then bits[#bits + 1] = rarity end
+    if entry.IsFuse then bits[#bits + 1] = "FUSE"
+    elseif entry.IsCodes then bits[#bits + 1] = "CODES"
+    elseif entry.IsTrader then bits[#bits + 1] = "TRADERS"
+    elseif entry.IsBeeMerchant then bits[#bits + 1] = "QUEEN BEE"
+    elseif entry.IsRNGMachine then bits[#bits + 1] = "RNG" end
+
+    New("TextLabel", {
+        Size = UDim2.new(1, -62, 0, 13), Position = UDim2.fromOffset(58, 23),
+        BackgroundTransparency = 1, Text = table.concat(bits, "  \u{00B7}  "),
+        TextColor3 = rarity and (L.TierColor[rarity:lower()] or T.MUTED) or T.MUTED,
+        Font = Enum.Font.GothamSemibold, TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+    })
+
+    -- owner line
+    New("TextLabel", {
+        Size = UDim2.new(1, -62, 0, 13), Position = UDim2.fromOffset(58, 37),
+        BackgroundTransparency = 1,
+        Text = uid and ("%s  (%s)"):format(tostring(name or "?"), tostring(uid)) or "UNCLAIMED",
+        TextColor3 = uid and T.TEXT or T.RED,
+        Font = Enum.Font.Gotham, TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+    })
+
+    if faked then
+        New("TextLabel", {
+            Size = UDim2.fromOffset(40, 12), Position = UDim2.new(1, -44, 0, 5),
+            BackgroundTransparency = 1, Text = "TEST", TextColor3 = T.ORANGE,
+            Font = Enum.Font.GothamBold, TextSize = 9,
+            TextXAlignment = Enum.TextXAlignment.Right, Parent = card,
+        })
+    end
+
+    card.MouseEnter:Connect(function()
+        tw(card, 0.12, nil, nil, {BackgroundTransparency = 0.2}):Play()
+        tw(cardStroke, 0.12, nil, nil, {Transparency = 0.3, Color = T.ACCENT}):Play()
+    end)
+    card.MouseLeave:Connect(function()
+        tw(card, 0.18, nil, nil, {BackgroundTransparency = 0.4}):Play()
+        tw(cardStroke, 0.18, nil, nil, {Transparency = 0.7, Color = T.LINE}):Play()
+    end)
+
+    -- click to invite this owner manually, and copy their id
+    if uid then
+        card.MouseButton1Click:Connect(function()
+            if setclipboard then pcall(setclipboard, tostring(uid)) end
+            L.Sent[uid] = nil
+            L.Fire(uid, ("%s (%s)"):format(tostring(name or uid), tostring(uid)), os.clock(), true)
+        end)
+    end
+
+    trimFeed()
 end
 
 local function refreshStats()
@@ -688,12 +740,12 @@ function L.Fire(userId, label, t0, manual)
         local line = ("dispatch %s \u{00B7} server %s"):format(fmt(dispatch), fmt(rtt))
         if ok and a then
             L.Stats.ok += 1
-            addRow(("SENT \u{2192} %s"):format(label), T.GREEN, line, nil)
+            addLine(("SENT \u{2192} %s"):format(label), T.GREEN, line)
             L.Notify((manual and "Manual invite \u{2192} " or "Sniped \u{2192} ") .. label, T.GREEN, line)
         else
             L.Stats.fail += 1
             local why = tostring(ok and b or a)
-            addRow(("FAIL \u{2192} %s"):format(label), T.RED, line .. " \u{00B7} " .. why, nil)
+            addLine(("FAIL \u{2192} %s"):format(label), T.RED, line .. "  \u{00B7}  " .. why)
             L.Notify("Invite failed: " .. why, T.RED, line)
         end
         refreshStats()
@@ -709,33 +761,15 @@ function L.OnEntry(entry, faked)
     L.Stats.seen += 1
     local uid    = entry.OwnerUserId
     local name   = entry.OwnerDisplayName
-    local scope  = entry.IsLocalServer and "[SERVER]" or "[GLOBAL]"
     local rarity = L.RarityOf(entry.BrainrotName)
-    local mut    = entry.Mutation and (" <" .. tostring(entry.Mutation) .. ">") or ""
 
-    local tag = ""
-    if entry.IsFuse then tag = " [FUSE]"
-    elseif entry.IsCodes then tag = " [CODES]"
-    elseif entry.IsTrader then tag = " [TRADERS]"
-    elseif entry.IsBeeMerchant then tag = " [QUEEN BEE]"
-    elseif entry.IsRNGMachine then tag = " [RNG]" end
-
-    local col = rarity and L.TierColor[rarity:lower()] or (faked and T.ORANGE or T.TEXT)
-    addRow(("%s%s %s%s"):format(scope, mut, entry.BrainrotName, tag), col,
-        uid and ("%s  \u{00B7}  %s (%s)"):format(rarity or "?", tostring(name or "?"), tostring(uid))
-             or ((rarity or "?") .. "  \u{00B7}  UNCLAIMED"),
-        uid)
+    addCard(entry, rarity, faked)
 
     -- filters
     if not L.AutoOn then refreshStats() return end
+    if L.IgnoreServer and entry.IsLocalServer then L.Stats.skipped += 1 refreshStats() return end
     if type(uid) ~= "number" or uid == LP.UserId then L.Stats.skipped += 1 refreshStats() return end
     if L.Blacklist[uid] then L.Stats.skipped += 1 refreshStats() return end
-    if L.Scope == "GLOBAL" and entry.IsLocalServer then L.Stats.skipped += 1 refreshStats() return end
-    if L.Scope == "SERVER" and not entry.IsLocalServer then L.Stats.skipped += 1 refreshStats() return end
-    if L.MinTier > 1 then
-        local ti = rarity and L.TierIndex[rarity:lower()]
-        if not ti or ti < L.MinTier then L.Stats.skipped += 1 refreshStats() return end
-    end
     local last = L.Sent[uid]
     if last and (os.clock() - last) < L.Cooldown then L.Stats.skipped += 1 refreshStats() return end
     L.Sent[uid] = os.clock()
@@ -787,11 +821,8 @@ local function hoverFill(btn, base, hover)
     btn.MouseLeave:Connect(function() tw(btn, 0.2, nil, nil, {BackgroundColor3 = base}):Play() end)
 end
 
-press(Minus, UDim2.fromOffset(26, 26)); press(Plus, UDim2.fromOffset(26, 26))
-press(ScopeBtn, UDim2.fromOffset(W, 30)); press(TestBtn, UDim2.fromOffset(W, 30)); press(ClearBtn, UDim2.fromOffset(W, 30))
-ripple(ScopeBtn, T.ACCENT); ripple(TestBtn, T.ACCENT); ripple(ClearBtn, T.ACCENT)
-hoverFill(Minus, T.SURFACE, T.RAISED); hoverFill(Plus, T.SURFACE, T.RAISED)
-hoverFill(ScopeBtn, T.RAISED, T.RAISED:Lerp(T.ACCENT, 0.12))
+press(TestBtn, UDim2.fromOffset(W, 30)); press(ClearBtn, UDim2.fromOffset(W, 30))
+ripple(TestBtn, T.ACCENT); ripple(ClearBtn, T.ACCENT)
 hoverFill(TestBtn,  T.RAISED, T.RAISED:Lerp(T.ACCENT, 0.12))
 hoverFill(ClearBtn, T.RAISED, Color3.fromRGB(50, 22, 34))
 hoverFill(MinBtn,   T.RAISED, T.RAISED:Lerp(T.ACCENT, 0.2))
@@ -810,21 +841,6 @@ L.SetAuto = function(on)
 end
 Switch.MouseButton1Click:Connect(function() L.SetAuto(not L.AutoOn) end)
 
-local function refreshTier()
-    local name = L.Tiers[L.MinTier]
-    TierLbl.Text = name
-    TierLbl.TextColor3 = (L.MinTier == 1) and T.MUTED or (L.TierColor[name:lower()] or T.TEXT)
-end
-Minus.MouseButton1Click:Connect(function() L.MinTier = math.max(1, L.MinTier - 1) refreshTier() end)
-Plus.MouseButton1Click:Connect(function() L.MinTier = math.min(#L.Tiers, L.MinTier + 1) refreshTier() end)
-
-local scopes = {"ALL", "GLOBAL", "SERVER"}
-ScopeBtn.MouseButton1Click:Connect(function()
-    local i = table.find(scopes, L.Scope) or 1
-    L.Scope = scopes[(i % #scopes) + 1]
-    ScopeBtn.Text = "Scope: " .. L.Scope
-end)
-
 TestBtn.MouseButton1Click:Connect(function()
     L.OnEntry({
         UID              = "FAKE-" .. tostring(math.random(1e6)),
@@ -839,7 +855,7 @@ TestBtn.MouseButton1Click:Connect(function()
 end)
 
 ClearBtn.MouseButton1Click:Connect(function()
-    for _, c in ipairs(FeedFrame:GetChildren()) do if c:IsA("GuiButton") then c:Destroy() end end
+    for _, c in ipairs(FeedFrame:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
     L.Sent = {}
     L.Stats = {seen = 0, fired = 0, ok = 0, fail = 0, skipped = 0}
     L.BestDispatch = nil
@@ -946,7 +962,6 @@ end)
 -- boot sequence
 ----------------------------------------------------------------
 
-refreshTier()
 refreshStats()
 
 task.spawn(function()
@@ -972,8 +987,11 @@ task.spawn(function()
     for _, s in ipairs(steps) do Sub.Text = s task.wait(0.26) end
     task.wait(0.18)
 
-    for _, lbl in ipairs(Letters) do
+    for i, lbl in ipairs(Letters) do
         TS:Create(lbl, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+        if LetterStrokes[i] then
+            TS:Create(LetterStrokes[i], TweenInfo.new(0.35), {Transparency = 1}):Play()
+        end
     end
     tw(Sub, 0.3, nil, nil, {TextTransparency = 1}):Play()
     tw(Underline, 0.35, nil, nil, {Size = UDim2.new(0, 0, 0, 2), BackgroundTransparency = 1}):Play()
@@ -1005,16 +1023,8 @@ task.spawn(function()
         tw(Switch, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
         tw(Knob, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
     end)
-    task.delay(0.12, function()
-        tw(TierBox, 0.4, nil, nil, {BackgroundTransparency = 0}):Play()
-        tw(TierStroke, 0.4, nil, nil, {Transparency = 0.5}):Play()
-        tw(TierTag, 0.3, nil, nil, {TextTransparency = 0}):Play()
-        tw(TierLbl, 0.3, nil, nil, {TextTransparency = 0}):Play()
-        tw(Minus, 0.3, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-        tw(Plus,  0.3, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-    end)
     task.delay(0.19, function()
-        for _, b in ipairs({ScopeBtn, TestBtn, ClearBtn}) do
+        for _, b in ipairs({TestBtn, ClearBtn}) do
             tw(b, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
         end
         tw(StatsLbl, 0.4, nil, nil, {TextTransparency = 0}):Play()
