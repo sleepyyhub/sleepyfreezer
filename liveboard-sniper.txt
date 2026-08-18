@@ -606,6 +606,38 @@ local Knob = New("Frame", {
 })
 Corner(Knob, 7)
 
+-- hide-events switch
+local HideBox = New("Frame", {
+    Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.RAISED,
+    BackgroundTransparency = 1, LayoutOrder = 2, Parent = Content,
+})
+Corner(HideBox, 12); Pad(HideBox, 0, 0, 12, 12)
+local HideStroke = Stroke(HideBox, T.LINE, 1, 1)
+New("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    HorizontalAlignment = Enum.HorizontalAlignment.Left, Parent = HideBox})
+
+local HideTag = New("TextLabel", {
+    Size = UDim2.new(1, -60, 1, 0), BackgroundTransparency = 1,
+    Text = "Hide event visuals", TextColor3 = T.MUTED,
+    Font = Enum.Font.GothamSemibold, TextSize = 12,
+    TextXAlignment = Enum.TextXAlignment.Left, TextTransparency = 1,
+    LayoutOrder = 1, Parent = HideBox,
+})
+local HideSwitch = New("TextButton", {
+    Size = UDim2.fromOffset(38, 20), BackgroundColor3 = T.SURFACE,
+    AutoButtonColor = false, Text = "", BackgroundTransparency = 1,
+    LayoutOrder = 2, Parent = HideBox,
+})
+Corner(HideSwitch, 10)
+local HideSwitchStroke = Stroke(HideSwitch, T.LINE, 1, 1)
+local HideKnob = New("Frame", {
+    Size = UDim2.fromOffset(14, 14), Position = UDim2.new(0, 3, 0.5, -7),
+    BackgroundColor3 = T.MUTED, BackgroundTransparency = 1,
+    BorderSizePixel = 0, Parent = HideSwitch,
+})
+Corner(HideKnob, 7)
+
 -- action row
 local RowBtns = New("Frame", {
     Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1,
@@ -651,6 +683,155 @@ Pad(FeedFrame, 8)
 ----------------------------------------------------------------
 -- feed rows
 ----------------------------------------------------------------
+
+----------------------------------------------------------------
+-- event cleaner
+-- Hides the visual side of active world events so the map reads as if
+-- nothing is running. Purely local: it changes rendering on this client
+-- only, it does not stop the events, and every change is recorded so it
+-- reverses exactly.
+----------------------------------------------------------------
+
+L.EventsHidden = false
+L.EventRestore = {}        -- { {inst = Instance, prop = string, value = any}, ... }
+L.HideEventSky = true      -- also swap out event skies/atmospheres
+
+local Lighting = game:GetService("Lighting")
+
+local function remember(inst, prop)
+    local ok, v = pcall(function() return inst[prop] end)
+    if ok then
+        table.insert(L.EventRestore, {inst = inst, prop = prop, value = v})
+    end
+end
+
+local function setProp(inst, prop, value)
+    remember(inst, prop)
+    pcall(function() inst[prop] = value end)
+end
+
+-- make one instance invisible without touching collision or physics
+local function conceal(inst)
+    if inst:IsA("BasePart") then
+        setProp(inst, "Transparency", 1)
+        setProp(inst, "CastShadow", false)
+    elseif inst:IsA("Decal") or inst:IsA("Texture") then
+        setProp(inst, "Transparency", 1)
+    elseif inst:IsA("ParticleEmitter") or inst:IsA("Beam") or inst:IsA("Trail")
+        or inst:IsA("Smoke") or inst:IsA("Fire") or inst:IsA("Sparkles") then
+        setProp(inst, "Enabled", false)
+    elseif inst:IsA("Light") then
+        setProp(inst, "Enabled", false)
+    elseif inst:IsA("Sound") then
+        setProp(inst, "Volume", 0)
+    elseif inst:IsA("SurfaceAppearance") then
+        setProp(inst, "Parent", nil)
+    end
+end
+
+local function concealTree(root)
+    if not root then return 0 end
+    local n = 0
+    conceal(root) n += 1
+    for _, d in ipairs(root:GetDescendants()) do conceal(d) n += 1 end
+    return n
+end
+
+-- things that only exist because an event is running
+function L.EventTargets()
+    local t = {}
+
+    local events = workspace:FindFirstChild("Events")
+    if events then
+        for _, m in ipairs(events:GetChildren()) do t[#t + 1] = m end
+    end
+
+    -- event-specific map overlays sit beside Workspace as <Name>Map
+    for _, c in ipairs(workspace:GetChildren()) do
+        local n = c.Name
+        if n:match("Map$") and n ~= "Map" then t[#t + 1] = c end
+    end
+
+    -- ambience tracks
+    local sounds = workspace:FindFirstChild("Sounds")
+    if sounds then
+        for _, sd in ipairs(sounds:GetDescendants()) do
+            if sd:IsA("Sound") and sd.Name:find("Ambience") and sd.Name ~= "Ambience_Default" then
+                t[#t + 1] = sd
+            end
+        end
+    end
+
+    -- event attachments bolted onto characters
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local ch = plr.Character
+        if ch then
+            for _, d in ipairs(ch:GetDescendants()) do
+                if d:IsA("Attachment") and d.Name:match("Attachment$")
+                   and d.Name ~= "RootAttachment" and #d:GetChildren() > 0 then
+                    t[#t + 1] = d
+                end
+            end
+        end
+    end
+
+    return t
+end
+
+function L.SetEventsHidden(on)
+    if on == L.EventsHidden then return end
+
+    if not on then
+        -- The game's lighting controller inserts a replacement sky when ours
+        -- is removed, so restoring naively leaves two and the wrong one wins.
+        -- Drop anything that appeared while we were hidden, then put ours back.
+        if L.SkySnapshot then
+            for _, c in ipairs(Lighting:GetChildren()) do
+                if (c:IsA("Sky") or c:IsA("Atmosphere")) and not L.SkySnapshot[c] then
+                    pcall(function() c:Destroy() end)
+                end
+            end
+        end
+
+        -- restore in reverse so parent changes unwind correctly
+        for i = #L.EventRestore, 1, -1 do
+            local r = L.EventRestore[i]
+            if r.inst then pcall(function() r.inst[r.prop] = r.value end) end
+        end
+        L.EventRestore = {}
+        L.SkySnapshot = nil
+        L.EventsHidden = false
+        L.Notify("Event visuals restored", T.MUTED)
+        return
+    end
+
+    L.EventRestore = {}
+    local touched = 0
+    for _, target in ipairs(L.EventTargets()) do
+        touched += concealTree(target)
+    end
+
+    if L.HideEventSky then
+        -- remember exactly which sky/atmosphere objects were ours
+        L.SkySnapshot = {}
+        for _, c in ipairs(Lighting:GetChildren()) do
+            if c:IsA("Sky") or c:IsA("Atmosphere") then L.SkySnapshot[c] = true end
+        end
+        for _, c in ipairs(Lighting:GetChildren()) do
+            if c:IsA("Sky") or c:IsA("Atmosphere") then
+                setProp(c, "Parent", nil)
+                touched += 1
+            elseif c:IsA("PostEffect") and c.Name:lower():find("event") then
+                setProp(c, "Enabled", false)
+                touched += 1
+            end
+        end
+    end
+
+    L.EventsHidden = true
+    L.Notify("Event visuals hidden", T.HIGH,
+        L.Detail(("%d objects concealed"):format(touched)))
+end
 
 ----------------------------------------------------------------
 -- live player status
@@ -1226,6 +1407,23 @@ L.SetAuto = function(on)
 end
 Switch.MouseButton1Click:Connect(function() L.SetAuto(not L.AutoOn) end)
 
+local function paintHideSwitch(on)
+    tw(HideSwitch, 0.18, nil, nil, {BackgroundColor3 = on and T.ACCENT or T.SURFACE}):Play()
+    tw(HideSwitchStroke, 0.18, nil, nil, {
+        Color = on and T.HIGH or T.LINE, Transparency = on and 0.3 or 0.5}):Play()
+    TS:Create(HideKnob, TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+        BackgroundColor3 = on and T.WHITE or T.MUTED}):Play()
+    tw(HideTag, 0.18, nil, nil, {TextColor3 = on and T.TEXT or T.MUTED}):Play()
+    tw(HideStroke, 0.18, nil, nil, {
+        Color = on and T.ACCENT or T.LINE, Transparency = on and 0.35 or 0.5}):Play()
+end
+HideSwitch.MouseButton1Click:Connect(function()
+    local target = not L.EventsHidden
+    paintHideSwitch(target)
+    L.SetEventsHidden(target)
+end)
+
 ClearBtn.MouseButton1Click:Connect(function()
     for _, c in ipairs(FeedFrame:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
     L.Sent = {}
@@ -1394,6 +1592,14 @@ task.spawn(function()
         tw(AutoTag, 0.3, nil, nil, {TextTransparency = 0}):Play()
         tw(Switch, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
         tw(Knob, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
+    end)
+    task.delay(0.09, function()
+        tw(HideBox, 0.4, nil, nil, {BackgroundTransparency = 0}):Play()
+        tw(HideStroke, 0.4, nil, nil, {Transparency = 0.5}):Play()
+        tw(HideSwitchStroke, 0.4, nil, nil, {Transparency = 0.5}):Play()
+        tw(HideTag, 0.3, nil, nil, {TextTransparency = 0}):Play()
+        tw(HideSwitch, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
+        tw(HideKnob, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
     end)
     task.delay(0.19, function()
         for _, b in ipairs({ClearBtn}) do

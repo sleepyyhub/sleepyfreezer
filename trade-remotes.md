@@ -8,7 +8,7 @@ Source: `ReplicatedStorage.Controllers.TradeController` (decompiled + bytecode v
 
 | Thing | Stable? | Notes |
 |---|---|---|
-| **Call-site GUIDs** | **Yes** | String literals in the compiled bytecode (constant table of `TradeController`). Identical across servers, sessions and rejoins. Only change when the devs republish (watch `PlaceVersion`). |
+| **Call-site GUIDs** | **Yes** | String literals in the compiled bytecode (constant table of `TradeController`). Identical across servers, sessions and rejoins — **and confirmed to survive a republish**: re-dumped at `PlaceVersion 2506` after first recording them at `2501`, byte-identical. |
 | **Hashed remote names** (`RF/<64 hex>`) | **No** | Rotate per server. Confirmed: two different servers gave two different hashes for the same logical remote. **Never hardcode these.** |
 | **Index position** under `Packages.Net` | Appears stable | Same scheme Luminosity uses (`EXPECTED_INDEX = 70` for redeem, which matched on a different server). Verified once for trade — re-check after any game update. |
 
@@ -30,10 +30,17 @@ Observed rotation, same remote, two servers:
 | `TradeService/AddItem` | RemoteFunction | — | `f2c4a9d1-3b7e-4a51-9c8d-1e6f0a2b3c4d` |
 | `TradeService/RemoveItem` | RemoteFunction | — | `a7e1b5c9-2d48-4f63-8a90-5c1d2e3f4a6b` |
 | `TradeService/SendChatMessage` | RemoteEvent | — | `b7e3f1a2-4c89-4d5e-a6b0-9f8e7d6c5b4a` |
+| `TradeService/AcceptInvite` | RemoteFunction | — | `57624f2b-8aa9-4974-bb7a-08f058af33ef` |
+| `TradeService/DeclineInvite` | RemoteEvent | — | `99448380-7cdd-45ad-be4e-332ec6194ba6` |
+| `TradeService/CancelTrade` | RemoteEvent | — | `9d1937e7-6262-487b-98be-af45618270c9` |
+| `TradeService/Accept` | RemoteEvent | — | `918ee0f5-e98f-413f-b76e-baee47b021cb` |
+| `TradeService/Ready` | RemoteEvent | — | `d73acf93-6f32-44df-b813-0f6b32c7afd9` |
+| `TradeService/GetTradeHistory` | RemoteFunction | — | `c3d9e8f1-2a4b-4c6d-8e0f-1a2b3c4d5e6f` |
 
-Also present (no GUID arg observed): `CreateInvite` (RE, server→client), `InviteResult` (RE),
-`AcceptInvite` (RF), `DeclineInvite` (RE), `CancelTrade` (RE), `Accept` (RE), `Ready` (RE),
-`GetTradeHistory` (RF), `HistoryUpdated` (RE).
+Server→client only (no GUID): `CreateInvite`, `InviteResult`, `HistoryUpdated`.
+
+All 13 GUIDs above were re-dumped at `PlaceVersion 2506` and match what was
+recorded at `2501`. Treat them as fixed; only re-dump if a call starts failing.
 
 ## Arguments
 
