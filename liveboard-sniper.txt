@@ -30,6 +30,8 @@ L.Cooldown     = 30          -- per-user resend cooldown, seconds
 L.SearchFirst  = true        -- mimic the real UI: SearchUser before Invite
 L.MaxPerMin    = 6           -- hard ceiling on invites per rolling minute
 L.MinGap       = 4.0         -- minimum seconds between any two invites
+L.TradeCooldown = 90         -- after a trade lands, wait this long before the next
+L.LastTradeAt  = nil         -- os.clock() of the last accepted/sent trade
 L.Jitter       = 1.5         -- extra random delay, up to this many seconds
 L.FireLog      = {}          -- timestamps of recent invites
 L.IgnoreServer = true        -- [SERVER] entries are ignored; global feed only
@@ -537,9 +539,8 @@ local function smallBtn(text, order, width)
     Corner(b, 10)
     return b
 end
-local W = (PANEL_W - 32 - 8) / 2
-local TestBtn  = smallBtn("Fake log", 1, W)
-local ClearBtn = smallBtn("Clear",    2, W)
+local W = PANEL_W - 32
+local ClearBtn = smallBtn("Clear feed", 1, W)
 
 local StatsLbl = New("TextLabel", {
     Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1,
@@ -564,6 +565,89 @@ Pad(FeedFrame, 6)
 ----------------------------------------------------------------
 -- feed rows
 ----------------------------------------------------------------
+
+----------------------------------------------------------------
+-- live player status
+--   green  online   - present in this server
+--   yellow busy     - server told us they are mid-trade / not available
+--   red    offline  - seen here and then left
+-- Players in other servers are unknowable from a client, so they stay
+-- unknown (grey) until an invite or search tells us something concrete.
+----------------------------------------------------------------
+
+L.Status = {}          -- userId -> {state, at}
+L.StatusDots = {}      -- userId -> { dot, ... } live indicators to repaint
+
+L.StateColor = {
+    online  = T.GREEN,
+    busy    = Color3.fromRGB(255, 205, 90),
+    offline = T.RED,
+    unknown = T.MUTED,
+}
+L.StateLabel = {
+    online  = "Online",
+    busy    = "Busy",
+    offline = "Offline",
+    unknown = "Unknown",
+}
+
+function L.GetStatus(userId)
+    if type(userId) ~= "number" then return "unknown" end
+    if Players:GetPlayerByUserId(userId) then return "online" end
+    local rec = L.Status[userId]
+    return rec and rec.state or "unknown"
+end
+
+function L.SetStatus(userId, state)
+    if type(userId) ~= "number" then return end
+    L.Status[userId] = {state = state, at = os.clock()}
+    local dots = L.StatusDots[userId]
+    if not dots then return end
+    for dot, lbl in pairs(dots) do
+        if dot.Parent then
+            tw(dot, 0.25, nil, nil, {BackgroundColor3 = L.StateColor[state] or T.MUTED}):Play()
+            if lbl and lbl.Parent then lbl.Text = L.StateLabel[state] or "Unknown" end
+        else
+            dots[dot] = nil
+        end
+    end
+end
+
+Players.PlayerRemoving:Connect(function(p)
+    if p ~= LP then L.SetStatus(p.UserId, "offline") end
+end)
+Players.PlayerAdded:Connect(function(p)
+    if p ~= LP then L.SetStatus(p.UserId, "online") end
+end)
+
+-- one breathing loop drives every dot on screen, rather than one per row
+L.Breath = 0
+task.spawn(function()
+    while true do
+        local t = tick()
+        L.Breath = (math.sin(t * 2.2) + 1) / 2      -- 0..1
+        for uid, dots in pairs(L.StatusDots) do
+            for dot in pairs(dots) do
+                if dot.Parent then
+                    dot.BackgroundTransparency = 0.12 + L.Breath * 0.45
+                else
+                    dots[dot] = nil
+                end
+            end
+        end
+        task.wait(0.05)
+    end
+end)
+
+-- obtainment method, from the entry's source flags
+function L.ObtainMethod(entry)
+    if entry.IsFuse then return "Fuse Machine" end
+    if entry.IsCodes then return "Code Redeem" end
+    if entry.IsTrader then return "Los Traders" end
+    if entry.IsBeeMerchant then return "Queen Bee" end
+    if entry.IsRNGMachine then return "RNG Machine" end
+    return "Natural Spawn"
+end
 
 local rowOrder = 0
 
@@ -612,14 +696,16 @@ local function addLine(text, color, sub)
     trimFeed()
 end
 
--- full entry card: animated model viewport + gradient-rendered name
-local function addCard(entry, rarity, faked)
+-- full entry card
+--   [ model ]  Name
+--              Obtainment      (o) Player      [ Trade ]
+local function addCard(entry, rarity)
     rowOrder += 1
     local uid  = entry.OwnerUserId
     local name = entry.OwnerDisplayName
 
     local card = New("TextButton", {
-        Size = UDim2.new(1, 0, 0, 58),
+        Size = UDim2.new(1, 0, 0, 64),
         BackgroundColor3 = T.SURFACE, BackgroundTransparency = 0.4,
         AutoButtonColor = false, Text = "", BorderSizePixel = 0,
         LayoutOrder = -rowOrder, Parent = FeedFrame,
@@ -627,20 +713,19 @@ local function addCard(entry, rarity, faked)
     Corner(card, 8)
     local cardStroke = Stroke(card, T.LINE, 1, 0.7)
 
-    -- model box
+    -- brainrot model, animated
     local box = New("Frame", {
-        Size = UDim2.fromOffset(46, 46), Position = UDim2.fromOffset(6, 6),
-        BackgroundColor3 = T.BG, BackgroundTransparency = 0.2,
+        Size = UDim2.fromOffset(50, 50), Position = UDim2.fromOffset(7, 7),
+        BackgroundColor3 = T.BG, BackgroundTransparency = 0.25,
         BorderSizePixel = 0, ClipsDescendants = true, Parent = card,
     })
-    Corner(box, 6)
+    Corner(box, 7)
     local vp = New("ViewportFrame", {
         Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
         Ambient = Color3.fromRGB(200, 214, 235),
         LightColor = Color3.fromRGB(255, 255, 255),
         LightDirection = Vector3.new(-0.4, -1, -0.6), Parent = box,
     })
-    -- the game's own builder: spawns the model, rigs an Animator, loops Idle
     if L.SharedAnimals then
         task.spawn(function()
             pcall(function()
@@ -649,11 +734,11 @@ local function addCard(entry, rarity, faked)
         end)
     end
 
-    -- name, rendered through the game's rich-text gradient pipeline
+    -- name, through the game's own gradient pipeline
     local title = New("TextLabel", {
-        Size = UDim2.new(1, -62, 0, 18), Position = UDim2.fromOffset(58, 5),
+        Size = UDim2.new(1, -70, 0, 20), Position = UDim2.fromOffset(64, 7),
         BackgroundTransparency = 1, Text = entry.BrainrotName,
-        TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 12,
+        TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
     })
@@ -664,42 +749,96 @@ local function addCard(entry, rarity, faked)
         end)
     end
 
-    -- meta line: scope, mutation, rarity, source tag
-    local bits = {entry.IsLocalServer and "SERVER" or "GLOBAL"}
-    if entry.Mutation then bits[#bits + 1] = tostring(entry.Mutation) end
-    if rarity then bits[#bits + 1] = rarity end
-    if entry.IsFuse then bits[#bits + 1] = "FUSE"
-    elseif entry.IsCodes then bits[#bits + 1] = "CODES"
-    elseif entry.IsTrader then bits[#bits + 1] = "TRADERS"
-    elseif entry.IsBeeMerchant then bits[#bits + 1] = "QUEEN BEE"
-    elseif entry.IsRNGMachine then bits[#bits + 1] = "RNG" end
-
+    -- obtainment method
     New("TextLabel", {
-        Size = UDim2.new(1, -62, 0, 13), Position = UDim2.fromOffset(58, 23),
-        BackgroundTransparency = 1, Text = table.concat(bits, "  \u{00B7}  "),
+        Size = UDim2.fromOffset(96, 14), Position = UDim2.fromOffset(64, 30),
+        BackgroundTransparency = 1, Text = L.ObtainMethod(entry),
         TextColor3 = rarity and (L.TierColor[rarity:lower()] or T.MUTED) or T.MUTED,
         Font = Enum.Font.GothamSemibold, TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
     })
-
-    -- owner line
-    New("TextLabel", {
-        Size = UDim2.new(1, -62, 0, 13), Position = UDim2.fromOffset(58, 37),
-        BackgroundTransparency = 1,
-        Text = uid and ("%s  (%s)"):format(tostring(name or "?"), tostring(uid)) or "UNCLAIMED",
-        TextColor3 = uid and T.TEXT or T.RED,
-        Font = Enum.Font.Gotham, TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
-    })
-
-    if faked then
+    if rarity then
         New("TextLabel", {
-            Size = UDim2.fromOffset(40, 12), Position = UDim2.new(1, -44, 0, 5),
-            BackgroundTransparency = 1, Text = "TEST", TextColor3 = T.ORANGE,
-            Font = Enum.Font.GothamBold, TextSize = 9,
-            TextXAlignment = Enum.TextXAlignment.Right, Parent = card,
+            Size = UDim2.fromOffset(96, 12), Position = UDim2.fromOffset(64, 45),
+            BackgroundTransparency = 1, Text = rarity, TextColor3 = T.MUTED,
+            Font = Enum.Font.Gotham, TextSize = 9,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+        })
+    end
+
+    -- owner block: headshot, breathing status dot, name
+    if uid then
+        local head = New("ImageLabel", {
+            Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(168, 30),
+            BackgroundColor3 = T.BG, BackgroundTransparency = 0.3, BorderSizePixel = 0,
+            Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(uid),
+            Parent = card,
+        })
+        Corner(head, 13)
+
+        local state = L.GetStatus(uid)
+        local dot = New("Frame", {
+            Size = UDim2.fromOffset(9, 9), Position = UDim2.fromOffset(187, 48),
+            BackgroundColor3 = L.StateColor[state] or T.MUTED,
+            BackgroundTransparency = 0.15, BorderSizePixel = 0,
+            ZIndex = 3, Parent = card,
+        })
+        Corner(dot, 5)
+        New("UIStroke", {Color = T.SURFACE, Thickness = 1.5, Transparency = 0.2, Parent = dot})
+
+        local who = New("TextLabel", {
+            Size = UDim2.new(1, -262, 0, 13), Position = UDim2.fromOffset(199, 30),
+            BackgroundTransparency = 1, Text = tostring(name or uid),
+            TextColor3 = T.TEXT, Font = Enum.Font.GothamSemibold, TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+        })
+        local stateLbl = New("TextLabel", {
+            Size = UDim2.new(1, -262, 0, 12), Position = UDim2.fromOffset(199, 44),
+            BackgroundTransparency = 1, Text = L.StateLabel[state] or "Unknown",
+            TextColor3 = T.MUTED, Font = Enum.Font.Gotham, TextSize = 9,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+        })
+
+        L.StatusDots[uid] = L.StatusDots[uid] or {}
+        L.StatusDots[uid][dot] = stateLbl
+        card.Destroying:Connect(function()
+            if L.StatusDots[uid] then L.StatusDots[uid][dot] = nil end
+        end)
+
+        -- manual trade button
+        local trade = New("TextButton", {
+            Size = UDim2.fromOffset(54, 24), Position = UDim2.new(1, -60, 0, 32),
+            BackgroundColor3 = T.RAISED, AutoButtonColor = false, ClipsDescendants = true,
+            Text = "Trade", TextColor3 = T.HIGH,
+            Font = Enum.Font.GothamBold, TextSize = 10, Parent = card,
+        })
+        Corner(trade, 7)
+        local tradeStroke = Stroke(trade, T.LINE, 1, 0.5)
+        trade.MouseEnter:Connect(function()
+            tw(trade, 0.12, nil, nil, {BackgroundColor3 = T.RAISED:Lerp(T.ACCENT, 0.25)}):Play()
+            tw(tradeStroke, 0.12, nil, nil, {Color = T.ACCENT, Transparency = 0.25}):Play()
+        end)
+        trade.MouseLeave:Connect(function()
+            tw(trade, 0.18, nil, nil, {BackgroundColor3 = T.RAISED}):Play()
+            tw(tradeStroke, 0.18, nil, nil, {Color = T.LINE, Transparency = 0.5}):Play()
+        end)
+        trade.MouseButton1Click:Connect(function()
+            if setclipboard then pcall(setclipboard, tostring(uid)) end
+            L.Sent[uid] = nil
+            trade.Text = "..."
+            L.Fire(uid, ("%s (%s)"):format(tostring(name or uid), tostring(uid)), os.clock(), true)
+            task.delay(1.2, function() if trade.Parent then trade.Text = "Trade" end end)
+        end)
+    else
+        New("TextLabel", {
+            Size = UDim2.new(1, -200, 0, 13), Position = UDim2.fromOffset(168, 37),
+            BackgroundTransparency = 1, Text = "UNCLAIMED", TextColor3 = T.RED,
+            Font = Enum.Font.GothamSemibold, TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left, Parent = card,
         })
     end
 
@@ -711,15 +850,6 @@ local function addCard(entry, rarity, faked)
         tw(card, 0.18, nil, nil, {BackgroundTransparency = 0.4}):Play()
         tw(cardStroke, 0.18, nil, nil, {Transparency = 0.7, Color = T.LINE}):Play()
     end)
-
-    -- click to invite this owner manually, and copy their id
-    if uid then
-        card.MouseButton1Click:Connect(function()
-            if setclipboard then pcall(setclipboard, tostring(uid)) end
-            L.Sent[uid] = nil
-            L.Fire(uid, ("%s (%s)"):format(tostring(name or uid), tostring(uid)), os.clock(), true)
-        end)
-    end
 
     trimFeed()
 end
@@ -742,6 +872,9 @@ function L.ThrottleReason()
         if now - t < 60 then keep[#keep + 1] = t end
     end
     L.FireLog = keep
+    if L.LastTradeAt and (now - L.LastTradeAt) < L.TradeCooldown then
+        return ("trade cooldown %.0fs"):format(L.TradeCooldown - (now - L.LastTradeAt))
+    end
     if #keep >= L.MaxPerMin then
         return ("rate cap %d/min"):format(L.MaxPerMin)
     end
@@ -784,11 +917,13 @@ function L.Fire(userId, label, t0, manual)
             searchNote = okS and ("search ok=%s found=%s"):format(tostring(sOk), tostring(sFound))
                              or "search errored"
             if okS and sOk and sFound == false then
+                L.SetStatus(userId, "busy")
                 L.Stats.skipped += 1
                 addLine(("SKIP \u{2192} %s"):format(label), T.MUTED, "not tradeable")
                 refreshStats()
                 return
             end
+            if okS and sOk and sFound then L.SetStatus(userId, "online") end
             -- human-ish beat between reading a result and clicking invite
             task.wait(0.35 + math.random() * L.Jitter)
         end
@@ -799,11 +934,19 @@ function L.Fire(userId, label, t0, manual)
         local line = ("dispatch %s \u{00B7} server %s \u{00B7} %s"):format(fmt(dispatch), fmt(rtt), searchNote)
         if ok and a then
             L.Stats.ok += 1
+            L.LastTradeAt = os.clock()          -- start the trade cooldown
+            L.SetStatus(userId, "busy")         -- they now have our invite open
             addLine(("SENT \u{2192} %s"):format(label), T.GREEN, line)
             L.Notify((manual and "Manual invite \u{2192} " or "Sniped \u{2192} ") .. label, T.GREEN, line)
         else
             L.Stats.fail += 1
             local why = tostring(ok and b or a)
+            local w = why:lower()
+            if w:find("trad") or w:find("busy") or w:find("already") then
+                L.SetStatus(userId, "busy")
+            elseif w:find("offline") or w:find("not found") or w:find("left") then
+                L.SetStatus(userId, "offline")
+            end
             addLine(("FAIL \u{2192} %s"):format(label), T.RED, line .. "  \u{00B7}  " .. why)
             L.Notify("Invite failed: " .. why, T.RED, line)
         end
@@ -812,7 +955,7 @@ function L.Fire(userId, label, t0, manual)
     refreshStats()
 end
 
-function L.OnEntry(entry, faked)
+function L.OnEntry(entry)
     local t0 = os.clock()
     if type(entry) ~= "table" then return end
     if type(entry.BrainrotName) ~= "string" then return end
@@ -822,7 +965,7 @@ function L.OnEntry(entry, faked)
     local name   = entry.OwnerDisplayName
     local rarity = L.RarityOf(entry.BrainrotName)
 
-    addCard(entry, rarity, faked)
+    addCard(entry, rarity)
 
     -- filters
     if not L.AutoOn then refreshStats() return end
@@ -837,13 +980,13 @@ function L.OnEntry(entry, faked)
 end
 
 if L.NewEntry then
-    L.NewEntry.OnClientEvent:Connect(function(entry) L.OnEntry(entry, false) end)
+    L.NewEntry.OnClientEvent:Connect(function(entry) L.OnEntry(entry) end)
 end
 if L.ClaimEntry then
     L.ClaimEntry.OnClientEvent:Connect(function(_, ownerUserId, ownerDisplayName)
         if type(ownerUserId) == "number" then
             L.OnEntry({UID = "claim", BrainrotName = "(claimed)", OwnerUserId = ownerUserId,
-                OwnerDisplayName = ownerDisplayName, IsLocalServer = false}, false)
+                OwnerDisplayName = ownerDisplayName, IsLocalServer = false})
         end
     end)
 end
@@ -880,9 +1023,8 @@ local function hoverFill(btn, base, hover)
     btn.MouseLeave:Connect(function() tw(btn, 0.2, nil, nil, {BackgroundColor3 = base}):Play() end)
 end
 
-press(TestBtn, UDim2.fromOffset(W, 30)); press(ClearBtn, UDim2.fromOffset(W, 30))
-ripple(TestBtn, T.ACCENT); ripple(ClearBtn, T.ACCENT)
-hoverFill(TestBtn,  T.RAISED, T.RAISED:Lerp(T.ACCENT, 0.12))
+press(ClearBtn, UDim2.fromOffset(W, 30))
+ripple(ClearBtn, T.ACCENT)
 hoverFill(ClearBtn, T.RAISED, Color3.fromRGB(50, 22, 34))
 hoverFill(MinBtn,   T.RAISED, T.RAISED:Lerp(T.ACCENT, 0.2))
 hoverFill(CloseBtn, T.RAISED, Color3.fromRGB(50, 22, 34))
@@ -899,19 +1041,6 @@ L.SetAuto = function(on)
     L.Notify(on and "Auto snipe enabled" or "Auto snipe disabled", on and T.GREEN or T.MUTED)
 end
 Switch.MouseButton1Click:Connect(function() L.SetAuto(not L.AutoOn) end)
-
-TestBtn.MouseButton1Click:Connect(function()
-    L.OnEntry({
-        UID              = "FAKE-" .. tostring(math.random(1e6)),
-        BrainrotName     = "Test Brainrot",
-        Mutation         = "Gold",
-        OwnerUserId      = 902460523,
-        OwnerDisplayName = "kasthmz",
-        Timestamp        = workspace:GetServerTimeNow(),
-        DisplayDuration  = 30,
-        IsLocalServer    = false,
-    }, true)
-end)
 
 ClearBtn.MouseButton1Click:Connect(function()
     for _, c in ipairs(FeedFrame:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
@@ -1083,7 +1212,7 @@ task.spawn(function()
         tw(Knob, 0.3, nil, nil, {BackgroundTransparency = 0}):Play()
     end)
     task.delay(0.19, function()
-        for _, b in ipairs({TestBtn, ClearBtn}) do
+        for _, b in ipairs({ClearBtn}) do
             tw(b, 0.4, nil, nil, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
         end
         tw(StatsLbl, 0.4, nil, nil, {TextTransparency = 0}):Play()
@@ -1112,7 +1241,7 @@ if L.GetEntries then
         if ok and type(data) == "table" then
             local n = 0
             for _, e in pairs(data) do
-                if type(e) == "table" then n += 1 L.OnEntry(e, false) end
+                if type(e) == "table" then n += 1 L.OnEntry(e) end
             end
             if n > 0 then L.Notify(("Backfilled %d entries"):format(n), T.MUTED) end
         end
