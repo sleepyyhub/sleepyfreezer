@@ -131,6 +131,42 @@ end
 L.Animals      = safe(function() return require(RepS.Datas.Animals) end)
 L.SharedAnimals = safe(function() return require(RepS.Shared.Animals) end)
 L.RichText     = safe(function() return require(RepS.Controllers.CustomRichTextController) end)
+L.Gradients    = safe(function() return require(RepS.Packages.Gradients) end)
+
+-- rarity -> gradient effect, for the ones the game ships an effect for
+L.RarityEffect = {
+    ["og"]           = "OG",
+    ["divine"]       = "Rainbow",
+    ["secret"]       = "Phantom",
+    ["brainrot god"] = "YellowRed",
+    ["mythic"]       = "GreenRed",
+}
+
+-- paint a label with the game's live gradient for a rarity.
+-- prefers the game's own rarity formatter, falls back to a direct effect.
+function L.PaintRarity(label, rarity)
+    if not rarity then return false end
+    local key = rarity:lower()
+
+    if L.RichText and L.SharedAnimals and typeof(L.SharedAnimals.GetRarityStringFormat) == "function" then
+        local ok, tagged = pcall(function()
+            return L.SharedAnimals:GetRarityStringFormat(rarity)
+        end)
+        if ok and type(tagged) == "string" and tagged:find("<") then
+            local applied = pcall(function()
+                L.RichText.apply(label, tagged, {attachToInstance = true})
+            end)
+            if applied then return true end
+        end
+    end
+
+    local effect = L.RarityEffect[key]
+    if effect and L.Gradients then
+        local ok = pcall(function() L.Gradients.apply(label, effect) end)
+        if ok then return true end
+    end
+    return false
+end
 
 L.RarityOf = function(brainrotName)
     if not L.Animals or type(brainrotName) ~= "string" then return nil end
@@ -756,7 +792,7 @@ local function addCard(entry, rarity)
     -- row 1: name
     local title = New("TextLabel", {
         Size = UDim2.new(1, -(LEFT_X + RIGHT_W), 0, 22),
-        Position = UDim2.fromOffset(LEFT_X, 12),
+        Position = UDim2.fromOffset(LEFT_X, 10),
         BackgroundTransparency = 1, Text = entry.BrainrotName,
         TextColor3 = T.TEXT, Font = Enum.Font.GothamBold, TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -769,21 +805,43 @@ local function addCard(entry, rarity)
         end)
     end
 
-    -- row 2: rarity, and obtainment only when it is actually notable
-    local meta = {}
-    if rarity then meta[#meta + 1] = rarity end
-    if obtain then meta[#meta + 1] = obtain end
-    if #meta > 0 then
-        New("TextLabel", {
-            Size = UDim2.new(1, -(LEFT_X + RIGHT_W), 0, 14),
-            Position = UDim2.fromOffset(LEFT_X, 40),
-            BackgroundTransparency = 1,
-            Text = table.concat(meta, "   \u{00B7}   "),
-            TextColor3 = rarity and (L.TierColor[rarity:lower()] or T.MUTED) or T.MUTED,
-            Font = Enum.Font.GothamSemibold, TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+    -- row 2: rarity (fat, gradient-painted) then source, laid out inline
+    if rarity or obtain then
+        local metaRow = New("Frame", {
+            Size = UDim2.new(1, -(LEFT_X + RIGHT_W), 0, 18),
+            Position = UDim2.fromOffset(LEFT_X, 38),
+            BackgroundTransparency = 1, Parent = card,
         })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = metaRow,
+        })
+        if rarity then
+            local rl = New("TextLabel", {
+                AutomaticSize = Enum.AutomaticSize.X,
+                Size = UDim2.fromOffset(0, 18), BackgroundTransparency = 1,
+                Text = rarity:upper(),
+                TextColor3 = L.TierColor[rarity:lower()] or T.TEXT,
+                Font = Enum.Font.GothamBlack, TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                LayoutOrder = 1, Parent = metaRow,
+            })
+            New("UIStroke", {Color = Color3.fromRGB(0, 0, 0), Thickness = 1,
+                Transparency = 0.55, Parent = rl})
+            L.PaintRarity(rl, rarity)
+        end
+        if obtain then
+            New("TextLabel", {
+                AutomaticSize = Enum.AutomaticSize.X,
+                Size = UDim2.fromOffset(0, 16), BackgroundTransparency = 1,
+                Text = obtain, TextColor3 = T.MUTED,
+                Font = Enum.Font.GothamSemibold, TextSize = 11,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                LayoutOrder = 2, Parent = metaRow,
+            })
+        end
     end
 
     -- row 3: owner
