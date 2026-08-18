@@ -133,37 +133,73 @@ L.SharedAnimals = safe(function() return require(RepS.Shared.Animals) end)
 L.RichText     = safe(function() return require(RepS.Controllers.CustomRichTextController) end)
 L.Gradients    = safe(function() return require(RepS.Packages.Gradients) end)
 
--- rarity -> gradient effect, for the ones the game ships an effect for
+L.MutationText = safe(function() return require(RepS.Shared.MutationText) end)
+L.MutationData = safe(function() return require(RepS.Datas.Mutations) end)
+
+-- The game owns the rarity -> style mapping. GetRarityStringFormat returns a
+-- FORMAT STRING containing %s -- "<zebra>%s</zebra>" for Secret, "<og>%s</og>"
+-- for OG, "<font color=\"#ff0000\">%s</font>" for Mythic -- so it must be
+-- formatted before rendering. This table is only a fallback.
 L.RarityEffect = {
     ["og"]           = "OG",
+    ["secret"]       = "Zebra",
     ["divine"]       = "Rainbow",
-    ["secret"]       = "Phantom",
     ["brainrot god"] = "YellowRed",
     ["mythic"]       = "GreenRed",
 }
 
--- paint a label with the game's live gradient for a rarity.
--- prefers the game's own rarity formatter, falls back to a direct effect.
 function L.PaintRarity(label, rarity)
     if not rarity then return false end
-    local key = rarity:lower()
+    label.RichText = true
 
-    if L.RichText and L.SharedAnimals and typeof(L.SharedAnimals.GetRarityStringFormat) == "function" then
-        local ok, tagged = pcall(function()
+    if L.SharedAnimals and typeof(L.SharedAnimals.GetRarityStringFormat) == "function" then
+        local ok, fmtStr = pcall(function()
             return L.SharedAnimals:GetRarityStringFormat(rarity)
         end)
-        if ok and type(tagged) == "string" and tagged:find("<") then
-            local applied = pcall(function()
-                L.RichText.apply(label, tagged, {attachToInstance = true})
-            end)
-            if applied then return true end
+        if ok and type(fmtStr) == "string" and fmtStr ~= "" then
+            local okF, markup = pcall(string.format, fmtStr, rarity:upper())
+            if okF and type(markup) == "string" then
+                -- gradient tags (<og>, <zebra>) need the rich-text controller;
+                -- plain <font> markup renders on its own
+                if markup:find("<%a+>") and L.RichText then
+                    local applied = pcall(function()
+                        L.RichText.apply(label, markup, {attachToInstance = true})
+                    end)
+                    if applied then return true end
+                end
+                -- plain <font> markup renders on its own
+                if markup:find("<") then
+                    label.Text = markup
+                    return true
+                end
+                -- the game styles some rarities (Divine) not at all; fall
+                -- through to our own effect table rather than leaving it flat
+            end
         end
     end
 
-    local effect = L.RarityEffect[key]
+    local effect = L.RarityEffect[rarity:lower()]
     if effect and L.Gradients then
-        local ok = pcall(function() L.Gradients.apply(label, effect) end)
-        if ok then return true end
+        if pcall(function() L.Gradients.apply(label, effect) end) then return true end
+    end
+    return false
+end
+
+-- paint a label as a mutation; the game handles colour, bold and any
+-- gradient (Crystal, Phantom, Rainbow, Christmas) itself
+function L.PaintMutation(label, mutation)
+    if not mutation then return false end
+    label.RichText = true      -- Phantom writes <b>..</b> straight into Text
+
+    if L.MutationText and typeof(L.MutationText.apply) == "function" then
+        if pcall(function() L.MutationText.apply(label, mutation) end) then return true end
+    end
+
+    local rec = L.MutationData and L.MutationData[mutation]
+    if type(rec) == "table" and typeof(rec.MainColor) == "Color3" then
+        label.Text = tostring(rec.DisplayText or mutation)
+        label.TextColor3 = rec.MainColor
+        return true
     end
     return false
 end
@@ -806,7 +842,7 @@ local function addCard(entry, rarity)
     end
 
     -- row 2: rarity (fat, gradient-painted) then source, laid out inline
-    if rarity or obtain then
+    if rarity or entry.Mutation or obtain then
         local metaRow = New("Frame", {
             Size = UDim2.new(1, -(LEFT_X + RIGHT_W), 0, 18),
             Position = UDim2.fromOffset(LEFT_X, 38),
@@ -832,6 +868,19 @@ local function addCard(entry, rarity)
                 Transparency = 0.55, Parent = rl})
             L.PaintRarity(rl, rarity)
         end
+        if entry.Mutation then
+            local ml = New("TextLabel", {
+                AutomaticSize = Enum.AutomaticSize.X,
+                Size = UDim2.fromOffset(0, 17), BackgroundTransparency = 1,
+                Text = tostring(entry.Mutation), TextColor3 = T.TEXT,
+                Font = Enum.Font.GothamBold, TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                LayoutOrder = 2, Parent = metaRow,
+            })
+            New("UIStroke", {Color = Color3.fromRGB(0, 0, 0), Thickness = 1,
+                Transparency = 0.65, Parent = ml})
+            L.PaintMutation(ml, entry.Mutation)
+        end
         if obtain then
             New("TextLabel", {
                 AutomaticSize = Enum.AutomaticSize.X,
@@ -839,7 +888,7 @@ local function addCard(entry, rarity)
                 Text = obtain, TextColor3 = T.MUTED,
                 Font = Enum.Font.GothamSemibold, TextSize = 11,
                 TextXAlignment = Enum.TextXAlignment.Left,
-                LayoutOrder = 2, Parent = metaRow,
+                LayoutOrder = 3, Parent = metaRow,
             })
         end
     end
