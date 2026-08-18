@@ -34,6 +34,20 @@ L.TradeCooldown = 90         -- after a trade lands, wait this long before the n
 L.LastTradeAt  = nil         -- os.clock() of the last accepted/sent trade
 L.Jitter       = 1.5         -- extra random delay, up to this many seconds
 L.FireLog      = {}          -- timestamps of recent invites
+
+-- rarity accent colours, used for the obtainment/rarity text on a card
+L.TierColor = {
+    ["common"]       = Color3.fromRGB(159, 173, 189),
+    ["uncommon"]     = Color3.fromRGB( 87, 199, 133),
+    ["rare"]         = Color3.fromRGB( 52, 152, 219),
+    ["epic"]         = Color3.fromRGB(155, 110, 200),
+    ["legendary"]    = Color3.fromRGB(241, 196,  15),
+    ["mythic"]       = Color3.fromRGB(233, 121, 163),
+    ["brainrot god"] = Color3.fromRGB(231,  76,  60),
+    ["secret"]       = Color3.fromRGB(120, 110, 235),
+    ["divine"]       = Color3.fromRGB(255, 215,   0),
+    ["og"]           = Color3.fromRGB(255, 255, 255),
+}
 L.IgnoreServer = true        -- [SERVER] entries are ignored; global feed only
 L.Sent         = {}          -- userId -> os.clock()
 L.Blacklist    = {}          -- userId -> true
