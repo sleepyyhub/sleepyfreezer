@@ -49,11 +49,72 @@ local PG         = LP:WaitForChild("PlayerGui")
 local Cam        = workspace.CurrentCamera
 local IS_MOBILE  = UIS.TouchEnabled and not UIS.KeyboardEnabled and not UIS.MouseEnabled
 
-local Net         = require(RepS:WaitForChild("Packages"):WaitForChild("Net"))
-local Sync        = require(RepS.Packages:WaitForChild("Synchronizer"))
-local SharedAnim  = require(RepS:WaitForChild("Shared"):WaitForChild("Animals"))
-local AnimalData  = require(RepS:WaitForChild("Datas"):WaitForChild("Animals"))
-local Rarities    = require(RepS.Datas:WaitForChild("Rarities"))
+-- Module resolution, bounded and loud.
+--
+-- These were unbounded WaitForChild calls. If any child was missing -- wrong
+-- place, renamed folder, game update -- Roblox yields forever: no error, no
+-- UI, nothing on screen, and the script looks like it simply refused to run.
+-- Every wait now has a deadline and every require is protected, so a missing
+-- dependency reports which one and stops instead of hanging.
+local PLACE_EXPECTED = 109001683984840
+
+local function grab(path, timeout)
+    local node = RepS
+    for _, name in ipairs(path) do
+        node = node:WaitForChild(name, timeout or 8)
+        if not node then return nil, table.concat(path, ".") end
+    end
+    local ok, mod = pcall(require, node)
+    if not ok then return nil, table.concat(path, ".") .. " (require failed: " .. tostring(mod) .. ")" end
+    return mod
+end
+
+local missing = {}
+local function need(path)
+    local mod, err = grab(path)
+    if not mod then missing[#missing + 1] = err or table.concat(path, ".") end
+    return mod
+end
+
+local Net         = need({"Packages", "Net"})
+local Sync        = need({"Packages", "Synchronizer"})
+local SharedAnim  = need({"Shared", "Animals"})
+local AnimalData  = need({"Datas", "Animals"})
+local Rarities    = need({"Datas", "Rarities"})
+
+if #missing > 0 then
+    local msg = "[LUMINOSITY] cannot run here - missing: " .. table.concat(missing, ", ")
+    warn(msg)
+    if game.PlaceId ~= PLACE_EXPECTED then
+        warn(("[LUMINOSITY] this build targets place %d (Steal A Summertino); you are in %d")
+            :format(PLACE_EXPECTED, game.PlaceId))
+    end
+    -- Visible failure, because a warn in the console is easy to miss and the
+    -- symptom otherwise is an empty screen.
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "LuminosityError"
+    sg.ResetOnSpawn = false
+    sg.IgnoreGuiInset = true
+    sg.DisplayOrder = 99999
+    sg.Parent = PG
+    local box = Instance.new("TextLabel")
+    box.Size = UDim2.new(0, 520, 0, 78)
+    box.Position = UDim2.new(0.5, -260, 0, 24)
+    box.BackgroundColor3 = Color3.fromRGB(10, 15, 28)
+    box.BackgroundTransparency = 0.08
+    box.BorderSizePixel = 0
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 12
+    box.TextWrapped = true
+    box.TextColor3 = Color3.fromRGB(255, 130, 155)
+    box.Text = msg .. (game.PlaceId ~= PLACE_EXPECTED
+        and ("\n\nwrong place: this build is for " .. PLACE_EXPECTED .. ", you are in " .. game.PlaceId)
+        or "")
+    box.Parent = sg
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 10)
+    task.delay(12, function() sg:Destroy() end)
+    return
+end
 
 local L = {}
 L.MenuKey     = Enum.KeyCode.F
