@@ -4,6 +4,7 @@ import { createRobloxGateway, type GatewayHandle } from '../../server/websocket-
 import { resetConfigForTests } from '../../src/lib/config';
 import { PROTOCOL_VERSION } from '../../src/lib/protocol/messages';
 import { getSessionBroker } from '../../src/lib/sessions/broker';
+import { getRateLimiter } from '../../src/lib/security/rate-limit';
 import { getSessionStore } from '../../src/lib/sessions/store';
 import { invokeTool } from '../../src/lib/tools/invoke';
 import { MockRobloxClient } from '../helpers/mock-roblox-client';
@@ -48,6 +49,11 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.close()));
+  // The gateway allows 30 handshakes per address per minute, which is right for
+  // production and far below what a suite opening dozens of mock clients from
+  // 127.0.0.1 needs. Reset the bucket rather than weakening the real limit.
+  getRateLimiter().reset('ws_handshake', '127.0.0.1');
+  getRateLimiter().reset('ws_handshake', 'unknown');
 });
 
 afterAll(async () => {
@@ -444,6 +450,157 @@ describe('command routing', () => {
     // One client is unambiguous, so the call needs no addressing.
     const result = await invokeTool(session, 'clovyre_get_services', {}, 'mcp');
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('tools that reach across clients', () => {
+  async function twoClients() {
+    const { session, secrets } = newSession();
+    for (const [key, name] of [
+      ['broadcast-key-a', 'Alice'],
+      ['broadcast-key-b', 'Bob'],
+    ] as const) {
+      const client = track(
+        new MockRobloxClient({
+          url: wsUrl,
+          sessionId: session.id,
+          token: secrets.robloxToken,
+          clientKey: key,
+          metadata: { placeId: 1, localPlayer: { name, userId: 1 }, executor: 'Executor' },
+          respond: (command) => ({
+            kind: 'ok',
+            result: { tool: command.tool, answeredBy: name },
+          }),
+        }),
+      );
+      await client.connect();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return session;
+  }
+
+  it('runs a read-only tool on every connected client', async () => {
+    const session = await twoClients();
+
+    const outcome = await invokeTool(
+      session,
+      'clovyre_broadcast_tool',
+      { tool: 'clovyre_get_services', arguments: {} },
+      'mcp',
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      const data = outcome.data as {
+        clientCount: number;
+        succeeded: number;
+        results: Array<{ label: string; ok: boolean; data?: { answeredBy?: string } }>;
+      };
+      expect(data.clientCount).toBe(2);
+      expect(data.succeeded).toBe(2);
+      // Each client answered for itself rather than one answer being reused.
+      expect(data.results.map((entry) => entry.data?.answeredBy).sort()).toEqual(['Alice', 'Bob']);
+    }
+  });
+
+  it('refuses to broadcast anything that can change client state', async () => {
+    const session = await twoClients();
+    getSessionStore().setPrivilege(session, 'mutations', true, 'owner');
+
+    // Even with the grant active, a write is not something to fan out across
+    // several different people's games from one call.
+    const mutation = await invokeTool(
+      session,
+      'clovyre_broadcast_tool',
+      {
+        tool: 'clovyre_set_property',
+        arguments: { path: 'Workspace', property: 'Name', value: 'x' },
+      },
+      'mcp',
+    );
+    expect(mutation.ok).toBe(false);
+    if (!mutation.ok) expect(mutation.message).toMatch(/read-only/i);
+
+    // Local tools would just repeat one backend answer per client.
+    const local = await invokeTool(
+      session,
+      'clovyre_broadcast_tool',
+      { tool: 'clovyre_session_info', arguments: {} },
+      'mcp',
+    );
+    expect(local.ok).toBe(false);
+
+    const unknown = await invokeTool(
+      session,
+      'clovyre_broadcast_tool',
+      { tool: 'clovyre_not_a_tool', arguments: {} },
+      'mcp',
+    );
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.code).toBe('TOOL_NOT_FOUND');
+  });
+
+  it('diffs a subtree between two clients and needs two distinct ones', async () => {
+    const { session, secrets } = newSession();
+    const trees: Record<string, unknown> = {
+      Alice: {
+        displayPath: 'Workspace',
+        className: 'Workspace',
+        children: [{ displayPath: 'Workspace.Shared', className: 'Part' }],
+      },
+      Bob: {
+        displayPath: 'Workspace',
+        className: 'Workspace',
+        children: [
+          { displayPath: 'Workspace.Shared', className: 'Part' },
+          { displayPath: 'Workspace.OnlyBob', className: 'Model' },
+        ],
+      },
+    };
+
+    for (const [key, name] of [
+      ['diff-key-a', 'Alice'],
+      ['diff-key-b', 'Bob'],
+    ] as const) {
+      const client = track(
+        new MockRobloxClient({
+          url: wsUrl,
+          sessionId: session.id,
+          token: secrets.robloxToken,
+          clientKey: key,
+          metadata: { placeId: 1, localPlayer: { name, userId: 1 }, executor: 'Executor' },
+          respond: () => ({ kind: 'ok', result: trees[name] }),
+        }),
+      );
+      await client.connect();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const outcome = await invokeTool(
+      session,
+      'clovyre_compare_clients',
+      { clientA: 'Alice', clientB: 'Bob', path: 'Workspace' },
+      'mcp',
+    );
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      const data = outcome.data as {
+        identical: boolean;
+        onlyInA: string[];
+        onlyInB: string[];
+      };
+      expect(data.identical).toBe(false);
+      expect(data.onlyInB).toContain('Workspace.OnlyBob');
+      expect(data.onlyInA).toEqual([]);
+    }
+
+    const same = await invokeTool(
+      session,
+      'clovyre_compare_clients',
+      { clientA: 'Alice', clientB: 'Alice' },
+      'mcp',
+    );
+    expect(same.ok).toBe(false);
   });
 });
 

@@ -53,6 +53,19 @@ local RunService = game:GetService('RunService')
 local CollectionService = game:GetService('CollectionService')
 local Workspace = game:GetService('Workspace')
 
+--- Optional services. A stripped or unusual client may not expose all of them,
+--- so each is resolved defensively and the handlers that need one say so plainly
+--- rather than erroring.
+local function optionalService(name)
+    local ok, service = pcall(function() return game:GetService(name) end)
+    return ok and service or nil
+end
+
+local Lighting = optionalService('Lighting')
+local SoundService = optionalService('SoundService')
+local Teams = optionalService('Teams')
+local Stats = optionalService('Stats')
+
 --------------------------------------------------------------------------------
 -- Limits
 --------------------------------------------------------------------------------
@@ -65,6 +78,9 @@ local LIMITS = {
     maxPayloadBytes = 400 * 1024,
     maxSourceBytes = 200 * 1024,
     maxLogLines = 400,
+    -- Ceiling on instances visited by a search, so a scan of a large game cannot
+    -- stall the client's frame for an unbounded time.
+    maxScanNodes = 20000,
 }
 
 --------------------------------------------------------------------------------
@@ -1058,6 +1074,267 @@ handlers.get_property = function(args)
     return { instance = summarize(instance), property = property, available = true, value = serialize(value) }
 end
 
+--- Reads several properties from one instance, keeping per-property outcomes.
+local function readRequestedProperties(instance, properties)
+    local values, rejected, unreadable = {}, {}, {}
+    if #properties == 0 then
+        local all, missing = readSafeProperties(instance)
+        return all, rejected, missing
+    end
+    for _, property in ipairs(properties) do
+        local name = tostring(property)
+        if not isSafeProperty(instance, name) then
+            table.insert(rejected, name)
+        else
+            local ok, value = pcall(function() return instance[name] end)
+            if ok then
+                values[name] = serialize(value)
+            else
+                table.insert(unreadable, name)
+            end
+        end
+    end
+    return values, rejected, unreadable
+end
+
+handlers.get_properties = function(args)
+    local properties = type(args.properties) == 'table' and args.properties or {}
+    local results = {}
+    local notFound = {}
+
+    local function collect(selector, target)
+        local instance = resolveTarget(target)
+        if instance == nil then
+            table.insert(notFound, selector)
+            return
+        end
+        local values, rejected, unreadable = readRequestedProperties(instance, properties)
+        table.insert(results, {
+            instance = summarize(instance),
+            properties = values,
+            rejected = rejected,
+            unreadable = unreadable,
+        })
+    end
+
+    for _, ref in ipairs(type(args.refs) == 'table' and args.refs or {}) do
+        collect(ref, { ref = ref })
+    end
+    for _, path in ipairs(type(args.paths) == 'table' and args.paths or {}) do
+        collect(path, { displayPath = path })
+    end
+
+    if #results == 0 and #notFound > 0 then
+        return fail('INSTANCE_NOT_FOUND', 'None of the requested instances could be resolved.')
+    end
+    return { instances = results, notFound = notFound, requested = properties }
+end
+
+--- Compares a serialized property value against the requested criterion.
+local function propertyMatches(value, operator, wanted)
+    if operator == 'exists' then
+        return value ~= nil
+    end
+    if value == nil then
+        return false
+    end
+    -- Serialized tagged values (Vector3, Color3, ...) compare by their text form,
+    -- which is what an agent has to work with anyway.
+    local plain = value
+    if type(plain) == 'table' then
+        plain = plain.text or plain.value or plain.name
+    end
+    if operator == 'equals' then
+        return plain == wanted or tostring(plain) == tostring(wanted)
+    elseif operator == 'notEquals' then
+        return not (plain == wanted or tostring(plain) == tostring(wanted))
+    elseif operator == 'contains' then
+        return string.find(string.lower(tostring(plain)), string.lower(tostring(wanted)), 1, true) ~= nil
+    elseif operator == 'greaterThan' then
+        local a, b = tonumber(plain), tonumber(wanted)
+        return a ~= nil and b ~= nil and a > b
+    elseif operator == 'lessThan' then
+        local a, b = tonumber(plain), tonumber(wanted)
+        return a ~= nil and b ~= nil and a < b
+    end
+    return false
+end
+
+handlers.search_properties = function(args)
+    local property = tostring(args.property or '')
+    if property == '' then
+        return fail('INVALID_ARGUMENTS', 'A property name is required.')
+    end
+
+    local root = Workspace
+    if args.root ~= nil then
+        local resolved = resolveTarget({ displayPath = args.root })
+        if resolved == nil then
+            return fail('INSTANCE_NOT_FOUND', 'The search root could not be resolved.')
+        end
+        root = resolved
+    end
+
+    local operator = tostring(args.operator or 'equals')
+    local maxResults = math.min(math.max(tonumber(args.maxResults) or 50, 1), 200)
+    local maxDepth = math.min(math.max(tonumber(args.maxDepth) or 8, 1), 16)
+    local classFilter = type(args.classNames) == 'table' and args.classNames or {}
+
+    local matches = {}
+    local scanned = 0
+    local truncated = false
+
+    local function visit(instance, depth)
+        if truncated or depth > maxDepth then return end
+        local okChildren, children = pcall(function() return instance:GetChildren() end)
+        if not okChildren then return end
+        for _, child in ipairs(children) do
+            if truncated then return end
+            scanned = scanned + 1
+            if scanned > LIMITS.maxScanNodes then
+                truncated = true
+                return
+            end
+            if matchesClassFilter(child, classFilter) and isSafeProperty(child, property) then
+                local ok, value = pcall(function() return child[property] end)
+                if ok and propertyMatches(serialize(value), operator, args.value) then
+                    table.insert(matches, {
+                        instance = summarize(child),
+                        value = serialize(value),
+                    })
+                    if #matches >= maxResults then
+                        truncated = true
+                        return
+                    end
+                end
+            end
+            visit(child, depth + 1)
+        end
+    end
+
+    visit(root, 1)
+    return {
+        root = summarize(root),
+        property = property,
+        operator = operator,
+        matches = matches,
+        matchCount = #matches,
+        scanned = scanned,
+        truncated = truncated,
+    }
+end
+
+local REMOTE_CLASSES = {
+    RemoteEvent = true,
+    RemoteFunction = true,
+    UnreliableRemoteEvent = true,
+}
+
+handlers.list_remotes = function(args)
+    local root = game
+    if args.root ~= nil then
+        local resolved = resolveTarget({ displayPath = args.root })
+        if resolved == nil then
+            return fail('INSTANCE_NOT_FOUND', 'The search root could not be resolved.')
+        end
+        root = resolved
+    end
+
+    local maxResults = math.min(math.max(tonumber(args.maxResults) or 200, 1), 500)
+    local maxDepth = math.min(math.max(tonumber(args.maxDepth) or 10, 1), 16)
+
+    local remotes = {}
+    local scanned = 0
+    local truncated = false
+
+    local function visit(instance, depth)
+        if truncated or depth > maxDepth then return end
+        local okChildren, children = pcall(function() return instance:GetChildren() end)
+        if not okChildren then return end
+        for _, child in ipairs(children) do
+            if truncated then return end
+            scanned = scanned + 1
+            if scanned > LIMITS.maxScanNodes then
+                truncated = true
+                return
+            end
+            local okClass, className = pcall(function() return child.ClassName end)
+            if okClass and REMOTE_CLASSES[className] then
+                local parent = summarize(child).path
+                table.insert(remotes, {
+                    instance = summarize(child),
+                    className = className,
+                    parentPath = parent,
+                })
+                if #remotes >= maxResults then
+                    truncated = true
+                    return
+                end
+            end
+            visit(child, depth + 1)
+        end
+    end
+
+    visit(root, 1)
+    return {
+        root = summarize(root),
+        remotes = remotes,
+        count = #remotes,
+        scanned = scanned,
+        truncated = truncated,
+        note = 'Clovyre lists remotes so you can read the game\'s interface to its server. It provides no way to fire one.',
+    }
+end
+
+handlers.get_ancestors = function(args)
+    local instance, err = requireTarget(args)
+    if not instance then return nil, err end
+
+    local ancestors = {}
+    local current = instance
+    local guard = 0
+    while guard < 64 do
+        guard = guard + 1
+        local okParent, parent = pcall(function() return current.Parent end)
+        if not okParent or parent == nil then break end
+        table.insert(ancestors, summarize(parent))
+        current = parent
+    end
+
+    return { instance = summarize(instance), ancestors = ancestors, depth = #ancestors }
+end
+
+handlers.get_tag_index = function(args)
+    local samplesPerTag = math.min(math.max(tonumber(args.samplesPerTag) or 3, 0), 10)
+    local maxTags = math.min(math.max(tonumber(args.maxTags) or 80, 1), 200)
+
+    local okTags, allTags = pcall(function() return CollectionService:GetAllTags() end)
+    if not okTags or type(allTags) ~= 'table' then
+        return fail(
+            'CAPABILITY_UNAVAILABLE',
+            'This client does not expose CollectionService:GetAllTags().'
+        )
+    end
+
+    local tags = {}
+    for index, tag in ipairs(allTags) do
+        if index > maxTags then break end
+        local okTagged, tagged = pcall(function() return CollectionService:GetTagged(tag) end)
+        local entry = { tag = tag, count = 0, samples = {} }
+        if okTagged and type(tagged) == 'table' then
+            entry.count = #tagged
+            for sampleIndex, instance in ipairs(tagged) do
+                if sampleIndex > samplesPerTag then break end
+                table.insert(entry.samples, summarize(instance))
+            end
+        end
+        table.insert(tags, entry)
+    end
+
+    table.sort(tags, function(a, b) return a.count > b.count end)
+    return { tags = tags, tagCount = #allTags, truncated = #allTags > maxTags }
+end
+
 handlers.get_instance_tree = function(args)
     local root, err = requireTarget(args)
     if not root then return nil, err end
@@ -1490,6 +1767,442 @@ handlers.get_camera = function()
     return result
 end
 
+--- Current camera, or nil on a client that has none yet.
+local function currentCamera()
+    local ok, camera = pcall(function() return Workspace.CurrentCamera end)
+    return ok and camera or nil
+end
+
+local function localCharacter()
+    local player = Players.LocalPlayer
+    local ok, character = pcall(function() return player and player.Character or nil end)
+    return ok and character or nil
+end
+
+--- Resolves the anchor point for the spatial handlers.
+local function anchorPosition(mode, explicit)
+    if mode == 'point' then
+        if type(explicit) ~= 'table' or #explicit < 3 then
+            return nil, 'Provide "point" as [x, y, z] when using point mode.'
+        end
+        return Vector3.new(explicit[1], explicit[2], explicit[3])
+    end
+    if mode == 'camera' then
+        local camera = currentCamera()
+        if camera == nil then return nil, 'This client has no current camera.' end
+        return camera.CFrame.Position
+    end
+    local character = localCharacter()
+    if character == nil then return nil, 'The local character is not spawned.' end
+    local ok, root = pcall(function()
+        return character:FindFirstChild('HumanoidRootPart') or character.PrimaryPart
+    end)
+    if not ok or root == nil then return nil, 'The character has no root part yet.' end
+    return root.Position
+end
+
+handlers.raycast = function(args)
+    local mode = tostring(args.from or 'camera')
+    local maxDistance = math.min(math.max(tonumber(args.maxDistance) or 500, 1), 10000)
+
+    local origin, originError
+    if args.origin ~= nil and type(args.origin) == 'table' and #args.origin >= 3 then
+        origin = Vector3.new(args.origin[1], args.origin[2], args.origin[3])
+    else
+        origin, originError = anchorPosition(mode == 'point' and 'camera' or mode, nil)
+        if origin == nil then
+            return fail('INSTANCE_NOT_FOUND', originError)
+        end
+    end
+
+    local direction
+    if type(args.direction) == 'table' and #args.direction >= 3 then
+        direction = Vector3.new(args.direction[1], args.direction[2], args.direction[3])
+        if direction.Magnitude > 0 then
+            direction = direction.Unit * maxDistance
+        end
+    else
+        local camera = currentCamera()
+        if camera == nil then
+            return fail('INVALID_ARGUMENTS', 'No direction was given and this client has no camera to take one from.')
+        end
+        direction = camera.CFrame.LookVector * maxDistance
+    end
+
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    if args.ignoreCharacter ~= false then
+        local character = localCharacter()
+        params.FilterDescendantsInstances = character and { character } or {}
+    end
+
+    local ok, result = pcall(function()
+        return Workspace:Raycast(origin, direction, params)
+    end)
+    if not ok then
+        return fail('CAPABILITY_UNAVAILABLE', 'Workspace:Raycast is not available on this client.')
+    end
+    if result == nil then
+        return {
+            hit = false,
+            origin = serialize(origin),
+            direction = serialize(direction),
+            maxDistance = maxDistance,
+            note = 'The ray reached its maximum distance without hitting anything.',
+        }
+    end
+
+    return {
+        hit = true,
+        instance = summarize(result.Instance),
+        position = serialize(result.Position),
+        normal = serialize(result.Normal),
+        distance = (result.Position - origin).Magnitude,
+        material = tostring(result.Material),
+        origin = serialize(origin),
+    }
+end
+
+handlers.query_region = function(args)
+    local mode = tostring(args.around or 'character')
+    local centre, centreError = anchorPosition(mode, args.point)
+    if centre == nil then
+        return fail('INSTANCE_NOT_FOUND', centreError)
+    end
+
+    local radius = math.min(math.max(tonumber(args.radius) or 50, 1), 2000)
+    local maxResults = math.min(math.max(tonumber(args.maxResults) or 60, 1), 300)
+    local classFilter = type(args.classNames) == 'table' and args.classNames or {}
+
+    local okDescendants, descendants = pcall(function() return Workspace:GetDescendants() end)
+    if not okDescendants then
+        return fail('INSTANCE_NOT_FOUND', 'The workspace could not be read.')
+    end
+
+    local found = {}
+    local scanned = 0
+    local truncated = false
+    for _, instance in ipairs(descendants) do
+        scanned = scanned + 1
+        if scanned > LIMITS.maxScanNodes then
+            truncated = true
+            break
+        end
+        local okPosition, position = pcall(function() return instance.Position end)
+        if okPosition and typeof(position) == 'Vector3' then
+            if #classFilter == 0 or matchesClassFilter(instance, classFilter) then
+                local distance = (position - centre).Magnitude
+                if distance <= radius then
+                    table.insert(found, {
+                        instance = summarize(instance),
+                        distance = distance,
+                        position = serialize(position),
+                    })
+                end
+            end
+        end
+    end
+
+    table.sort(found, function(a, b) return a.distance < b.distance end)
+    local trimmed = {}
+    for index, entry in ipairs(found) do
+        if index > maxResults then
+            truncated = true
+            break
+        end
+        table.insert(trimmed, entry)
+    end
+
+    return {
+        centre = serialize(centre),
+        radius = radius,
+        parts = trimmed,
+        count = #trimmed,
+        totalWithinRadius = #found,
+        scanned = scanned,
+        truncated = truncated,
+    }
+end
+
+handlers.get_stats = function()
+    local result = { available = Stats ~= nil }
+    if Stats == nil then
+        result.note = 'This client does not expose the Stats service.'
+        return result
+    end
+
+    local function statValue(getter)
+        local ok, value = pcall(getter)
+        return ok and value or nil
+    end
+
+    result.frameRatePerSecond = statValue(function()
+        return math.floor(1 / math.max(RunService.RenderStepped:Wait(), 0.0001))
+    end)
+    result.heartbeatTimeMs = statValue(function() return Stats.HeartbeatTimeMs end)
+    result.physicsStepTimeMs = statValue(function() return Stats.PhysicsStepTimeMs end)
+    result.dataReceiveKbps = statValue(function() return Stats.DataReceiveKbps end)
+    result.dataSendKbps = statValue(function() return Stats.DataSendKbps end)
+    result.totalMemoryMb = statValue(function() return Stats:GetTotalMemoryUsageMb() end)
+    result.instanceCount = statValue(function() return Stats.InstanceCount end)
+    result.movingPrimitivesCount = statValue(function() return Stats.MovingPrimitivesCount end)
+    result.primitivesCount = statValue(function() return Stats.PrimitivesCount end)
+    result.ping = statValue(function()
+        return Stats.Network.ServerStatsItem['Data Ping']:GetValue()
+    end)
+    return result
+end
+
+handlers.get_teams = function()
+    if Teams == nil then
+        return { available = false, teams = {}, note = 'This client does not expose the Teams service.' }
+    end
+    local okTeams, teamList = pcall(function() return Teams:GetTeams() end)
+    if not okTeams then
+        return { available = false, teams = {}, note = 'The Teams service could not be read.' }
+    end
+
+    local teams = {}
+    for _, team in ipairs(teamList) do
+        local entry = { instance = summarize(team), members = {} }
+        local okName, name = pcall(function() return team.Name end)
+        entry.name = okName and name or '?'
+        local okColour, colour = pcall(function() return team.TeamColor end)
+        entry.teamColor = okColour and tostring(colour) or nil
+        local okPlayers, members = pcall(function() return team:GetPlayers() end)
+        if okPlayers then
+            for _, player in ipairs(members) do
+                local okPlayerName, playerName = pcall(function() return player.Name end)
+                table.insert(entry.members, okPlayerName and playerName or '?')
+            end
+        end
+        table.insert(teams, entry)
+    end
+    return { available = true, teams = teams, count = #teams }
+end
+
+handlers.get_leaderstats = function(args)
+    local wanted = args.playerName ~= nil and tostring(args.playerName) or nil
+    local maxPlayers = math.min(math.max(tonumber(args.maxPlayers) or 50, 1), 100)
+
+    local okPlayers, players = pcall(function() return Players:GetPlayers() end)
+    if not okPlayers then
+        return fail('INSTANCE_NOT_FOUND', 'The player list could not be read.')
+    end
+
+    local rows = {}
+    for _, player in ipairs(players) do
+        if #rows >= maxPlayers then break end
+        local okName, name = pcall(function() return player.Name end)
+        name = okName and name or '?'
+        if wanted == nil or name == wanted then
+            local row = { player = name, stats = {}, hasLeaderstats = false }
+            local okStats, leaderstats = pcall(function()
+                return player:FindFirstChild('leaderstats')
+            end)
+            if okStats and leaderstats ~= nil then
+                row.hasLeaderstats = true
+                local okChildren, children = pcall(function() return leaderstats:GetChildren() end)
+                if okChildren then
+                    for _, stat in ipairs(children) do
+                        local okStatName, statName = pcall(function() return stat.Name end)
+                        local okValue, value = pcall(function() return stat.Value end)
+                        if okStatName then
+                            row.stats[statName] = okValue and serialize(value) or nil
+                        end
+                    end
+                end
+            end
+            table.insert(rows, row)
+        end
+    end
+
+    if wanted ~= nil and #rows == 0 then
+        return fail('INSTANCE_NOT_FOUND', 'No player named "' .. wanted .. '" is in this server.')
+    end
+    return { players = rows, count = #rows }
+end
+
+handlers.get_backpack = function(args)
+    local player = Players.LocalPlayer
+    if player == nil then
+        return fail('INSTANCE_NOT_FOUND', 'There is no local player on this client.')
+    end
+    local includeProperties = args.includeProperties == true
+
+    local function describeTool(tool)
+        local entry = { instance = summarize(tool) }
+        if includeProperties then
+            entry.properties = readSafeProperties(tool)
+        end
+        return entry
+    end
+
+    local carried = {}
+    local okBackpack, backpack = pcall(function()
+        return player:FindFirstChildOfClass('Backpack')
+    end)
+    if okBackpack and backpack ~= nil then
+        local okChildren, children = pcall(function() return backpack:GetChildren() end)
+        if okChildren then
+            for _, child in ipairs(children) do
+                local okClass, className = pcall(function() return child.ClassName end)
+                if okClass and className == 'Tool' then
+                    table.insert(carried, describeTool(child))
+                end
+            end
+        end
+    end
+
+    local equipped = nil
+    local character = localCharacter()
+    if character ~= nil then
+        local okEquipped, tool = pcall(function()
+            return character:FindFirstChildOfClass('Tool')
+        end)
+        if okEquipped and tool ~= nil then
+            equipped = describeTool(tool)
+        end
+    end
+
+    return { backpack = carried, backpackCount = #carried, equipped = equipped }
+end
+
+handlers.get_lighting = function()
+    if Lighting == nil then
+        return { available = false, note = 'This client does not expose the Lighting service.' }
+    end
+
+    local result = { available = true, lighting = readSafeProperties(Lighting), effects = {} }
+    local okChildren, children = pcall(function() return Lighting:GetChildren() end)
+    if okChildren then
+        for index, child in ipairs(children) do
+            if index > 60 then break end
+            table.insert(result.effects, {
+                instance = summarize(child),
+                properties = readSafeProperties(child),
+            })
+        end
+    end
+    return result
+end
+
+handlers.get_sounds = function(args)
+    local includeStopped = args.includeStopped == true
+    local maxResults = math.min(math.max(tonumber(args.maxResults) or 60, 1), 200)
+
+    local roots = { Workspace }
+    if SoundService ~= nil then table.insert(roots, SoundService) end
+    local player = Players.LocalPlayer
+    local okGui, playerGui = pcall(function()
+        return player and player:FindFirstChildOfClass('PlayerGui') or nil
+    end)
+    if okGui and playerGui ~= nil then table.insert(roots, playerGui) end
+
+    local sounds = {}
+    local scanned = 0
+    local truncated = false
+
+    for _, root in ipairs(roots) do
+        if truncated then break end
+        local okDescendants, descendants = pcall(function() return root:GetDescendants() end)
+        if okDescendants then
+            for _, instance in ipairs(descendants) do
+                scanned = scanned + 1
+                if scanned > LIMITS.maxScanNodes then
+                    truncated = true
+                    break
+                end
+                local okClass, className = pcall(function() return instance.ClassName end)
+                if okClass and className == 'Sound' then
+                    local okPlaying, isPlaying = pcall(function() return instance.IsPlaying end)
+                    if includeStopped or (okPlaying and isPlaying) then
+                        local function read(name)
+                            local ok, value = pcall(function() return instance[name] end)
+                            return ok and value or nil
+                        end
+                        table.insert(sounds, {
+                            instance = summarize(instance),
+                            playing = okPlaying and isPlaying or false,
+                            soundId = read('SoundId'),
+                            volume = read('Volume'),
+                            timePosition = read('TimePosition'),
+                            looped = read('Looped'),
+                        })
+                        if #sounds >= maxResults then
+                            truncated = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return { sounds = sounds, count = #sounds, scanned = scanned, truncated = truncated }
+end
+
+handlers.get_animations = function(args)
+    local character
+    if args.playerName ~= nil then
+        local okPlayer, player = pcall(function()
+            return Players:FindFirstChild(tostring(args.playerName))
+        end)
+        if not okPlayer or player == nil then
+            return fail('INSTANCE_NOT_FOUND', 'No player named "' .. tostring(args.playerName) .. '" is in this server.')
+        end
+        local okCharacter, found = pcall(function() return player.Character end)
+        character = okCharacter and found or nil
+    else
+        character = localCharacter()
+    end
+
+    if character == nil then
+        return fail('INSTANCE_NOT_FOUND', 'That character is not spawned.')
+    end
+
+    local okHumanoid, humanoid = pcall(function()
+        return character:FindFirstChildOfClass('Humanoid')
+    end)
+    if not okHumanoid or humanoid == nil then
+        return fail('INSTANCE_NOT_FOUND', 'That character has no Humanoid.')
+    end
+
+    local okAnimator, animator = pcall(function()
+        return humanoid:FindFirstChildOfClass('Animator')
+    end)
+    local source = (okAnimator and animator) or humanoid
+
+    local okTracks, tracks = pcall(function() return source:GetPlayingAnimationTracks() end)
+    if not okTracks then
+        return fail('CAPABILITY_UNAVAILABLE', 'This client does not expose GetPlayingAnimationTracks.')
+    end
+
+    local playing = {}
+    for index, track in ipairs(tracks) do
+        if index > 60 then break end
+        local function read(name)
+            local ok, value = pcall(function() return track[name] end)
+            return ok and value or nil
+        end
+        local okAnimation, animation = pcall(function() return track.Animation end)
+        table.insert(playing, {
+            name = read('Name'),
+            animationId = (okAnimation and animation) and select(2, pcall(function()
+                return animation.AnimationId
+            end)) or nil,
+            isPlaying = read('IsPlaying'),
+            speed = read('Speed'),
+            weight = read('WeightCurrent'),
+            timePosition = read('TimePosition'),
+            looped = read('Looped'),
+            priority = tostring(read('Priority') or ''),
+        })
+    end
+
+    return { character = summarize(character), tracks = playing, count = #playing }
+end
+
 handlers.get_workspace_summary = function(args)
     local maxClasses = math.min(math.max(tonumber(args.maxClasses) or 25, 1), 60)
 
@@ -1734,6 +2447,171 @@ handlers.inspect_environment = function(args)
     }
 end
 
+--- Resolves the PlayerGui, which most GUI handlers start from.
+local function playerGuiRoot()
+    local player = Players.LocalPlayer
+    local ok, gui = pcall(function()
+        return player and player:FindFirstChildOfClass('PlayerGui') or nil
+    end)
+    return ok and gui or nil
+end
+
+--- True when an element and every ancestor up to the root is visible/enabled.
+local function guiEffectivelyVisible(instance)
+    local current = instance
+    local guard = 0
+    while current ~= nil and guard < 64 do
+        guard = guard + 1
+        local okVisible, visible = pcall(function() return current.Visible end)
+        if okVisible and visible == false then return false end
+        local okEnabled, enabled = pcall(function() return current.Enabled end)
+        if okEnabled and enabled == false then return false end
+        local okParent, parent = pcall(function() return current.Parent end)
+        if not okParent then return true end
+        current = parent
+    end
+    return true
+end
+
+local function guiText(instance)
+    local ok, text = pcall(function() return instance.Text end)
+    if ok and type(text) == 'string' then return text end
+    local okContent, content = pcall(function() return instance.ContentText end)
+    if okContent and type(content) == 'string' then return content end
+    return nil
+end
+
+--- Absolute Y then X, so results read in roughly the order a person sees them.
+local function guiScreenOrder(a, b)
+    return (a.y == b.y) and (a.x < b.x) or (a.y < b.y)
+end
+
+local function guiPosition(instance)
+    local ok, position = pcall(function() return instance.AbsolutePosition end)
+    if ok and position then return position.X, position.Y end
+    return 0, 0
+end
+
+handlers.find_gui_elements = function(args)
+    local root = playerGuiRoot()
+    if root == nil then
+        return fail('INSTANCE_NOT_FOUND', 'There is no PlayerGui on this client.')
+    end
+
+    local query = args.query ~= nil and string.lower(tostring(args.query)) or nil
+    local wantedText = args.text ~= nil and string.lower(tostring(args.text)) or nil
+    local visibleOnly = args.visibleOnly ~= false
+    local classFilter = type(args.classNames) == 'table' and args.classNames or {}
+    local maxResults = math.min(math.max(tonumber(args.maxResults) or 50, 1), 200)
+
+    if query == nil and wantedText == nil and #classFilter == 0 then
+        return fail('INVALID_ARGUMENTS', 'Provide "query", "text" or "classNames" to search for.')
+    end
+
+    local okDescendants, descendants = pcall(function() return root:GetDescendants() end)
+    if not okDescendants then
+        return fail('INSTANCE_NOT_FOUND', 'The GUI tree could not be read.')
+    end
+
+    local matches = {}
+    local truncated = false
+    for index, instance in ipairs(descendants) do
+        if index > LIMITS.maxScanNodes then
+            truncated = true
+            break
+        end
+        local okName, name = pcall(function() return instance.Name end)
+        local text = guiText(instance)
+        local nameHit = query ~= nil and okName
+            and string.find(string.lower(name), query, 1, true) ~= nil
+        local textHit = wantedText ~= nil and text ~= nil
+            and string.find(string.lower(text), wantedText, 1, true) ~= nil
+        local classHit = #classFilter > 0 and matchesClassFilter(instance, classFilter)
+
+        local hit = nameHit or textHit or classHit
+        -- With only a class filter given, the class alone decides.
+        if #classFilter > 0 and not matchesClassFilter(instance, classFilter) then
+            hit = false
+        end
+
+        if hit and (not visibleOnly or guiEffectivelyVisible(instance)) then
+            local x, y = guiPosition(instance)
+            table.insert(matches, {
+                instance = summarize(instance),
+                text = text,
+                visible = guiEffectivelyVisible(instance),
+                x = x,
+                y = y,
+            })
+            if #matches >= maxResults then
+                truncated = true
+                break
+            end
+        end
+    end
+
+    table.sort(matches, guiScreenOrder)
+    return { matches = matches, count = #matches, truncated = truncated }
+end
+
+handlers.get_screen_text = function(args)
+    local root = playerGuiRoot()
+    if root == nil then
+        return fail('INSTANCE_NOT_FOUND', 'There is no PlayerGui on this client.')
+    end
+
+    local visibleOnly = args.visibleOnly ~= false
+    local includeEmpty = args.includeEmpty == true
+    local maxResults = math.min(math.max(tonumber(args.maxResults) or 150, 1), 400)
+
+    local okDescendants, descendants = pcall(function() return root:GetDescendants() end)
+    if not okDescendants then
+        return fail('INSTANCE_NOT_FOUND', 'The GUI tree could not be read.')
+    end
+
+    local entries = {}
+    local truncated = false
+    for index, instance in ipairs(descendants) do
+        if index > LIMITS.maxScanNodes then
+            truncated = true
+            break
+        end
+        local text = guiText(instance)
+        if text ~= nil and (includeEmpty or text ~= '') then
+            if not visibleOnly or guiEffectivelyVisible(instance) then
+                local x, y = guiPosition(instance)
+                table.insert(entries, {
+                    text = text,
+                    path = summarize(instance).displayPath,
+                    ref = refFor(instance),
+                    x = x,
+                    y = y,
+                })
+                if #entries >= maxResults then
+                    truncated = true
+                    break
+                end
+            end
+        end
+    end
+
+    table.sort(entries, guiScreenOrder)
+
+    local lines = {}
+    for _, entry in ipairs(entries) do
+        table.insert(lines, entry.text)
+    end
+
+    return {
+        entries = entries,
+        count = #entries,
+        truncated = truncated,
+        -- The joined form is what an agent usually wants to read.
+        text = table.concat(lines, '\n'),
+        note = 'Clovyre cannot capture pixels. This is the text the GUI holds, in rough screen order.',
+    }
+end
+
 handlers.get_gui_tree = function(args)
     local root
     if args.root ~= nil then
@@ -1886,6 +2764,222 @@ local function stopWatch(watchId)
     end
     watches[watchId] = nil
     return true
+end
+
+--- Blocks the calling coroutine until `predicate` returns true or time runs out.
+--- Polling only happens as a fallback for conditions with no signal; the signal
+--- path resumes immediately, which is the whole point of the tool.
+local function awaitSignal(signal, timeoutSeconds, onFire)
+    local finished = false
+    local outcome = nil
+    local connection
+
+    if signal ~= nil then
+        local okConnect, connected = pcall(function()
+            return signal:Connect(function(...)
+                if finished then return end
+                local produced = onFire(...)
+                if produced ~= nil then
+                    outcome = produced
+                    finished = true
+                end
+            end)
+        end)
+        connection = okConnect and connected or nil
+    end
+
+    local deadline = os.clock() + timeoutSeconds
+    while not finished and os.clock() < deadline do
+        RunService.Heartbeat:Wait()
+    end
+
+    if connection ~= nil then
+        pcall(function() connection:Disconnect() end)
+    end
+    return outcome
+end
+
+handlers.wait_for = function(args)
+    local instance, err = requireTarget(args)
+    if not instance then return nil, err end
+
+    local condition = tostring(args.condition or 'propertyChanged')
+    local timeoutSeconds = math.min(math.max(tonumber(args.timeoutSeconds) or 10, 1), 25)
+    local startedAt = os.clock()
+
+    local function elapsed()
+        return os.clock() - startedAt
+    end
+
+    if condition == 'propertyChanged' then
+        local property = args.property
+        if type(property) ~= 'string' or property == '' then
+            return fail('INVALID_ARGUMENTS', 'Waiting on a property requires a "property" name.')
+        end
+        if not isSafeProperty(instance, property) then
+            return fail(
+                'PROPERTY_NOT_ALLOWED',
+                'Property "' .. property .. '" is not in the Clovyre safe-property registry for this class.'
+            )
+        end
+
+        local function currentValue()
+            local ok, value = pcall(function() return instance[property] end)
+            return ok and serialize(value) or nil
+        end
+
+        local before = currentValue()
+
+        -- When a specific value is requested and it is already set, the wait is
+        -- already satisfied; blocking for a change that happened before the call
+        -- would be a bug, not a wait.
+        if args.hasEquals == true and propertyMatches(before, 'equals', args.equals) then
+            return {
+                timedOut = false,
+                condition = condition,
+                instance = summarize(instance),
+                property = property,
+                value = before,
+                waitedSeconds = 0,
+                note = 'The property already held the requested value.',
+            }
+        end
+
+        local okSignal, signal = pcall(function()
+            return instance:GetPropertyChangedSignal(property)
+        end)
+
+        local result = awaitSignal(okSignal and signal or nil, timeoutSeconds, function()
+            local value = currentValue()
+            if args.hasEquals == true and not propertyMatches(value, 'equals', args.equals) then
+                return nil
+            end
+            return { value = value }
+        end)
+
+        if result == nil then
+            return {
+                timedOut = true,
+                condition = condition,
+                instance = summarize(instance),
+                property = property,
+                value = currentValue(),
+                previousValue = before,
+                waitedSeconds = elapsed(),
+            }
+        end
+        return {
+            timedOut = false,
+            condition = condition,
+            instance = summarize(instance),
+            property = property,
+            previousValue = before,
+            value = result.value,
+            waitedSeconds = elapsed(),
+        }
+    elseif condition == 'childAdded' then
+        local wantedName = args.childName ~= nil and tostring(args.childName) or nil
+
+        if wantedName ~= nil then
+            local okExisting, existing = pcall(function()
+                return instance:FindFirstChild(wantedName)
+            end)
+            if okExisting and existing ~= nil then
+                return {
+                    timedOut = false,
+                    condition = condition,
+                    instance = summarize(instance),
+                    child = summarize(existing),
+                    waitedSeconds = 0,
+                    note = 'A child with that name was already present.',
+                }
+            end
+        end
+
+        local okSignal, signal = pcall(function() return instance.ChildAdded end)
+        local result = awaitSignal(okSignal and signal or nil, timeoutSeconds, function(child)
+            if child == nil then return nil end
+            if wantedName ~= nil then
+                local okName, name = pcall(function() return child.Name end)
+                if not okName or name ~= wantedName then return nil end
+            end
+            return { child = summarize(child) }
+        end)
+
+        if result == nil then
+            return {
+                timedOut = true,
+                condition = condition,
+                instance = summarize(instance),
+                waitedSeconds = elapsed(),
+            }
+        end
+        return {
+            timedOut = false,
+            condition = condition,
+            instance = summarize(instance),
+            child = result.child,
+            waitedSeconds = elapsed(),
+        }
+    elseif condition == 'attributeChanged' then
+        local attribute = args.attribute
+        if type(attribute) ~= 'string' or attribute == '' then
+            return fail('INVALID_ARGUMENTS', 'Waiting on an attribute requires an "attribute" name.')
+        end
+
+        local function currentAttribute()
+            local ok, value = pcall(function() return instance:GetAttribute(attribute) end)
+            return ok and serialize(value) or nil
+        end
+
+        local before = currentAttribute()
+        if args.hasEquals == true and propertyMatches(before, 'equals', args.equals) then
+            return {
+                timedOut = false,
+                condition = condition,
+                instance = summarize(instance),
+                attribute = attribute,
+                value = before,
+                waitedSeconds = 0,
+                note = 'The attribute already held the requested value.',
+            }
+        end
+
+        local okSignal, signal = pcall(function()
+            return instance:GetAttributeChangedSignal(attribute)
+        end)
+
+        local result = awaitSignal(okSignal and signal or nil, timeoutSeconds, function()
+            local value = currentAttribute()
+            if args.hasEquals == true and not propertyMatches(value, 'equals', args.equals) then
+                return nil
+            end
+            return { value = value }
+        end)
+
+        if result == nil then
+            return {
+                timedOut = true,
+                condition = condition,
+                instance = summarize(instance),
+                attribute = attribute,
+                value = currentAttribute(),
+                previousValue = before,
+                waitedSeconds = elapsed(),
+            }
+        end
+        return {
+            timedOut = false,
+            condition = condition,
+            instance = summarize(instance),
+            attribute = attribute,
+            previousValue = before,
+            value = result.value,
+            waitedSeconds = elapsed(),
+        }
+    end
+
+    return fail('INVALID_ARGUMENTS', 'Unknown wait condition "' .. condition .. '".')
 end
 
 handlers.watch_start = function(args)
@@ -2291,6 +3385,208 @@ handlers.set_property = function(args)
         previous = previousOk and serialize(previous) or nil,
         current = serialize(instance[property]),
         note = 'This changed local client state only. The Roblox server remains authoritative.',
+    }
+end
+
+handlers.set_properties = function(args)
+    local instance, err = requireTarget(args)
+    if not instance then return nil, err end
+
+    local requested = type(args.properties) == 'table' and args.properties or {}
+    if #requested == 0 then
+        return fail('INVALID_ARGUMENTS', 'No properties were supplied.')
+    end
+
+    -- Each write reports its own outcome. One rejected property should not throw
+    -- away the writes that did land, and the caller needs to know which is which.
+    local results = {}
+    local written, failed = 0, 0
+
+    for _, entry in ipairs(requested) do
+        local property = tostring(entry.property or '')
+        if not isSafeProperty(instance, property) then
+            failed = failed + 1
+            table.insert(results, {
+                property = property,
+                ok = false,
+                code = 'PROPERTY_NOT_ALLOWED',
+                message = 'Property "' .. property .. '" is not writable through Clovyre.',
+            })
+        else
+            local previousOk, previous = pcall(function() return instance[property] end)
+            local ok, writeError = pcall(function()
+                instance[property] = deserializeValue(entry.value)
+            end)
+            if ok then
+                written = written + 1
+                local currentOk, current = pcall(function() return instance[property] end)
+                table.insert(results, {
+                    property = property,
+                    ok = true,
+                    previous = previousOk and serialize(previous) or nil,
+                    current = currentOk and serialize(current) or nil,
+                })
+            else
+                failed = failed + 1
+                table.insert(results, {
+                    property = property,
+                    ok = false,
+                    code = 'INTERNAL_ERROR',
+                    message = tostring(writeError),
+                })
+            end
+        end
+    end
+
+    return {
+        instance = summarize(instance),
+        results = results,
+        written = written,
+        failed = failed,
+        note = 'This changed local client state only. The Roblox server remains authoritative.',
+    }
+end
+
+handlers.clone_instance = function(args)
+    local instance, err = requireTarget(args)
+    if not instance then return nil, err end
+
+    local okArchivable, archivable = pcall(function() return instance.Archivable end)
+    if okArchivable and archivable == false then
+        return fail(
+            'INVALID_ARGUMENTS',
+            'This instance has Archivable false, so Roblox will not clone it.'
+        )
+    end
+
+    local parent = nil
+    if args.parentRef ~= nil or args.parentPath ~= nil then
+        parent = resolveTarget({ ref = args.parentRef, displayPath = args.parentPath })
+        if parent == nil then
+            return fail('INSTANCE_NOT_FOUND', 'The requested parent could not be resolved.')
+        end
+    else
+        local okParent, existing = pcall(function() return instance.Parent end)
+        parent = okParent and existing or nil
+    end
+
+    local okClone, clone = pcall(function() return instance:Clone() end)
+    if not okClone or clone == nil then
+        return fail('INTERNAL_ERROR', 'The instance could not be cloned.')
+    end
+
+    if args.name ~= nil then
+        pcall(function() clone.Name = tostring(args.name) end)
+    end
+
+    local okParented, parentError = pcall(function() clone.Parent = parent end)
+    if not okParented then
+        pcall(function() clone:Destroy() end)
+        return fail('INTERNAL_ERROR', 'The clone could not be parented: ' .. tostring(parentError))
+    end
+
+    return {
+        source = summarize(instance),
+        clone = summarize(clone),
+        parent = parent and summarize(parent) or nil,
+        note = 'The copy exists on this client only. The Roblox server knows nothing about it.',
+    }
+end
+
+handlers.set_tag = function(args)
+    local instance, err = requireTarget(args)
+    if not instance then return nil, err end
+
+    local tag = tostring(args.tag or '')
+    if tag == '' then
+        return fail('INVALID_ARGUMENTS', 'A tag name is required.')
+    end
+
+    local add = args.add ~= false
+    local ok, tagError = pcall(function()
+        if add then
+            CollectionService:AddTag(instance, tag)
+        else
+            CollectionService:RemoveTag(instance, tag)
+        end
+    end)
+    if not ok then
+        return fail('INTERNAL_ERROR', 'The tag could not be changed: ' .. tostring(tagError))
+    end
+
+    local okTags, tags = pcall(function() return CollectionService:GetTags(instance) end)
+    return {
+        instance = summarize(instance),
+        tag = tag,
+        added = add,
+        tags = okTags and tags or nil,
+        note = 'Tags set here exist on this client only.',
+    }
+end
+
+handlers.set_camera = function(args)
+    local camera = currentCamera()
+    if camera == nil then
+        return fail('INSTANCE_NOT_FOUND', 'This client has no current camera.')
+    end
+
+    local changed = {}
+
+    if args.cameraType ~= nil then
+        local ok = pcall(function()
+            camera.CameraType = Enum.CameraType[tostring(args.cameraType)]
+        end)
+        if ok then table.insert(changed, 'CameraType') end
+    end
+
+    if args.fieldOfView ~= nil then
+        local ok = pcall(function() camera.FieldOfView = tonumber(args.fieldOfView) end)
+        if ok then table.insert(changed, 'FieldOfView') end
+    end
+
+    local targetPosition = nil
+    if args.lookAtRef ~= nil or args.lookAtPath ~= nil then
+        local target = resolveTarget({ ref = args.lookAtRef, displayPath = args.lookAtPath })
+        if target == nil then
+            return fail('INSTANCE_NOT_FOUND', 'The instance to look at could not be resolved.')
+        end
+        local okPosition, position = pcall(function() return target.Position end)
+        if not okPosition or typeof(position) ~= 'Vector3' then
+            return fail('INVALID_ARGUMENTS', 'That instance has no position to look at.')
+        end
+        targetPosition = position
+    elseif type(args.lookAt) == 'table' and #args.lookAt >= 3 then
+        targetPosition = Vector3.new(args.lookAt[1], args.lookAt[2], args.lookAt[3])
+    end
+
+    local originPosition = nil
+    if type(args.position) == 'table' and #args.position >= 3 then
+        originPosition = Vector3.new(args.position[1], args.position[2], args.position[3])
+    end
+
+    if originPosition ~= nil or targetPosition ~= nil then
+        local from = originPosition or camera.CFrame.Position
+        local ok = pcall(function()
+            if targetPosition ~= nil then
+                camera.CFrame = CFrame.new(from, targetPosition)
+            else
+                camera.CFrame = CFrame.new(from) * (camera.CFrame - camera.CFrame.Position)
+            end
+        end)
+        if ok then table.insert(changed, 'CFrame') end
+    end
+
+    if #changed == 0 then
+        return fail('INVALID_ARGUMENTS', 'Nothing to change: supply a position, a look target, a field of view or a camera type.')
+    end
+
+    return {
+        camera = summarize(camera),
+        changed = changed,
+        cframe = serialize(camera.CFrame),
+        fieldOfView = camera.FieldOfView,
+        cameraType = tostring(camera.CameraType),
+        note = 'The camera is local. A game with its own camera script will usually take control back on the next frame.',
     }
 end
 

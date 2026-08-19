@@ -91,6 +91,42 @@ const sessionTools: ToolDefinition[] = [
     defaultTimeoutMs: 5_000,
   }),
   tool({
+    name: 'clovyre_broadcast_tool',
+    title: 'Run one read-only tool on every client',
+    description:
+      'Runs a single read-only tool on every connected Roblox client and returns the results side by side. ' +
+      'Use it to answer "does everyone see the same thing" without calling the tool once per client. Only ' +
+      'read-only, non-privileged, Roblox-bound tools are allowed: broadcasting a change to everyone at once ' +
+      'is not something this tool will do.',
+    category: 'session',
+    inputSchema: z.object({
+      tool: z.string().min(1).max(64),
+      arguments: z.record(z.unknown()).default({}),
+    }),
+    local: true,
+    readOnly: true,
+    defaultTimeoutMs: 30_000,
+  }),
+  tool({
+    name: 'clovyre_compare_clients',
+    title: 'Diff a subtree between two clients',
+    description:
+      'Takes the same tree snapshot from two connected clients and reports what differs: instances only one of ' +
+      'them can see, and instances whose class differs. This is how to investigate whether something is ' +
+      'client-local, replicated late, or streamed out for one player and not the other.',
+    category: 'session',
+    inputSchema: z.object({
+      clientA: z.string().min(1).max(128),
+      clientB: z.string().min(1).max(128),
+      path: z.string().min(1).max(2048).optional(),
+      maxDepth: z.number().int().min(1).max(6).default(3),
+      maxNodes: limitField(600, 250),
+    }),
+    local: true,
+    readOnly: true,
+    defaultTimeoutMs: 30_000,
+  }),
+  tool({
     name: 'clovyre_session_info',
     title: 'Session information',
     description:
@@ -267,6 +303,157 @@ const discoveryTools: ToolDefinition[] = [
     toCommand: (args) => ({ ...targetToCommand(args), property: args.property }),
   }),
   tool({
+    name: 'clovyre_get_properties',
+    title: 'Read many properties at once',
+    description:
+      'Reads several safe-registry properties across several instances in one call. Prefer this over ' +
+      'repeated clovyre_get_property: one round trip instead of one per property. Omit "properties" to ' +
+      'read every safe property each instance has. Properties outside the safe registry are reported as ' +
+      'rejected per instance rather than failing the whole call.',
+    category: 'discovery',
+    inputSchema: z
+      .object({
+        refs: z.array(z.string().min(1).max(128)).min(1).max(50).optional(),
+        paths: z.array(z.string().min(1).max(2048)).min(1).max(50).optional(),
+        properties: z.array(z.string().min(1).max(128)).max(40).optional(),
+      })
+      .refine(
+        (value) => Boolean(value.refs?.length ?? value.paths?.length),
+        'Provide "refs" or "paths" to identify the instances.',
+      ),
+    readOnly: true,
+    defaultTimeoutMs: 20_000,
+    toCommand: (args) => ({
+      refs: args.refs ?? [],
+      paths: args.paths ?? [],
+      properties: args.properties ?? [],
+    }),
+  }),
+  tool({
+    name: 'clovyre_search_properties',
+    title: 'Find instances by property value',
+    description:
+      'Searches a subtree for instances whose safe-registry property matches a comparison — for example ' +
+      'every BasePart with CanCollide false, or every TextLabel whose Text contains "Coins". Compares ' +
+      'against the serialized value, so numbers, booleans and strings all work.',
+    category: 'discovery',
+    inputSchema: z.object({
+      property: z.string().min(1).max(128),
+      operator: z
+        .enum(['equals', 'notEquals', 'contains', 'greaterThan', 'lessThan', 'exists'])
+        .default('equals'),
+      value: z.unknown().optional(),
+      root: z.string().min(1).max(2048).optional(),
+      classNames: z.array(z.string().min(1).max(64)).max(20).optional(),
+      maxResults: limitField(200, 50),
+      maxDepth: z.number().int().min(1).max(16).default(8),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 25_000,
+    toCommand: (args) => ({
+      property: args.property,
+      operator: args.operator,
+      value: args.value ?? null,
+      root: args.root ?? null,
+      classNames: args.classNames ?? [],
+      maxResults: args.maxResults,
+      maxDepth: args.maxDepth,
+    }),
+  }),
+  tool({
+    name: 'clovyre_list_remotes',
+    title: 'List remote objects',
+    description:
+      'Enumerates the RemoteEvent, UnreliableRemoteEvent and RemoteFunction objects visible to this client, ' +
+      'with their paths and parents. This maps the surface the game uses to talk to its server. Clovyre ' +
+      'reads this surface and never fires anything on it — there is no tool that invokes a remote.',
+    category: 'discovery',
+    inputSchema: z.object({
+      root: z.string().min(1).max(2048).optional(),
+      maxResults: limitField(500, 200),
+      maxDepth: z.number().int().min(1).max(16).default(10),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 25_000,
+    toCommand: (args) => ({
+      root: args.root ?? null,
+      maxResults: args.maxResults,
+      maxDepth: args.maxDepth,
+    }),
+  }),
+  tool({
+    name: 'clovyre_find_gui_elements',
+    title: 'Search the on-screen GUI',
+    description:
+      'Searches the visible GUI for elements by name or by their displayed text. Use this instead of walking ' +
+      'clovyre_get_gui_tree when you already know what you are looking for.',
+    category: 'discovery',
+    inputSchema: z.object({
+      query: z.string().max(256).optional(),
+      text: z.string().max(256).optional(),
+      classNames: z.array(z.string().min(1).max(64)).max(20).optional(),
+      visibleOnly: z.boolean().default(true),
+      maxResults: limitField(200, 50),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 20_000,
+    toCommand: (args) => ({
+      query: args.query ?? null,
+      text: args.text ?? null,
+      classNames: args.classNames ?? [],
+      visibleOnly: args.visibleOnly,
+      maxResults: args.maxResults,
+    }),
+  }),
+  tool({
+    name: 'clovyre_get_screen_text',
+    title: 'Read the text on screen',
+    description:
+      'Returns the text currently displayed by the GUI, in rough top-to-bottom screen order, with the path of ' +
+      'each element. This is how to find out what the interface is telling the player; Clovyre cannot take ' +
+      'screenshots, and this is the closest honest equivalent.',
+    category: 'discovery',
+    inputSchema: z.object({
+      visibleOnly: z.boolean().default(true),
+      includeEmpty: z.boolean().default(false),
+      maxResults: limitField(400, 150),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 20_000,
+    toCommand: (args) => ({
+      visibleOnly: args.visibleOnly,
+      includeEmpty: args.includeEmpty,
+      maxResults: args.maxResults,
+    }),
+  }),
+  tool({
+    name: 'clovyre_get_ancestors',
+    title: 'Walk up from an instance',
+    description:
+      'Returns the ancestor chain of the addressed instance, nearest parent first, up to the DataModel. Useful ' +
+      'for working out what owns something you found by search.',
+    category: 'discovery',
+    inputSchema: withTarget({}),
+    readOnly: true,
+    defaultTimeoutMs: 10_000,
+    toCommand: (args) => targetToCommand(args),
+  }),
+  tool({
+    name: 'clovyre_get_tag_index',
+    title: 'Index CollectionService tags',
+    description:
+      'Lists every CollectionService tag in use on this client with how many instances carry it, and optionally ' +
+      'a sample of those instances. Good for finding the conventions a game uses.',
+    category: 'discovery',
+    inputSchema: z.object({
+      samplesPerTag: z.number().int().min(0).max(10).default(3),
+      maxTags: limitField(200, 80),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 20_000,
+    toCommand: (args) => ({ samplesPerTag: args.samplesPerTag, maxTags: args.maxTags }),
+  }),
+  tool({
     name: 'clovyre_get_instance_tree',
     title: 'Get a tree snapshot',
     description:
@@ -366,6 +553,42 @@ const observationTools: ToolDefinition[] = [
     readOnly: true,
     defaultTimeoutMs: 10_000,
     toCommand: (args) => ({ watchId: args.watchId ?? null, all: args.all }),
+  }),
+  tool({
+    name: 'clovyre_wait_for',
+    title: 'Wait for something to change',
+    description:
+      'Blocks on the client until a condition happens, then returns what happened. Waits for a property to ' +
+      'change (or to reach a specific value), for a child matching a name to appear, or for an attribute to ' +
+      'change. Use this instead of polling the same instance in a loop: one call, one result, and it returns ' +
+      'the moment the change occurs rather than at the end of a poll interval. Returns timedOut true if ' +
+      'nothing happened in time, which is an answer, not an error.',
+    category: 'observation',
+    inputSchema: withTarget({
+      condition: z
+        .enum(['propertyChanged', 'childAdded', 'attributeChanged'])
+        .default('propertyChanged'),
+      property: z.string().min(1).max(128).optional(),
+      attribute: z.string().min(1).max(128).optional(),
+      childName: z.string().min(1).max(128).optional(),
+      /** Await this exact serialized value rather than any change. */
+      equals: z.unknown().optional(),
+      // Bounded well under the command timeout so the wait, not the transport,
+      // is what decides the outcome.
+      timeoutSeconds: z.number().int().min(1).max(25).default(10),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 30_000,
+    toCommand: (args) => ({
+      ...targetToCommand(args),
+      condition: args.condition,
+      property: args.property ?? null,
+      attribute: args.attribute ?? null,
+      childName: args.childName ?? null,
+      equals: args.equals ?? null,
+      hasEquals: args.equals !== undefined,
+      timeoutSeconds: args.timeoutSeconds,
+    }),
   }),
   tool({
     name: 'clovyre_list_watches',
@@ -635,6 +858,146 @@ const runtimeTools: ToolDefinition[] = [
     toCommand: (args) => ({ maxClasses: args.maxClasses }),
   }),
   tool({
+    name: 'clovyre_raycast',
+    title: 'Cast a ray',
+    description:
+      'Casts a ray through the world and reports the first thing it hits: the instance, the hit position, the ' +
+      'surface normal and the distance. Default origin and direction are the camera and where it is looking, ' +
+      'which answers "what am I looking at" in one call.',
+    category: 'runtime',
+    inputSchema: z.object({
+      from: z.enum(['camera', 'character', 'point']).default('camera'),
+      origin: z.array(z.number()).length(3).optional(),
+      direction: z.array(z.number()).length(3).optional(),
+      maxDistance: z.number().min(1).max(10_000).default(500),
+      ignoreCharacter: z.boolean().default(true),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({
+      from: args.from,
+      origin: args.origin ?? null,
+      direction: args.direction ?? null,
+      maxDistance: args.maxDistance,
+      ignoreCharacter: args.ignoreCharacter,
+    }),
+  }),
+  tool({
+    name: 'clovyre_query_region',
+    title: 'Find parts near a point',
+    description:
+      'Lists the parts within a radius of a point, the character or the camera, nearest first, with each ' +
+      'distance. This is spatial awareness: what is around me, rather than what is in the tree.',
+    category: 'runtime',
+    inputSchema: z.object({
+      around: z.enum(['character', 'camera', 'point']).default('character'),
+      point: z.array(z.number()).length(3).optional(),
+      radius: z.number().min(1).max(2_000).default(50),
+      classNames: z.array(z.string().min(1).max(64)).max(20).optional(),
+      maxResults: limitField(300, 60),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 25_000,
+    toCommand: (args) => ({
+      around: args.around,
+      point: args.point ?? null,
+      radius: args.radius,
+      classNames: args.classNames ?? [],
+      maxResults: args.maxResults,
+    }),
+  }),
+  tool({
+    name: 'clovyre_get_stats',
+    title: 'Get client performance stats',
+    description:
+      'Returns what the client can measure about its own health: frame rate, ping, memory use and physics ' +
+      'stepping. Use it to tell "the game is slow" apart from "Clovyre is slow".',
+    category: 'runtime',
+    inputSchema: z.object({}).strict(),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+  }),
+  tool({
+    name: 'clovyre_get_teams',
+    title: 'List teams',
+    description:
+      'Lists the Teams service entries with their colours and current members, as this client sees them.',
+    category: 'runtime',
+    inputSchema: z.object({}).strict(),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+  }),
+  tool({
+    name: 'clovyre_get_leaderstats',
+    title: 'Read leaderstats',
+    description:
+      'Reads the leaderstats values replicated for each player — the scoreboard numbers a game keeps, such as ' +
+      'coins, kills or level. Only what the server chose to replicate is visible.',
+    category: 'runtime',
+    inputSchema: z.object({
+      playerName: z.string().max(64).optional(),
+      maxPlayers: limitField(100, 50),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({
+      playerName: args.playerName ?? null,
+      maxPlayers: args.maxPlayers,
+    }),
+  }),
+  tool({
+    name: 'clovyre_get_backpack',
+    title: 'List carried tools',
+    description:
+      'Lists the Tools in the local player\u2019s Backpack and whichever is currently equipped to the character.',
+    category: 'runtime',
+    inputSchema: z.object({ includeProperties: z.boolean().default(false) }),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({ includeProperties: args.includeProperties }),
+  }),
+  tool({
+    name: 'clovyre_get_lighting',
+    title: 'Get lighting and atmosphere',
+    description:
+      'Returns the Lighting service settings plus any Atmosphere, Sky, Clouds and post-processing effects, so ' +
+      'you can see how the scene is lit and why it looks the way it does.',
+    category: 'runtime',
+    inputSchema: z.object({}).strict(),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+  }),
+  tool({
+    name: 'clovyre_get_sounds',
+    title: 'List playing sounds',
+    description:
+      'Lists Sound instances that are currently playing, with their volume, id and where in the tree they live. ' +
+      'Answers "what is making that noise".',
+    category: 'runtime',
+    inputSchema: z.object({
+      includeStopped: z.boolean().default(false),
+      maxResults: limitField(200, 60),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 20_000,
+    toCommand: (args) => ({
+      includeStopped: args.includeStopped,
+      maxResults: args.maxResults,
+    }),
+  }),
+  tool({
+    name: 'clovyre_get_animations',
+    title: 'List playing animations',
+    description:
+      'Lists the animation tracks currently playing on a character, with their animation ids, weights and ' +
+      'speeds. Defaults to the local player.',
+    category: 'runtime',
+    inputSchema: z.object({ playerName: z.string().max(64).optional() }),
+    readOnly: true,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({ playerName: args.playerName ?? null }),
+  }),
+  tool({
     name: 'clovyre_get_logs',
     title: 'Get client logs',
     description:
@@ -797,6 +1160,103 @@ const privilegedTools: ToolDefinition[] = [
       ...targetToCommand(args),
       property: args.property,
       value: args.value ?? null,
+    }),
+  }),
+  tool({
+    name: 'clovyre_set_properties',
+    title: 'Set many properties (privileged, local only)',
+    description:
+      'Writes several safe-registry properties in one call, reporting success or failure per property rather ' +
+      'than failing the whole batch. Local client state only — the Roblox server stays authoritative and will ' +
+      'usually ignore or overwrite the change. Requires the owner to enable mutation tools.',
+    category: 'privileged',
+    inputSchema: withTarget({
+      properties: z
+        .array(
+          z.object({
+            property: z.string().min(1).max(128),
+            value: z.unknown(),
+          }),
+        )
+        .min(1)
+        .max(40),
+    }),
+    requiresPrivilege: 'mutations',
+    readOnly: false,
+    defaultTimeoutMs: 20_000,
+    toCommand: (args) => ({
+      ...targetToCommand(args),
+      properties: args.properties.map((entry) => ({
+        property: entry.property,
+        value: entry.value ?? null,
+      })),
+    }),
+  }),
+  tool({
+    name: 'clovyre_clone_instance',
+    title: 'Clone an instance (privileged, local only)',
+    description:
+      'Clones a client-visible instance and parents the copy where you say. Local client state only. Requires ' +
+      'the owner to enable mutation tools.',
+    category: 'privileged',
+    inputSchema: withTarget({
+      parentPath: z.string().min(1).max(2048).optional(),
+      parentRef: z.string().min(1).max(128).optional(),
+      name: z.string().min(1).max(128).optional(),
+    }),
+    requiresPrivilege: 'mutations',
+    readOnly: false,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({
+      ...targetToCommand(args),
+      parentPath: args.parentPath ?? null,
+      parentRef: args.parentRef ?? null,
+      name: args.name ?? null,
+    }),
+  }),
+  tool({
+    name: 'clovyre_set_tag',
+    title: 'Add or remove a CollectionService tag (privileged, local only)',
+    description:
+      'Adds or removes a CollectionService tag on a client-visible instance. Local client state only. Requires ' +
+      'the owner to enable mutation tools.',
+    category: 'privileged',
+    inputSchema: withTarget({
+      tag: z.string().min(1).max(128),
+      add: z.boolean().default(true),
+    }),
+    requiresPrivilege: 'mutations',
+    readOnly: false,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({ ...targetToCommand(args), tag: args.tag, add: args.add }),
+  }),
+  tool({
+    name: 'clovyre_set_camera',
+    title: 'Move the camera (privileged, local only)',
+    description:
+      'Points the camera at a position, or at an instance, and optionally changes its field of view or camera ' +
+      'type. Purely local: it changes what this client sees and nothing else. Note that a game with its own ' +
+      'camera script will usually take control back on the next frame. Requires the owner to enable mutation ' +
+      'tools.',
+    category: 'privileged',
+    inputSchema: z.object({
+      lookAtPath: z.string().min(1).max(2048).optional(),
+      lookAtRef: z.string().min(1).max(128).optional(),
+      position: z.array(z.number()).length(3).optional(),
+      lookAt: z.array(z.number()).length(3).optional(),
+      fieldOfView: z.number().min(1).max(120).optional(),
+      cameraType: z.enum(['Custom', 'Scriptable', 'Follow', 'Track', 'Fixed', 'Attach']).optional(),
+    }),
+    requiresPrivilege: 'mutations',
+    readOnly: false,
+    defaultTimeoutMs: 15_000,
+    toCommand: (args) => ({
+      lookAtPath: args.lookAtPath ?? null,
+      lookAtRef: args.lookAtRef ?? null,
+      position: args.position ?? null,
+      lookAt: args.lookAt ?? null,
+      fieldOfView: args.fieldOfView ?? null,
+      cameraType: args.cameraType ?? null,
     }),
   }),
   tool({

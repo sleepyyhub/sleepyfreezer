@@ -225,30 +225,46 @@ something is currently connected with it.
 
 ## Tools
 
-**Session** — `clovyre_session_info`, `clovyre_list_capabilities`, `clovyre_ping`
+**Session** — `clovyre_session_info`, `clovyre_list_clients`, `clovyre_list_capabilities`,
+`clovyre_ping`, `clovyre_broadcast_tool`, `clovyre_compare_clients`
 
 **Discovery** — `clovyre_get_services`, `clovyre_get_children`, `clovyre_get_descendants`,
 `clovyre_find_instances`, `clovyre_inspect_instance`, `clovyre_get_attributes`, `clovyre_get_tags`,
-`clovyre_get_property`, `clovyre_get_instance_tree`, `clovyre_get_gui_tree`
+`clovyre_get_property`, `clovyre_get_properties`, `clovyre_search_properties`,
+`clovyre_get_instance_tree`, `clovyre_get_gui_tree`, `clovyre_find_gui_elements`,
+`clovyre_get_screen_text`, `clovyre_get_ancestors`, `clovyre_get_tag_index`,
+`clovyre_list_remotes`
 
 **Scripts** — `clovyre_list_scripts`, `clovyre_inspect_script`, `clovyre_search_scripts`,
 `clovyre_get_script_dependencies`, `clovyre_get_loaded_modules`
 
 **Runtime** — `clovyre_get_players`, `clovyre_get_local_player`, `clovyre_get_character`,
 `clovyre_get_camera`, `clovyre_get_workspace_summary`, `clovyre_get_logs`,
-`clovyre_get_connections`, `clovyre_get_gc_summary`, `clovyre_inspect_environment`
+`clovyre_get_connections`, `clovyre_get_gc_summary`, `clovyre_inspect_environment`,
+`clovyre_raycast`, `clovyre_query_region`, `clovyre_get_stats`, `clovyre_get_teams`,
+`clovyre_get_leaderstats`, `clovyre_get_backpack`, `clovyre_get_lighting`, `clovyre_get_sounds`,
+`clovyre_get_animations`
 
 **Observation** — `clovyre_watch_start`, `clovyre_watch_stop`, `clovyre_list_watches`,
-`clovyre_get_watch_events`, `clovyre_remote_spy_start`, `clovyre_remote_spy_stop`,
-`clovyre_get_remote_calls`
+`clovyre_get_watch_events`, `clovyre_wait_for`, `clovyre_remote_spy_start`,
+`clovyre_remote_spy_stop`, `clovyre_get_remote_calls`
 
 **Activity** — `clovyre_get_recent_activity`, `clovyre_get_recent_errors`,
 `clovyre_cancel_command`
 
 **Privileged (owner grant required)** — `clovyre_execute_luau`, `clovyre_remote_spy_start`,
-`clovyre_set_property`,
-`clovyre_set_attribute`, `clovyre_create_instance`, `clovyre_destroy_instance`,
-`clovyre_reparent_instance`
+`clovyre_set_property`, `clovyre_set_properties`, `clovyre_set_attribute`,
+`clovyre_create_instance`, `clovyre_clone_instance`, `clovyre_destroy_instance`,
+`clovyre_reparent_instance`, `clovyre_set_tag`, `clovyre_set_camera`
+
+`clovyre_list_remotes` maps the RemoteEvents and RemoteFunctions a game uses, and that is where it
+stops: **there is no tool that fires a remote**, at any privilege level. Reading the interface a game
+exposes is inspection; calling it is playing the game for someone. A test asserts the bridge never
+grows one.
+
+`clovyre_broadcast_tool` runs a single tool on every connected client at once, and accepts only
+read-only, non-privileged ones — fanning a write out across several people's games is not something
+one call should be able to express.
 
 Privileged tools are hidden from `tools/list` until the session owner grants them in the browser, so
 an agent cannot even attempt to call them.

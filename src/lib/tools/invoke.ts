@@ -187,6 +187,15 @@ export async function invokeTool(
     );
   }
 
+  // Two local tools reach across every client rather than answering from session
+  // state, so they dispatch on their own and cannot use the synchronous path.
+  if (definition.name === 'clovyre_broadcast_tool') {
+    return broadcastTool(session, args, origin);
+  }
+  if (definition.name === 'clovyre_compare_clients') {
+    return compareClients(session, args, origin);
+  }
+
   if (definition.local) {
     const started = Date.now();
     const data = runLocalTool(session, definition.name, args, clientSelector);
@@ -237,6 +246,235 @@ export async function invokeTool(
     durationMs: outcome.durationMs,
     truncated: outcome.truncated || report.truncated,
     data: value,
+  };
+}
+
+/**
+ * Runs one read-only tool on every connected client.
+ *
+ * The read-only restriction is enforced here rather than left to the caller: a
+ * broadcast mutation would change several different people's games from a single
+ * call, which is not a thing this tool should be able to express by accident.
+ */
+async function broadcastTool(
+  session: SessionRecord,
+  args: Record<string, unknown>,
+  origin: CommandRecord['origin'],
+): Promise<ToolInvocationResult> {
+  const started = Date.now();
+  const targetName = String(args.tool ?? '');
+  const target = getTool(targetName);
+
+  if (!target) {
+    return failure('TOOL_NOT_FOUND', `Clovyre has no tool named "${targetName}".`);
+  }
+  if (target.local) {
+    return failure(
+      'INVALID_ARGUMENTS',
+      `"${targetName}" is answered by the Clovyre backend, not by a Roblox client, so broadcasting it would just repeat one answer.`,
+    );
+  }
+  if (!target.readOnly || target.requiresPrivilege) {
+    return failure(
+      'INVALID_ARGUMENTS',
+      `"${targetName}" can change client state, and broadcast only runs read-only tools. Call it on one named client instead.`,
+    );
+  }
+
+  const clients = connectedClients(session);
+  if (clients.length === 0) {
+    return failure(
+      ErrorCodes.CLIENT_NOT_CONNECTED,
+      'No Roblox client is connected to this Clovyre session.',
+    );
+  }
+
+  const parsed = target.inputSchema.safeParse(args.arguments ?? {});
+  if (!parsed.success) {
+    return failure(
+      'INVALID_ARGUMENTS',
+      `Arguments for "${targetName}" are not valid.`,
+      parsed.error.issues.slice(0, 5).map((issue) => ({
+        path: issue.path.join('.') || '(root)',
+        message: issue.message,
+      })),
+    );
+  }
+  const targetArguments = target.toCommand
+    ? target.toCommand(parsed.data)
+    : { ...(parsed.data as Record<string, unknown>) };
+
+  const config = getConfig();
+  const timeoutMs = Math.min(target.defaultTimeoutMs, config.maxCommandTimeoutMs);
+  const broker = getSessionBroker();
+
+  const results = await Promise.all(
+    clients.map(async (client) => {
+      // Availability is per client: one executor may lack a capability another has.
+      const availability = evaluateTool(session, target, client.clientId);
+      if (!availability.available) {
+        return {
+          client: client.clientId,
+          label: client.label,
+          ok: false,
+          code: availability.reason ?? 'UNAVAILABLE',
+          message: availability.detail ?? 'This tool is not available on that client.',
+        };
+      }
+      const { outcome } = await broker.dispatch(session, {
+        tool: target.name,
+        clientId: client.clientId,
+        arguments: targetArguments,
+        timeoutMs,
+        origin,
+      });
+      if (!outcome.ok) {
+        return {
+          client: client.clientId,
+          label: client.label,
+          ok: false,
+          code: outcome.error.code,
+          message: outcome.error.message,
+        };
+      }
+      return {
+        client: client.clientId,
+        label: client.label,
+        ok: true,
+        data: normalizeIncoming(outcome.result).value,
+      };
+    }),
+  );
+
+  return {
+    ok: true,
+    commandId: null,
+    durationMs: Date.now() - started,
+    truncated: false,
+    data: {
+      tool: target.name,
+      clientCount: clients.length,
+      succeeded: results.filter((entry) => entry.ok).length,
+      results,
+    },
+  };
+}
+
+interface TreeNode {
+  path?: string;
+  displayPath?: string;
+  className?: string;
+  children?: TreeNode[];
+}
+
+/** Flattens a tree snapshot into path -> className, so two can be compared. */
+function flattenTree(node: unknown, into = new Map<string, string>()): Map<string, string> {
+  if (typeof node !== 'object' || node === null) return into;
+  const typed = node as TreeNode;
+  const key = typed.displayPath ?? typed.path;
+  if (typeof key === 'string') into.set(key, typed.className ?? '?');
+  for (const child of typed.children ?? []) flattenTree(child, into);
+  return into;
+}
+
+/**
+ * Takes the same snapshot from two clients and reports where they disagree.
+ *
+ * Both snapshots are requested with identical arguments, so a difference is a
+ * real difference in what the two clients can see rather than an artefact of
+ * asking them different questions.
+ */
+async function compareClients(
+  session: SessionRecord,
+  args: Record<string, unknown>,
+  origin: CommandRecord['origin'],
+): Promise<ToolInvocationResult> {
+  const started = Date.now();
+  const a = findClient(session, String(args.clientA ?? ''));
+  const b = findClient(session, String(args.clientB ?? ''));
+
+  if (!a || !b) {
+    return failure(
+      ErrorCodes.CLIENT_NOT_FOUND,
+      'Both clientA and clientB must name a connected client.',
+      { clients: connectedClients(session).map(describeClient) },
+    );
+  }
+  if (a.clientId === b.clientId) {
+    return failure('INVALID_ARGUMENTS', 'clientA and clientB must be different clients.');
+  }
+
+  const treeTool = getTool('clovyre_get_instance_tree')!;
+  const treeArguments = {
+    path: args.path ?? null,
+    displayPath: null,
+    ref: null,
+    maxDepth: typeof args.maxDepth === 'number' ? args.maxDepth : 3,
+    maxNodes: typeof args.maxNodes === 'number' ? args.maxNodes : 250,
+    childLimitPerNode: 25,
+  };
+
+  const config = getConfig();
+  const timeoutMs = Math.min(treeTool.defaultTimeoutMs, config.maxCommandTimeoutMs);
+  const broker = getSessionBroker();
+
+  const [left, right] = await Promise.all(
+    [a, b].map((client) =>
+      broker.dispatch(session, {
+        tool: treeTool.name,
+        clientId: client.clientId,
+        arguments: treeArguments,
+        timeoutMs,
+        origin,
+      }),
+    ),
+  );
+
+  if (!left!.outcome.ok || !right!.outcome.ok) {
+    const broken = !left!.outcome.ok
+      ? { client: a, outcome: left!.outcome }
+      : { client: b, outcome: right!.outcome };
+    if (broken.outcome.ok) return failure('BAD_RESPONSE', 'A client returned no snapshot.');
+    return failure(
+      broken.outcome.error.code,
+      `${broken.client.label} could not produce a snapshot: ${broken.outcome.error.message}`,
+    );
+  }
+
+  const leftNodes = flattenTree(normalizeIncoming(left!.outcome.result).value);
+  const rightNodes = flattenTree(normalizeIncoming(right!.outcome.result).value);
+
+  const onlyInA: string[] = [];
+  const onlyInB: string[] = [];
+  const classDiffers: Array<{ path: string; a: string; b: string }> = [];
+
+  for (const [path, className] of leftNodes) {
+    const other = rightNodes.get(path);
+    if (other === undefined) onlyInA.push(path);
+    else if (other !== className) classDiffers.push({ path, a: className, b: other });
+  }
+  for (const path of rightNodes.keys()) {
+    if (!leftNodes.has(path)) onlyInB.push(path);
+  }
+
+  const identical = onlyInA.length === 0 && onlyInB.length === 0 && classDiffers.length === 0;
+
+  return {
+    ok: true,
+    commandId: null,
+    durationMs: Date.now() - started,
+    truncated: false,
+    data: {
+      clientA: { client: a.clientId, label: a.label, nodeCount: leftNodes.size },
+      clientB: { client: b.clientId, label: b.label, nodeCount: rightNodes.size },
+      identical,
+      onlyInA: onlyInA.slice(0, 200),
+      onlyInB: onlyInB.slice(0, 200),
+      classDiffers: classDiffers.slice(0, 200),
+      note: identical
+        ? 'Both clients report the same subtree.'
+        : 'Differences may be streaming, client-local objects, or replication that has not caught up. The snapshots are also a moment apart, so a busy tree can differ harmlessly.',
+    },
   };
 }
 

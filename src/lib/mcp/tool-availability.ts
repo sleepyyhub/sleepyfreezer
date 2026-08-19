@@ -25,7 +25,16 @@ export interface ToolAvailability {
   readonly detail: string | null;
 }
 
-export function evaluateTool(session: SessionRecord, definition: ToolDefinition): ToolAvailability {
+/**
+ * @param clientId When given, capabilities are judged against that one client
+ * rather than the session-wide union. Two executors on one session do not
+ * necessarily report the same capabilities, so a broadcast has to ask per client.
+ */
+export function evaluateTool(
+  session: SessionRecord,
+  definition: ToolDefinition,
+  clientId?: string,
+): ToolAvailability {
   const config = getConfig();
   const store = getSessionStore();
 
@@ -54,8 +63,11 @@ export function evaluateTool(session: SessionRecord, definition: ToolDefinition)
   }
 
   if (definition.requiresCapability) {
-    const reported = session.capabilities[definition.requiresCapability];
-    if (!reported) {
+    const capabilities =
+      clientId === undefined
+        ? session.capabilities
+        : (session.robloxClients.get(clientId)?.capabilities ?? {});
+    if (!capabilities[definition.requiresCapability]) {
       return deny(
         'capability_missing',
         `The connected executor does not report the "${definition.requiresCapability}" capability.`,
