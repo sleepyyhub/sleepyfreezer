@@ -2,7 +2,7 @@
 -- Steal A Summertino (place 109001683984840)
 -- Executor: any (Volt, Wave, Solara...). No dependencies. Paste and execute.
 --
--- RightShift opens the tab menu. LeftShift is not used — Roblox binds it to
+-- F opens the tab menu. LeftShift is not used — Roblox binds it to
 -- shiftlock and the game reads it for movement.
 --
 -- UI is Luminosity's, component for component: the same theme table, the
@@ -56,7 +56,7 @@ local AnimalData  = require(RepS:WaitForChild("Datas"):WaitForChild("Animals"))
 local Rarities    = require(RepS.Datas:WaitForChild("Rarities"))
 
 local L = {}
-L.MenuKey     = Enum.KeyCode.RightShift
+L.MenuKey     = Enum.KeyCode.F
 L.DashKey     = Enum.KeyCode.E
 L.ESP         = false
 L.AutoAim     = true
@@ -1519,7 +1519,7 @@ addToggle(TabMisc, "kick after steal", L.KickAfter, function(v)
 end)
 addButton(TabMisc, "kick me now", function() LP:Kick(L.NotifText) end)
 addLabel(TabMisc, 'steal notifications become: "' .. L.NotifText .. '"')
-addLabel(TabMisc, "RightShift toggles this menu")
+addLabel(TabMisc, "F toggles this menu")
 
 ----------------------------------------------------------------------
 -- HOLD-E AIM  (arrow + fling, reuses the movement layer)
@@ -1646,9 +1646,9 @@ task.spawn(function()
     task.wait(0.4)
     Loader:Destroy()
 
-    notify("Luminosity", "RightShift for menu", T.ACCENT, "hold E to aim - release to go")
+    notify("Luminosity", "F for menu", T.ACCENT, "hold E to aim - release to go")
 end)
 
 getgenv().LUMI = L
-print("[LUMINOSITY] loaded - RightShift for menu, hold E to dash")
+print("[LUMINOSITY] loaded - F for menu, hold E to dash")
 return L
