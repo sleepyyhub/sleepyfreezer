@@ -36,6 +36,7 @@ HOW TO RUN
 
 import os
 import sys
+import mmap
 import struct
 import ctypes
 from ctypes import wintypes
@@ -427,19 +428,27 @@ def open_folder():
 # ─────────────────────────────────────────────────────────────────────────
 
 def scan_dump(path):
-    """Rebuild the module image from a minidump on disk."""
-    print(f"[*] Scanning dump file: {path}")
-    print("[*] Reading (this takes a moment for a multi-GB dump) ...")
+    """Rebuild the module image from a minidump on disk.
+
+    The file is memory-mapped rather than read into RAM: these dumps run
+    2-6 GB and loading one outright can fail on an 8 GB machine that still
+    has Roblox open. mmap lets the OS page in only what we touch, so peak
+    usage is roughly the size of the module image (~150 MB), not the dump.
+    """
+    size_mb = os.path.getsize(path) / (1024 * 1024)
+    print(f"[*] Scanning dump file: {path}  ({size_mb:.0f} MB)")
+    print("[*] Memory-mapping (no need to load it all) ...")
     with open(path, "rb") as f:
-        data = f.read()
-    streams = _dump_directory(data)
-    base = _dump_module_base(data, streams, PROC_NAME)
-    if base is None:
-        return None, "module not found in dump"
-    img = _dump_read_module(data, streams, base, PROC_NAME)
-    if img is None:
-        return None, "could not rebuild module image from dump"
-    return img, f"dump {os.path.basename(path)} (base 0x{base:X})"
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            streams = _dump_directory(data)
+            base = _dump_module_base(data, streams, PROC_NAME)
+            if base is None:
+                return None, "module not found in dump"
+            print(f"[*] Module base 0x{base:X} — rebuilding image ...")
+            img = _dump_read_module(data, streams, base, PROC_NAME)
+            if img is None:
+                return None, "could not rebuild module image from dump"
+            return img, f"dump {os.path.basename(path)} (base 0x{base:X})"
 
 
 def find_local_dumps():
