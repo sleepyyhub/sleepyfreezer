@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+r"""
 nyx-dumper  —  Roblox offset extractor (Windows, external, read-only)
 
 WHAT IT DOES
@@ -426,21 +426,52 @@ def open_folder():
 #  Main
 # ─────────────────────────────────────────────────────────────────────────
 
+def scan_dump(path):
+    """Rebuild the module image from a minidump on disk."""
+    print(f"[*] Scanning dump file: {path}")
+    print("[*] Reading (this takes a moment for a multi-GB dump) ...")
+    with open(path, "rb") as f:
+        data = f.read()
+    streams = _dump_directory(data)
+    base = _dump_module_base(data, streams, PROC_NAME)
+    if base is None:
+        return None, "module not found in dump"
+    img = _dump_read_module(data, streams, base, PROC_NAME)
+    if img is None:
+        return None, "could not rebuild module image from dump"
+    return img, f"dump {os.path.basename(path)} (base 0x{base:X})"
+
+
+def find_local_dumps():
+    """Look where Task Manager actually puts dumps. Newest first."""
+    candidates = []
+    roots = [
+        os.environ.get("TEMP", ""),
+        os.path.join(os.path.expanduser("~"), "Desktop"),
+        os.path.join(os.path.expanduser("~"), "Downloads"),
+        SCRIPT_DIR,
+    ]
+    for root in roots:
+        if not root or not os.path.isdir(root):
+            continue
+        try:
+            for fn in os.listdir(root):
+                if fn.lower().endswith(".dmp") and "roblox" in fn.lower():
+                    full = os.path.join(root, fn)
+                    try:
+                        candidates.append((os.path.getmtime(full), full))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    candidates.sort(reverse=True)
+    return [p for _, p in candidates]
+
+
 def acquire_image():
     """Return (image_bytes, source_description) or (None, reason)."""
     if len(sys.argv) > 1:
-        path = sys.argv[1]
-        print(f"[*] Scanning dump file: {path}")
-        with open(path, "rb") as f:
-            data = f.read()
-        streams = _dump_directory(data)
-        base = _dump_module_base(data, streams, PROC_NAME)
-        if base is None:
-            return None, "module not found in dump"
-        img = _dump_read_module(data, streams, base, PROC_NAME)
-        if img is None:
-            return None, "could not rebuild module image from dump"
-        return img, f"dump {os.path.basename(path)} (base 0x{base:X})"
+        return scan_dump(sys.argv[1])
 
     print(f"[*] Looking for {PROC_NAME} ...")
     pid = find_pid(PROC_NAME)
@@ -476,14 +507,46 @@ def main():
         return
 
     if img is None:
-        print(f"[!] {desc}")
-        print("\n    Fallback: make a Task Manager dump (Details tab ->")
-        print("    right-click RobloxPlayerBeta.exe -> Create dump file),")
-        print("    then run:  python dumper.py path\\to\\that.DMP")
+        print(f"[!] {desc}\n")
+
+        # Anti-cheat blocking the live read is the NORMAL outcome, not a
+        # failure. Look for a dump the user may already have made.
+        dumps = find_local_dumps()
+        if dumps:
+            print("[*] Found a Roblox dump already on this PC:")
+            for i, p in enumerate(dumps[:5], 1):
+                mb = os.path.getsize(p) / (1024 * 1024)
+                print(f"      {i}. {p}  ({mb:.0f} MB)")
+            pick = input("\n    Use #1? [Y/n, or type a number]: ").strip().lower()
+            chosen = None
+            if pick in ("", "y", "yes"):
+                chosen = dumps[0]
+            elif pick.isdigit() and 1 <= int(pick) <= min(5, len(dumps)):
+                chosen = dumps[int(pick) - 1]
+            if chosen:
+                try:
+                    img, desc = scan_dump(chosen)
+                except Exception as e:
+                    img, desc = None, str(e)
+                if img is not None:
+                    return _finish(img, desc)
+                print(f"[!] {desc}")
+
+        print("\n    Next step — make a memory dump (takes ~1 minute):")
+        print("      1. Ctrl+Shift+Esc  ->  'Details' tab")
+        print("      2. Right-click RobloxPlayerBeta.exe -> 'Create dump file'")
+        print("      3. Leave Roblox running until it finishes")
+        print("      4. Run this script again — it will find the dump itself.")
+        print("\n    (Or pass the path directly:  python dumper.py C:\\path\\to\\that.DMP)")
         input("\nPress Enter to close...")
         return
 
-    print(f"[*] Image ready ({len(img)} bytes). Resolving signatures ...\n")
+    _finish(img, desc)
+
+
+def _finish(img, desc):
+    """Resolve every signature against the image, write offsets.h, open it."""
+    print(f"\n[*] Image ready ({len(img)} bytes). Resolving signatures ...\n")
     results = {}
     found = 0
     for name, spec in SIGNATURES.items():
@@ -500,10 +563,14 @@ def main():
             print(f"    [MISS] {name}")
 
     write_header(results, desc)
-    print(f"\n[*] Wrote {found}/{len(SIGNATURES)} to {OUT_PATH}")
-    print("[*] Opening the folder ...")
+    print(f"\n[*] Wrote {found}/{len(SIGNATURES)} resolved to:")
+    print(f"    {OUT_PATH}")
+    if found < len(SIGNATURES):
+        print("\n[*] The [MISS] entries just need their signature updated for")
+        print("    this build. Send the offsets.h back and they get fixed.")
+    print("\n[*] Opening the folder ...")
     open_folder()
-    input("\nDone. Press Enter to close...")
+    input("\nDone — send offsets.h back. Press Enter to close...")
 
 
 if __name__ == "__main__":
