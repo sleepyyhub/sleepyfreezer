@@ -22,7 +22,7 @@ describe('watch event ingest', () => {
   });
 
   it('records a well-formed watch event', () => {
-    const consumed = ingestClientEvent(session,'rc_test', 'watch', {
+    const consumed = ingestClientEvent(session, 'rc_test', 'watch', {
       watchId: 'w1',
       kind: 'property',
       target: 'Workspace.Part',
@@ -35,18 +35,18 @@ describe('watch event ingest', () => {
   });
 
   it('rejects a malformed event without consuming it', () => {
-    expect(ingestClientEvent(session,'rc_test', 'watch', { kind: 'property' })).toBe(false);
-    expect(ingestClientEvent(session,'rc_test', 'watch', null)).toBe(false);
+    expect(ingestClientEvent(session, 'rc_test', 'watch', { kind: 'property' })).toBe(false);
+    expect(ingestClientEvent(session, 'rc_test', 'watch', null)).toBe(false);
     expect(session.observations.watchEvents).toHaveLength(0);
   });
 
   it('ignores an unknown event so it falls through to the audit log', () => {
-    expect(ingestClientEvent(session,'rc_test', 'something_else', { a: 1 })).toBe(false);
+    expect(ingestClientEvent(session, 'rc_test', 'something_else', { a: 1 })).toBe(false);
   });
 
   it('caps the buffer and counts what it dropped', () => {
     for (let index = 0; index < OBSERVATION_LIMITS.maxWatchEvents + 25; index += 1) {
-      ingestClientEvent(session,'rc_test', 'watch', {
+      ingestClientEvent(session, 'rc_test', 'watch', {
         watchId: 'w1',
         kind: 'property',
         target: 'Workspace.Part',
@@ -62,7 +62,7 @@ describe('watch event ingest', () => {
   });
 
   it('re-bounds untrusted detail payloads', () => {
-    ingestClientEvent(session,'rc_test', 'watch', {
+    ingestClientEvent(session, 'rc_test', 'watch', {
       watchId: 'w1',
       kind: 'property',
       target: 'Workspace.Part',
@@ -75,8 +75,18 @@ describe('watch event ingest', () => {
   });
 
   it('filters by watch id and by timestamp', () => {
-    ingestClientEvent(session,'rc_test', 'watch', { watchId: 'a', kind: 'property', target: 't', at: 1000 });
-    ingestClientEvent(session,'rc_test', 'watch', { watchId: 'b', kind: 'property', target: 't', at: 2000 });
+    ingestClientEvent(session, 'rc_test', 'watch', {
+      watchId: 'a',
+      kind: 'property',
+      target: 't',
+      at: 1000,
+    });
+    ingestClientEvent(session, 'rc_test', 'watch', {
+      watchId: 'b',
+      kind: 'property',
+      target: 't',
+      at: 2000,
+    });
 
     expect(
       (getWatchEvents(session, { limit: 10, watchId: 'a' }) as { events: unknown[] }).events,
@@ -87,13 +97,13 @@ describe('watch event ingest', () => {
   });
 
   it('clears the buffer on request', () => {
-    ingestClientEvent(session,'rc_test', 'watch', { watchId: 'a', kind: 'property', target: 't' });
+    ingestClientEvent(session, 'rc_test', 'watch', { watchId: 'a', kind: 'property', target: 't' });
     getWatchEvents(session, { limit: 10, clear: true });
     expect(session.observations.watchEvents).toHaveLength(0);
   });
 
   it('tracks which watchers the client reports as installed', () => {
-    ingestClientEvent(session,'rc_test', 'watch_state', {
+    ingestClientEvent(session, 'rc_test', 'watch_state', {
       watches: [{ watchId: 'w1', target: 'Workspace.Part', kinds: ['property'] }],
     });
 
@@ -109,9 +119,63 @@ describe('remote spy ingest', () => {
     session = freshSession();
   });
 
+  it('records where a call came from, not just that it happened', () => {
+    ingestClientEvent(session, 'rc_test', 'remote_call', {
+      callId: 'rc12',
+      remote: 'ReplicatedStorage.Remotes.BuyItem',
+      className: 'RemoteEvent',
+      method: 'FireServer',
+      args: [{ itemId: 7 }],
+      argCount: 1,
+      callerScript: 'Players.Me.PlayerScripts.Shop',
+      callerSource: 'Shop',
+      callerLine: 148,
+      callerFunction: 'purchase',
+      stack: [
+        { source: 'Shop', line: 148, name: 'purchase' },
+        { source: 'Shop', line: 92, name: 'onButtonClick' },
+      ],
+    });
+
+    const view = getRemoteCalls(session, { limit: 10 }) as {
+      calls: Array<{
+        callId: string | null;
+        callerLine: number | null;
+        callerFunction: string | null;
+        stack: Array<{ source: string; line: number | null }>;
+      }>;
+    };
+    const call = view.calls[0]!;
+    // The callId is what makes clovyre_get_calling_code able to find this call.
+    expect(call.callId).toBe('rc12');
+    expect(call.callerLine).toBe(148);
+    expect(call.callerFunction).toBe('purchase');
+    expect(call.stack).toHaveLength(2);
+    expect(call.stack[1]!.line).toBe(92);
+  });
+
+  it('still accepts a call from a client that cannot attribute it', () => {
+    // debug.info is restricted on some executors. Losing attribution must not
+    // lose the observation itself.
+    ingestClientEvent(session, 'rc_test', 'remote_call', {
+      remote: 'ReplicatedStorage.Remotes.Ping',
+      className: 'RemoteEvent',
+      method: 'FireServer',
+      argCount: 0,
+    });
+
+    const view = getRemoteCalls(session, { limit: 10 }) as {
+      calls: Array<{ callId: string | null; callerLine: number | null; stack: unknown[] }>;
+    };
+    expect(view.calls).toHaveLength(1);
+    expect(view.calls[0]!.callId).toBeNull();
+    expect(view.calls[0]!.callerLine).toBeNull();
+    expect(view.calls[0]!.stack).toEqual([]);
+  });
+
   it('records an observed call with serialized arguments', () => {
-    ingestClientEvent(session,'rc_test', 'remote_spy_state', { active: true });
-    ingestClientEvent(session,'rc_test', 'remote_call', {
+    ingestClientEvent(session, 'rc_test', 'remote_spy_state', { active: true });
+    ingestClientEvent(session, 'rc_test', 'remote_call', {
       remote: 'ReplicatedStorage.Remotes.BuyItem',
       className: 'RemoteEvent',
       method: 'FireServer',
@@ -133,7 +197,7 @@ describe('remote spy ingest', () => {
       ['A.Buy', 'FireServer'],
       ['B.Sell', 'InvokeServer'],
     ] as const) {
-      ingestClientEvent(session,'rc_test', 'remote_call', {
+      ingestClientEvent(session, 'rc_test', 'remote_call', {
         remote,
         className: 'RemoteEvent',
         method,
@@ -152,7 +216,7 @@ describe('remote spy ingest', () => {
 
   it('caps the call buffer', () => {
     for (let index = 0; index < OBSERVATION_LIMITS.maxRemoteCalls + 10; index += 1) {
-      ingestClientEvent(session,'rc_test', 'remote_call', {
+      ingestClientEvent(session, 'rc_test', 'remote_call', {
         remote: 'R',
         className: 'RemoteEvent',
         method: 'FireServer',
@@ -169,8 +233,8 @@ describe('remote spy ingest', () => {
   });
 
   it('clears hook state when the client disconnects', () => {
-    ingestClientEvent(session,'rc_test', 'remote_spy_state', { active: true });
-    ingestClientEvent(session,'rc_test', 'watch_state', {
+    ingestClientEvent(session, 'rc_test', 'remote_spy_state', { active: true });
+    ingestClientEvent(session, 'rc_test', 'watch_state', {
       watches: [{ watchId: 'w1', target: 't', kinds: ['property'] }],
     });
 

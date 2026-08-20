@@ -21,13 +21,26 @@ export const watchEventSchema = z.object({
   at: z.number().optional(),
 });
 
+const stackFrameSchema = z.object({
+  source: z.string().max(512),
+  line: z.number().int().min(0).max(10_000_000).nullish(),
+  name: z.string().max(256).nullish(),
+});
+
 export const remoteCallSchema = z.object({
+  /** Client-assigned handle, used to fetch the calling code for this one call. */
+  callId: z.string().max(64).nullish(),
   remote: z.string().max(2048),
   className: z.string().max(64),
   method: z.string().max(64),
   args: z.unknown().optional(),
   argCount: z.number().int().min(0).max(1000).optional(),
   callerScript: z.string().max(512).nullish(),
+  /** Chunk name, line and function of the frame that made the call. */
+  callerSource: z.string().max(512).nullish(),
+  callerLine: z.number().int().min(0).max(10_000_000).nullish(),
+  callerFunction: z.string().max(256).nullish(),
+  stack: z.array(stackFrameSchema).max(24).optional(),
   truncated: z.boolean().optional(),
   at: z.number().optional(),
 });
@@ -95,12 +108,21 @@ export function ingestClientEvent(
         {
           at: parsed.data.at ?? Date.now(),
           clientId,
+          callId: parsed.data.callId ?? null,
           remote: parsed.data.remote,
           className: parsed.data.className,
           method: parsed.data.method,
           args: value,
           argCount: parsed.data.argCount ?? 0,
           callerScript: parsed.data.callerScript ?? null,
+          callerSource: parsed.data.callerSource ?? null,
+          callerLine: parsed.data.callerLine ?? null,
+          callerFunction: parsed.data.callerFunction ?? null,
+          stack: (parsed.data.stack ?? []).map((frame) => ({
+            source: frame.source,
+            line: frame.line ?? null,
+            name: frame.name ?? null,
+          })),
           truncated: Boolean(parsed.data.truncated) || report.truncated,
         },
         OBSERVATION_LIMITS.maxRemoteCalls,

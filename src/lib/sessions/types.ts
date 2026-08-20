@@ -90,15 +90,32 @@ export interface WatchEvent {
 }
 
 /** One outbound remote call observed on the client. */
+export interface StackFrame {
+  readonly source: string;
+  readonly line: number | null;
+  readonly name: string | null;
+}
+
 export interface RemoteCallEvent {
   readonly at: number;
   readonly clientId: string;
+  /**
+   * Handle for this specific call, good for as long as the client keeps it in
+   * its call-site window. Pass it to clovyre_get_calling_code to see the code
+   * that made the call.
+   */
+  readonly callId: string | null;
   readonly remote: string;
   readonly className: string;
   readonly method: string;
   readonly args: unknown;
   readonly argCount: number;
   readonly callerScript: string | null;
+  /** Where in the caller the call happened, from the Luau stack. */
+  readonly callerSource: string | null;
+  readonly callerLine: number | null;
+  readonly callerFunction: string | null;
+  readonly stack: readonly StackFrame[];
   readonly truncated: boolean;
 }
 
@@ -111,7 +128,10 @@ export interface Observations {
   watchEvents: WatchEvent[];
   remoteCalls: RemoteCallEvent[];
   /** Watch ids the client reports as currently installed. */
-  activeWatches: Map<string, { target: string; kinds: string[]; startedAt: number; clientId: string }>;
+  activeWatches: Map<
+    string,
+    { target: string; kinds: string[]; startedAt: number; clientId: string }
+  >;
   /** Clients currently running the remote spy. */
   remoteSpyClients: Set<string>;
   remoteSpyActive: boolean;
@@ -185,7 +205,6 @@ export interface SessionRecord {
 
   /** Populated when the session was created behind a proxy. Hashed, not raw. */
   readonly creatorAddressHash: string;
-
 }
 
 export interface SessionSettings {

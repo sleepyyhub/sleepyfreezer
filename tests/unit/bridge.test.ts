@@ -18,6 +18,23 @@ import { SAFE_PROPERTIES } from '../../src/lib/tools/safe-properties';
 const source = readFileSync(join(process.cwd(), 'roblox', 'client.lua'), 'utf8');
 
 describe('roblox/client.lua', () => {
+  it('attributes remote calls without trusting the bridge\u2019s own stack frames', () => {
+    // The hook runs inside client.lua, so the nearest frames are always this
+    // bridge. Reporting one of those as the caller would name Clovyre as the
+    // origin of every call it observes.
+    expect(source).toContain('OWN_SOURCE');
+    expect(source).toContain('source ~= OWN_SOURCE');
+    // Attribution runs inside a hot hook and must never throw into the game.
+    expect(source).toMatch(/pcall\(function\(\)\s*\n\s*return debug\.info/);
+  });
+
+  it('bounds the call-site window it retains', () => {
+    // Call sites hold script references; keeping every one would pin instances
+    // in memory for the life of the session.
+    expect(source).toContain('CALL_SITE_LIMIT');
+    expect(source).toContain('table.remove(callSiteOrder, 1)');
+  });
+
   it('never writes to the executor console outside the gated log helpers', () => {
     // Console output is opt-in per session, so a bare print()/warn() anywhere in
     // the bridge would leak into the user's own output window regardless of the

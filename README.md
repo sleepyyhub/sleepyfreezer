@@ -247,7 +247,7 @@ something is currently connected with it.
 
 **Observation** — `clovyre_watch_start`, `clovyre_watch_stop`, `clovyre_list_watches`,
 `clovyre_get_watch_events`, `clovyre_wait_for`, `clovyre_remote_spy_start`,
-`clovyre_remote_spy_stop`, `clovyre_get_remote_calls`
+`clovyre_remote_spy_stop`, `clovyre_get_remote_calls`, `clovyre_get_calling_code`
 
 **Activity** — `clovyre_get_recent_activity`, `clovyre_get_recent_errors`,
 `clovyre_cancel_command`
@@ -256,6 +256,16 @@ something is currently connected with it.
 `clovyre_set_property`, `clovyre_set_properties`, `clovyre_set_attribute`,
 `clovyre_create_instance`, `clovyre_clone_instance`, `clovyre_destroy_instance`,
 `clovyre_reparent_instance`, `clovyre_set_tag`, `clovyre_set_camera`
+
+The remote spy attributes every call it records. Alongside the arguments it reports the calling
+script, the source chunk, the line, the function name and a short stack, and gives each call a
+`callId`. Pass that id to `clovyre_get_calling_code` to read the code that fired the remote —
+from the `Source` property where the client owns the script, from the decompiler otherwise, and the
+result always says which, because decompiled line numbers align only approximately.
+
+Attribution walks the Luau stack with `debug.info`, skipping the bridge's own frames so Clovyre is
+never reported as the origin of a call it merely observed. Executors that restrict `debug.info` still
+record the call; they just record it without a line number.
 
 `clovyre_list_remotes` maps the RemoteEvents and RemoteFunctions a game uses, and that is where it
 stops: **there is no tool that fires a remote**, at any privilege level. Reading the interface a game

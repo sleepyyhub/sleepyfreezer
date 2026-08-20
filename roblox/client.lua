@@ -3125,7 +3125,100 @@ local remoteSpy = {
     nameFilter = nil,
     includeArguments = true,
     maxArgumentBytes = 2000,
+    captureStack = true,
 }
+
+--------------------------------------------------------------------------------
+-- Call-site attribution
+--------------------------------------------------------------------------------
+
+--- This chunk's own source name, so the bridge can skip its own stack frames.
+local OWN_SOURCE = nil
+do
+    local ok, source = pcall(function() return debug.info(1, 's') end)
+    OWN_SOURCE = ok and source or nil
+end
+
+--- True when debug.info is usable on this executor.
+local function hasDebugInfo()
+    return type(debug) == 'table' and type(debug.info) == 'function'
+end
+
+--[[
+    Walks the Luau call stack and reports who actually made the call.
+
+    getcallingscript() names the script but not the place inside it, which is the
+    part that matters when one script fires the same remote from a dozen sites.
+    debug.info gives source, line and function name per level, so the stack is
+    walked from just above the hook until a frame appears that is not this
+    bridge's own code -- that frame is the real caller.
+
+    Everything is wrapped in pcall: debug.info is restricted or absent on some
+    executors, and losing attribution must never cost the observation itself.
+--]]
+local function captureCallSite(maxFrames)
+    maxFrames = math.min(math.max(maxFrames or 8, 1), 24)
+    if not hasDebugInfo() then
+        return nil, {}
+    end
+
+    local frames = {}
+    local primary = nil
+
+    for level = 2, 28 do
+        local ok, source, line, name = pcall(function()
+            return debug.info(level, 'sln')
+        end)
+        if not ok or source == nil then
+            break
+        end
+        if OWN_SOURCE == nil or source ~= OWN_SOURCE then
+            local frame = {
+                source = source,
+                line = (type(line) == 'number' and line >= 0) and line or nil,
+                name = (type(name) == 'string' and name ~= '') and name or nil,
+            }
+            table.insert(frames, frame)
+            if primary == nil then
+                primary = frame
+            end
+            if #frames >= maxFrames then
+                break
+            end
+        end
+    end
+
+    return primary, frames
+end
+
+--[[
+    Remembers where an observed call came from, so its code can be fetched later.
+
+    Only a bounded window is kept. Holding every call site would pin script
+    instances in memory for the life of the session, and the interesting call is
+    almost always a recent one.
+--]]
+local CALL_SITE_LIMIT = 300
+local callSites = {}
+local callSiteOrder = {}
+local callSiteCounter = 0
+
+local function rememberCallSite(entry)
+    callSiteCounter = callSiteCounter + 1
+    local callId = 'rc' .. tostring(callSiteCounter)
+    callSites[callId] = entry
+    table.insert(callSiteOrder, callId)
+    if #callSiteOrder > CALL_SITE_LIMIT then
+        local oldest = table.remove(callSiteOrder, 1)
+        callSites[oldest] = nil
+    end
+    return callId
+end
+
+local function forgetCallSites()
+    callSites = {}
+    callSiteOrder = {}
+end
 
 handlers.remote_spy_start = function(args)
     if not (API.hookmetamethod and API.getnamecallmethod) then
@@ -3142,6 +3235,9 @@ handlers.remote_spy_start = function(args)
     remoteSpy.nameFilter = (type(args.nameFilter) == 'string' and args.nameFilter ~= '')
         and string.lower(args.nameFilter) or nil
     remoteSpy.maxArgumentBytes = math.min(math.max(tonumber(args.maxArgumentBytes) or 2000, 64), 20000)
+    remoteSpy.captureStack = args.captureStack ~= false
+    -- Ids are only meaningful within one run of the spy.
+    forgetCallSites()
 
     local okHook, hookError = pcall(function()
         remoteSpy.original = API.hookmetamethod(game, '__namecall', function(self, ...)
@@ -3178,23 +3274,48 @@ handlers.remote_spy_start = function(args)
                         end
 
                         local callerScript = nil
+                        local callerInstance = nil
                         if API.getcallingscript then
                             local okCaller, caller = pcall(API.getcallingscript)
                             if okCaller and caller then
+                                callerInstance = caller
                                 local _, callerPath = pathOf(caller)
                                 callerScript = callerPath
                             end
                         end
 
+                        -- Attribution runs inside the hook because the stack only
+                        -- exists here; it is deliberately cheap and never throws.
+                        local primary, frames = nil, {}
+                        if remoteSpy.captureStack then
+                            primary, frames = captureCallSite(8)
+                        end
+
+                        local callId = rememberCallSite({
+                            script = callerInstance,
+                            scriptPath = callerScript,
+                            source = primary and primary.source or nil,
+                            line = primary and primary.line or nil,
+                            functionName = primary and primary.name or nil,
+                            remote = display,
+                            method = method,
+                            at = os.time(),
+                        })
+
                         -- Never block or alter the call being observed.
                         task.spawn(function()
                             pushEvent('remote_call', {
+                                callId = callId,
                                 remote = display,
                                 className = className,
                                 method = method,
                                 args = serializedArgs,
                                 argCount = packed.n,
                                 callerScript = callerScript,
+                                callerSource = primary and primary.source or nil,
+                                callerLine = primary and primary.line or nil,
+                                callerFunction = primary and primary.name or nil,
+                                stack = frames,
                                 truncated = truncated,
                                 at = os.time(),
                             })
@@ -3220,6 +3341,127 @@ handlers.remote_spy_start = function(args)
         nameFilter = args.nameFilter,
         note = 'Observing outgoing FireServer and InvokeServer calls. Clovyre cannot fire remotes.',
     }
+end
+
+--[[
+    Returns the code around a recorded call site.
+
+    Two ways in: a callId from clovyre_get_remote_calls, or an explicit script
+    plus line. The source comes from the Source property when the client owns the
+    script and from the decompiler otherwise, and the result always says which --
+    decompiled output is a best-effort reconstruction, not the original text, and
+    reading it as though it were the original is how people draw wrong conclusions.
+--]]
+handlers.get_calling_code = function(args)
+    local contextLines = math.min(math.max(tonumber(args.contextLines) or 20, 0), 200)
+    local maxBytes = math.min(math.max(tonumber(args.maxBytes) or 60000, 1024), LIMITS.maxSourceBytes)
+
+    local instance = nil
+    local line = tonumber(args.line)
+    local site = nil
+
+    if args.callId ~= nil then
+        site = callSites[tostring(args.callId)]
+        if site == nil then
+            return fail(
+                'INSTANCE_NOT_FOUND',
+                'That callId is not in the client\'s call-site window. Only the most recent '
+                    .. tostring(CALL_SITE_LIMIT) .. ' observed calls keep their origin.'
+            )
+        end
+        instance = site.script
+        line = line or site.line
+    else
+        local resolved, err = requireTarget(args)
+        if not resolved then return nil, err end
+        instance = resolved
+    end
+
+    if instance == nil then
+        return {
+            resolved = false,
+            callId = args.callId,
+            callSite = site and {
+                remote = site.remote,
+                method = site.method,
+                source = site.source,
+                line = site.line,
+                functionName = site.functionName,
+                scriptPath = site.scriptPath,
+            } or nil,
+            note = 'The call was attributed to a chunk with no script instance behind it, '
+                .. 'which usually means the caller was executor code rather than a game script.',
+        }
+    end
+
+    local read = readScriptSource(instance, maxBytes)
+
+    local result = {
+        resolved = true,
+        callId = args.callId,
+        instance = summarize(instance),
+        representation = read.representation,
+        truncated = read.truncated,
+        totalBytes = read.totalBytes,
+        note = read.note,
+        line = line,
+        callSite = site and {
+            remote = site.remote,
+            method = site.method,
+            source = site.source,
+            line = site.line,
+            functionName = site.functionName,
+        } or nil,
+    }
+
+    if type(read.source) ~= 'string' then
+        result.available = false
+        result.reason = 'No readable source: the Source property is empty and no decompiler is available.'
+        return result
+    end
+
+    -- Split into lines so a window can be taken around the call.
+    local lines = {}
+    for text in string.gmatch(read.source .. '\n', '(.-)\n') do
+        table.insert(lines, text)
+    end
+    result.available = true
+    result.lineCount = #lines
+
+    if line == nil or contextLines == 0 then
+        result.source = read.source
+        result.window = nil
+        if line == nil then
+            result.note = (result.note or '') .. ' No line number was attributed, so the whole script is returned.'
+        end
+        return result
+    end
+
+    local from = math.max(1, line - contextLines)
+    local to = math.min(#lines, line + contextLines)
+    local window = {}
+    for index = from, to do
+        table.insert(window, {
+            line = index,
+            text = lines[index],
+            isCallSite = index == line,
+        })
+    end
+
+    result.window = window
+    result.windowFrom = from
+    result.windowTo = to
+    -- A decompiled line number rarely lines up with the original, so say so
+    -- rather than letting the caret imply a precision that is not there.
+    if read.representation == 'decompiled' then
+        result.lineAccuracy = 'approximate'
+        result.note = (result.note or '')
+            .. ' Line numbers come from the running bytecode, so they point into the decompiled '
+            .. 'text only approximately.'
+    else
+        result.lineAccuracy = 'exact'
+    end
+    return result
 end
 
 handlers.remote_spy_stop = function()

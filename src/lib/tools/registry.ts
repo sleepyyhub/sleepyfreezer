@@ -624,14 +624,22 @@ const observationTools: ToolDefinition[] = [
     title: 'Observe outgoing remote traffic (privileged)',
     description:
       'Records RemoteEvent and RemoteFunction calls this client sends to the server, with serialized ' +
-      'arguments, so you can see how the game actually communicates. Observation only — Clovyre has no ' +
-      'tool for firing a remote. This installs a metatable hook in the running client, which can break ' +
-      'the game, so the session owner must enable the remote spy in the dashboard first.',
+      'arguments and where each call came from — the calling script, the line, the function name and a ' +
+      'short stack. Each call gets a callId you can pass to clovyre_get_calling_code to read the code that ' +
+      'made it. Observation only — Clovyre has no tool for firing a remote. This installs a metatable hook ' +
+      'in the running client, which can break the game, so the session owner must enable the remote spy in ' +
+      'the dashboard first.',
     category: 'observation',
     inputSchema: z.object({
       includeArguments: z.boolean().default(true),
       nameFilter: z.string().max(128).optional(),
       maxArgumentBytes: z.number().int().min(64).max(20_000).default(2_000),
+      /**
+       * Walking the stack per call costs a little time inside the hook. It is on
+       * by default because attribution is most of the value, and off is there for
+       * a game that fires remotes hot enough to feel it.
+       */
+      captureStack: z.boolean().default(true),
     }),
     requiresPrivilege: 'remote_spy',
     requiresCapability: 'hookmetamethod',
@@ -641,6 +649,37 @@ const observationTools: ToolDefinition[] = [
       includeArguments: args.includeArguments,
       nameFilter: args.nameFilter ?? null,
       maxArgumentBytes: args.maxArgumentBytes,
+      captureStack: args.captureStack,
+    }),
+  }),
+  tool({
+    name: 'clovyre_get_calling_code',
+    title: 'Read the code behind an observed call',
+    description:
+      'Returns the source around a recorded call site: pass a callId from clovyre_get_remote_calls to see ' +
+      'the code that fired that remote, or address a script and line directly. Source comes from the Source ' +
+      'property where the client owns the script and from the decompiler otherwise, and the result always ' +
+      'says which — decompiled output is a reconstruction, and its line numbers align only approximately.',
+    category: 'observation',
+    inputSchema: z.object({
+      callId: z.string().min(1).max(64).optional(),
+      ref: z.string().min(1).max(128).optional(),
+      path: z.string().min(1).max(2048).optional(),
+      displayPath: z.string().min(1).max(2048).optional(),
+      line: z.number().int().min(1).max(10_000_000).optional(),
+      contextLines: z.number().int().min(0).max(200).default(20),
+      maxBytes: z.number().int().min(1024).max(262_144).default(60_000),
+    }),
+    readOnly: true,
+    defaultTimeoutMs: 25_000,
+    toCommand: (args) => ({
+      callId: args.callId ?? null,
+      ref: args.ref ?? null,
+      path: args.path ?? null,
+      displayPath: args.displayPath ?? null,
+      line: args.line ?? null,
+      contextLines: args.contextLines,
+      maxBytes: args.maxBytes,
     }),
   }),
   tool({
