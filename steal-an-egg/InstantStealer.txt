@@ -66,6 +66,15 @@ local CFG = {
     Delay          = 0.15,
     BankTimeout    = 3.0,
     TPHeight       = 3.5,
+
+    -- movement (see the ANTI-RUBBERBAND notes in the INFO tab)
+    Stepped        = true,  -- hop there over several frames instead of one jump
+    HopStuds       = 40,    -- studs per hop while stepping
+    NoClip         = true,  -- pass through the start wall / terrain while moving
+    HoldMode       = 2,     -- 1 none, 2 drift correct, 3 anchor
+    DriftStuds     = 12,    -- re-correct only after drifting this far
+    SafeZones      = true,  -- refuse zones whose guard outruns you
+
     ToggleKey      = Enum.KeyCode.F,
     UIKey          = Enum.KeyCode.G,
 }
@@ -113,6 +122,72 @@ do
         end
         if not MutationDir and looksRight(mod) then MutationDir = mod end
     end
+end
+
+-- Guard escape maths --------------------------------------------------------
+--
+-- This is why you were dying. Taking an egg wakes the area guard and it chases.
+-- Each area's guard has a minimum escape speed; under it the guard reaches its
+-- hit distance and takes you down. Your speed power right now is whatever
+-- SpeedPowerProjection reports (base is 10, i.e. WalkSpeed ~20).
+
+local AreaDir, GuardDir, ResolveGuardSpeed, SpeedProjection, TreadUtil
+
+do
+    local ok, mod = pcall(function() return require(RS.Directory.Areas) end)
+    if ok and type(mod) == "table" then AreaDir = mod.Directory or mod end
+end
+do
+    local ok, mod = pcall(function() return require(RS.Directory.Guards) end)
+    if ok and type(mod) == "table" then GuardDir = mod.Directory or mod end
+end
+do
+    local ok, mod = pcall(function() return require(RS.Library.Functions.ResolveGuardSpeedRequirement) end)
+    if ok and type(mod) == "function" then ResolveGuardSpeed = mod end
+end
+do
+    local ok, mod = pcall(function() return require(RS.Library.Client.SpeedPowerProjection) end)
+    if ok and type(mod) == "table" then SpeedProjection = mod end
+end
+do
+    local ok, mod = pcall(function() return require(RS.Library.Util.TreadmillUtil) end)
+    if ok and type(mod) == "table" then TreadUtil = mod end
+end
+
+local function mySpeedPower()
+    if SpeedProjection and SpeedProjection.GetSpeedPower then
+        local ok, v = pcall(SpeedProjection.GetSpeedPower)
+        if ok and tonumber(v) then return tonumber(v) end
+    end
+    return (TreadUtil and TreadUtil.DEFAULT_BASE_SPEED_POWER) or 10
+end
+
+local guardReqCache = {}
+
+-- Required speed power to outrun the guard of this area, or nil if unknown.
+local function areaSpeedRequirement(areaId)
+    if guardReqCache[areaId] ~= nil then
+        return guardReqCache[areaId] or nil
+    end
+    local req
+    local okArea, areaCfg = pcall(function() return AreaDir and AreaDir[areaId] end)
+    if okArea and type(areaCfg) == "table" and areaCfg.GuardId and GuardDir and ResolveGuardSpeed then
+        for _, guardCfg in pairs(GuardDir) do
+            if type(guardCfg) == "table" and guardCfg._id == areaCfg.GuardId then
+                local okReq, value = pcall(ResolveGuardSpeed, guardCfg)
+                if okReq and tonumber(value) then req = tonumber(value) end
+                break
+            end
+        end
+    end
+    guardReqCache[areaId] = req or false
+    return req
+end
+
+local function canEscape(areaId)
+    local req = areaSpeedRequirement(areaId)
+    if not req then return true, nil end       -- unknown, do not block
+    return mySpeedPower() >= req, req
 end
 
 local function assetConfig(category)
@@ -332,19 +407,113 @@ end
 -- TELEPORTS
 --=========================================================================
 
-local function pivotTo(cframe)
+-- Rubberband control ------------------------------------------------------
+--
+-- Two separate things were throwing you back. One: a single PivotTo across the
+-- map is a position delta no legitimate character can produce, so the server's
+-- own character replication rejects it and snaps you to its last good value.
+-- Stepping the trip fixes that - the server sees fast but continuous motion.
+-- Two: the old bank() re-pivoted EVERY heartbeat, which fights the Humanoid's
+-- physics state and produces the classic stutter even when the destination is
+-- fine. Now it corrects only after real drift.
+
+local humanoid = function()
+    local char = LP.Character
+    return char and char:FindFirstChildOfClass("Humanoid") or nil
+end
+
+local clipCache = {}
+
+local function setNoClip(on)
+    local char = LP.Character
+    if not char then return end
+    if on then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                clipCache[part] = true
+                part.CanCollide = false
+            end
+        end
+    else
+        for part in pairs(clipCache) do
+            if part.Parent then part.CanCollide = true end
+        end
+        table.clear(clipCache)
+    end
+end
+
+local function settle(hrp)
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+end
+
+-- Put the Humanoid somewhere that will not argue with a hard position set, and
+-- kill the fall so the landing cannot deal damage.
+local function prepareMove()
+    local hum = humanoid()
+    if hum then
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Freefall) end)
+    end
+    if CFG.NoClip then setNoClip(true) end
+end
+
+local function finishMove()
+    if CFG.NoClip then setNoClip(false) end
+    local hum, hrp = humanoid(), rootPart()
+    if hrp then settle(hrp) end
+    if hum then
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+    end
+end
+
+local function pivotRaw(cframe)
     local char = LP.Character
     local hrp = rootPart()
     if not (char and hrp) then return false end
     char:PivotTo(cframe)
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
+    settle(hrp)
     return true
 end
 
+-- The main mover. Stepped by default; set CFG.Stepped false for the old
+-- one-frame jump if a given server does not care.
+local function travel(target)
+    local hrp = rootPart()
+    if not hrp then return false end
+
+    if not CFG.Stepped then
+        prepareMove()
+        local ok = pivotRaw(target)
+        finishMove()
+        return ok
+    end
+
+    prepareMove()
+
+    local start = hrp.CFrame
+    local delta = target.Position - start.Position
+    local dist = delta.Magnitude
+    local hops = math.max(1, math.ceil(dist / math.max(CFG.HopStuds, 1)))
+
+    for i = 1, hops do
+        if not rootPart() then finishMove() return false end
+        local alpha = i / hops
+        local point = start.Position + delta * alpha
+        pivotRaw(CFrame.new(point, point + target.LookVector))
+        RunService.Heartbeat:Wait()
+    end
+
+    pivotRaw(target)
+    finishMove()
+    return true
+end
+
+local function pivotTo(cframe) return travel(cframe) end
+
 local function tpToEgg(info)
     if not info.position then return false end
-    return pivotTo(CFrame.new(info.position + Vector3.new(0, CFG.TPHeight, 3), info.position))
+    -- Land on the nest, not floating above it: less fall, less clipping.
+    return travel(CFrame.new(info.position + Vector3.new(0, CFG.TPHeight, 3), info.position))
 end
 
 -- Your plot is the one whose sign carries your name.
@@ -424,11 +593,32 @@ local function bank()
         STATE.lastMsg = "no plot found"
         return false
     end
-    pivotTo(STATE.homeCF)
+
+    travel(STATE.homeCF)
+
+    -- Hold the plot until the server claims the egg. Do NOT re-pivot every
+    -- frame: that is what was fighting the physics and stuttering you around.
     local deadline = os.clock() + CFG.BankTimeout
+    local hrp = rootPart()
+    local anchored = false
+    if CFG.HoldMode == 3 and hrp then
+        hrp.Anchored = true
+        anchored = true
+    end
+
     while STATE.carrying and os.clock() < deadline do
-        RunService.Heartbeat:Wait()
-        pivotTo(STATE.homeCF) -- hold the spot if physics or a guard drags us off
+        task.wait(0.2)
+        if CFG.HoldMode == 2 then
+            hrp = rootPart()
+            if hrp and (hrp.Position - STATE.homeCF.Position).Magnitude > CFG.DriftStuds then
+                pivotRaw(STATE.homeCF)
+            end
+        end
+    end
+
+    if anchored then
+        hrp = rootPart()
+        if hrp then hrp.Anchored = false end
     end
     return not STATE.carrying
 end
@@ -436,6 +626,15 @@ end
 local function stealOne(info)
     local record = info.record
     local origin = rootPart() and rootPart().CFrame or nil
+
+    if CFG.SafeZones then
+        local ok, req = canEscape(info.area)
+        if not ok then
+            STATE.lastMsg = string.format("%s guard needs %s speed, you have %s",
+                info.area, short(req), short(mySpeedPower()))
+            return false
+        end
+    end
 
     if not tpToEgg(info) then
         STATE.lastMsg = "no character"
@@ -898,6 +1097,32 @@ makeStepper(StealPage, "Bank timeout", function() return CFG.BankTimeout end, fu
 makeStepper(StealPage, "TP height", function() return CFG.TPHeight end, function(v) CFG.TPHeight = v end,
     0, 15, 0.5, function(v) return string.format("%.1f", v) end)
 
+makeToggle(StealPage, "Stepped travel (anti-rubberband)", function() return CFG.Stepped end,
+    function(v) CFG.Stepped = v end)
+makeToggle(StealPage, "Noclip while moving", function() return CFG.NoClip end,
+    function(v) CFG.NoClip = v end)
+makeToggle(StealPage, "Only zones I can outrun", function() return CFG.SafeZones end,
+    function(v) CFG.SafeZones = v end)
+
+makeStepper(StealPage, "Hop size", function() return CFG.HopStuds end, function(v) CFG.HopStuds = v end,
+    10, 200, 10, function(v) return string.format("%d st", v) end)
+makeStepper(StealPage, "Drift tolerance", function() return CFG.DriftStuds end, function(v) CFG.DriftStuds = v end,
+    2, 40, 2, function(v) return string.format("%d st", v) end)
+
+local holdRow = makeRow(StealPage, 48)
+rowLabel(holdRow, "Bank hold mode")
+local HOLD_NAMES = {"none", "drift correct", "anchor"}
+local holdBtn = New("TextButton", {
+    Size = UDim2.fromOffset(110, 28), Position = UDim2.new(1, -122, 0.5, -14),
+    BackgroundColor3 = T.SURFACE, AutoButtonColor = false, Text = HOLD_NAMES[CFG.HoldMode],
+    TextColor3 = T.HIGH, Font = Enum.Font.GothamBold, TextSize = 11, Parent = holdRow,
+})
+Corner(holdBtn, 8)
+holdBtn.MouseButton1Click:Connect(function()
+    CFG.HoldMode = (CFG.HoldMode % #HOLD_NAMES) + 1
+    holdBtn.Text = HOLD_NAMES[CFG.HoldMode]
+end)
+
 local sortRow = makeRow(StealPage, 48)
 rowLabel(sortRow, "Sort targets by")
 local sortBtn = New("TextButton", {
@@ -1102,19 +1327,34 @@ for _, zone in ipairs(listZones()) do
     local nests = model:FindFirstChild("Nests")
     if nests then eggCount = #nests:GetChildren() end
 
-    local btn = makeButton(ZonePage, string.upper(zone.name), T.HIGH, function()
+    local safe, req = canEscape(zone.name)
+
+    local btn = makeButton(ZonePage, string.upper(zone.name), safe and T.HIGH or T.RED, function()
         local anchor = zoneAnchor(model)
-        if anchor and pivotTo(anchor) then
-            Notify("tp -> " .. zone.name, T.ACCENT)
-        else
+        if not anchor then
             Notify("no anchor in " .. zone.name, T.RED)
+            return
+        end
+        local stillSafe, need = canEscape(zone.name)
+        if not stillSafe then
+            Notify(string.format("%s guard needs %s, you have %s",
+                zone.name, short(need), short(mySpeedPower())), T.ORANGE)
+        end
+        if travel(anchor) then
+            Notify("tp -> " .. zone.name, T.ACCENT)
         end
     end, 40)
 
+    local note
+    if req then
+        note = string.format("%d nests  |  needs %s speed", eggCount, short(req))
+    else
+        note = string.format("%d nests", eggCount)
+    end
     New("TextLabel", {
-        Size = UDim2.fromOffset(90, 14), Position = UDim2.new(1, -100, 1, -16),
-        BackgroundTransparency = 1, Text = string.format("%d nests", eggCount),
-        TextColor3 = T.MUTED, Font = Enum.Font.Gotham, TextSize = 9,
+        Size = UDim2.fromOffset(170, 14), Position = UDim2.new(1, -180, 1, -15),
+        BackgroundTransparency = 1, Text = note,
+        TextColor3 = safe and T.MUTED or T.ORANGE, Font = Enum.Font.Gotham, TextSize = 9,
         TextXAlignment = Enum.TextXAlignment.Right, Parent = btn,
     })
 end
@@ -1169,6 +1409,28 @@ infoCard("Endpoints used",
     "Banking has no remote: the server claims the egg when\n" ..
     "you stand on your own plot while carrying it.")
 
+infoCard("Why you were rubberbanding",
+    "A single PivotTo across the map is a position delta no\n" ..
+    "real character can make, so the server rejects it and\n" ..
+    "snaps you back. Stepped travel walks you there in hops\n" ..
+    "so it reads as fast but continuous motion. The old bank\n" ..
+    "also re-pivoted every frame, fighting the Humanoid; it\n" ..
+    "now corrects only after real drift.")
+
+infoCard("Why you were dying",
+    "Taking an egg wakes that area's guard and it chases.\n" ..
+    "Each guard has a minimum escape speed - under it, it\n" ..
+    "reaches its hit distance and drops you. Your speed\n" ..
+    "power is base 10 (WalkSpeed ~20), so the late zones\n" ..
+    "catch you every time. ZONES marks the ones you cannot\n" ..
+    "outrun in red; 'Only zones I can outrun' skips them.")
+
+infoCard("If it still snaps",
+    "Lower Hop size to 20-25 (more, smaller hops)\n" ..
+    "Set Bank hold mode to anchor\n" ..
+    "Turn off Noclip if the wall is bouncing you\n" ..
+    "Raise Drift tolerance so it stops correcting at all")
+
 infoCard("Keys",
     "F  toggle auto steal\n" ..
     "G  hide / show this panel\n" ..
@@ -1189,7 +1451,8 @@ task.spawn(function()
         StatusMain.TextColor3 = STATE.running and T.GREEN or T.TEXT
         StatusSub.Text = string.format("stolen %d   denied %d   live %d   banked %s/s",
             STATE.stolen, STATE.denied, STATE.available, short(STATE.earned))
-        StatusPlot.Text = string.format("plot %s   |   %s", tostring(STATE.plotName or "?"), STATE.lastMsg)
+        StatusPlot.Text = string.format("plot %s  |  speed %s  |  %s",
+            tostring(STATE.plotName or "?"), short(mySpeedPower()), STATE.lastMsg)
         tw(Dot, 0.3, nil, nil, {BackgroundColor3 = STATE.running and T.GREEN or T.MUTED}):Play()
         task.wait(1)
     end
@@ -1252,10 +1515,30 @@ UIS.InputBegan:Connect(function(input, processed)
     end
 end)
 
-LP.CharacterAdded:Connect(function()
+-- Never leave a corpse noclipped, and say what killed the run.
+local function watchCharacter(char)
+    local hum = char:WaitForChild("Humanoid", 10)
+    if not hum then return end
+    hum.Died:Connect(function()
+        table.clear(clipCache)
+        STATE.carrying = false
+        if STATE.running then
+            stopLoop()
+            CFG.AutoSteal = false
+            paintAuto(false)
+        end
+        STATE.lastMsg = "died - auto stopped"
+        Notify("died, auto steal stopped", T.RED)
+    end)
+end
+
+if LP.Character then task.spawn(watchCharacter, LP.Character) end
+LP.CharacterAdded:Connect(function(char)
     task.wait(1.5)
+    table.clear(clipCache)
     STATE.homeCF = resolveHome()
     STATE.carrying = false
+    watchCharacter(char)
 end)
 
 --=========================================================================
@@ -1273,8 +1556,12 @@ L.Start        = startLoop
 L.Stop         = stopLoop
 L.Bank         = bank
 L.TpToEgg      = tpToEgg
+L.Travel       = travel
 L.Zones        = listZones
 L.ZoneAnchor   = zoneAnchor
+L.SpeedPower   = mySpeedPower
+L.AreaRequirement = areaSpeedRequirement
+L.CanEscape    = canEscape
 
 selectTab("STEAL")
 STATE.homeCF = resolveHome()
