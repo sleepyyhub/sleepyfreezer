@@ -1280,7 +1280,19 @@ do
     L.ClaimResult = function(text)
         if not L.OursPending then return end
         L.LastLabelColor = nil
-        protected(L.NotifyHandler, text)
+        -- claimOurs ONLY. Never L.NotifyHandler.
+        --
+        -- NotifyHandler's claim is written as
+        --     if L.OursPending and claimOurs(text) then return end
+        -- so when claimOurs does NOT recognise the text as an outcome it falls
+        -- straight through into the code path and redeems it. Routing side
+        -- notifications through there meant every join, purchase and quest
+        -- popup got fired as a code for as long as a redeem was pending.
+        --
+        -- A non-Top message is never a code. The most it can ever be is the
+        -- verdict for something already sent, so the claim is the only thing
+        -- it is allowed to reach.
+        protected(claimOurs, text)
     end
 
     handle = function(msg)
