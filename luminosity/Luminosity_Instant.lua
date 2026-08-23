@@ -335,9 +335,26 @@ L.LastPreset = L.Settings.LastPreset
 L.Threshold = L.Settings.Threshold
 
 L.PacketSeen = {}
--- Echo guard only. One packet delivered twice arrives within a frame or two,
--- so this is deliberately tiny: a code that genuinely repeats a word
--- ("OINKY OINKY PORK") is announced seconds apart and sails straight through.
+-- WORD-LEVEL DEDUP REMOVED.
+--
+-- It existed because the LABEL path could read the same announcement twice:
+-- watchLabel does an initial readLabel(obj) AND connects the Text signal, so
+-- one toast could enter the pipeline from both. Detection now happens at the
+-- entry to NotificationController:Notify, which is called exactly once per
+-- announcement, so there is no echo left to guard against.
+--
+-- And it was never free. A code that genuinely repeats a word --
+--
+--     OINKY  +  OINKY  +  JP   =>   OINKYOINKYJP
+--
+-- has an identical second piece. Any window at all eats it if the game
+-- announces the parts close together, and the buffer then assembles OINKYJP:
+-- a wrong code, sent confidently, with nothing in the log to say why.
+-- Dropping a real piece is unrecoverable; a doubled send is not.
+--
+-- The redeem-once guard (firedSeen, keyed on the ASSEMBLED code) is a
+-- different thing and stays: it stops the same finished code going out twice,
+-- while repeated PIECES build normally.
 L.PacketDupWindow = L.Settings.DupWindow or 0.15
 L.PacketHooked = false
 L.Priority = true
@@ -438,6 +455,8 @@ local clock, defer, protected = os.clock, task.defer, pcall
 local packetSeen = L.PacketSeen
 local packetDupWindow = L.PacketDupWindow
 
+-- Not on any fire path any more. Left because external callers//the UI may
+-- still reference it; it no longer gates a redeem.
 L.SeenPacket = function(key, now)
     if L.DedupOn == false then return false end
     local previous = packetSeen[key]
@@ -619,12 +638,10 @@ L.PostRedeemBridge = postRedeem
 local hotAuto, hotThreshold, hotSkip, hotFilter = false, 1, false, false
 local hotGuess = false
 local hotArmed, hotInvoke, hotIsEvent = nil, nil, false
-local hotDedup, hotFiredTTL = true, 30
+local hotFiredTTL = 30
 local hotMode = "remote"
 
 L.SyncHot = function()
-    packetDupWindow = L.PacketDupWindow
-    hotDedup     = L.DedupOn ~= false
     if L.SyncBuf then L.SyncBuf() end
     hotMode      = "normal"
     hotFiredTTL  = L.FIRED_TTL or 30
@@ -645,13 +662,6 @@ L.Consume = function(src, piece, packetAt)
     local t0 = packetAt or clock()
     if not piece then return end
 
-    -- Inline the only mandatory gate. This avoids a function call and keeps
-    -- cleanup on the background task above.
-    if L.DedupOn ~= false then
-        local previous = packetSeen[piece]
-        if previous and (t0 - previous) <= packetDupWindow then return end
-        packetSeen[piece] = t0
-    end
 
     if hotSkip and hotFilter and RESULT_WORDS[piece] then return end
 
@@ -980,11 +990,6 @@ L.NotifyHandler = function(a)
     -- Guess drives its own redeeming, so either switch being on means we work.
     if not hotAuto and not hotGuess then return end
 
-    if hotDedup then
-        local prev = packetSeen[text]
-        if prev and (t0 - prev) <= packetDupWindow then return end
-        packetSeen[text] = t0
-    end
 
     local code = text
     if hotGuess then
@@ -1296,13 +1301,23 @@ do
             defer(logHeard, t0, L.NotifyRemoteName, text)
             return
         end
-        if hotDedup then
-            local prev = packetSeen[text]
-            if prev and (t0 - prev) <= packetDupWindow then return end
-            packetSeen[text] = t0
-        end
         local code = codeFrom(text)
         if not code then return end
+
+        -- Multi-part codes still assemble in the raw lane. Skipping the
+        -- accumulator here meant Luminosity fired each piece as its own code
+        -- and could never build OINKY + OINKY + JP at all -- the exact case
+        -- this lane is most likely to be pointed at.
+        if hotGuess then
+            code = accumulate(code, t0)
+        elseif hotThreshold > 1 then
+            code = feed(code, t0)
+            if not code then
+                defer(postFragment, t0, L.NotifyRemoteName, text)
+                return
+            end
+        end
+
         local was = firedSeen[code]
         if was and (t0 - was) <= hotFiredTTL then return end
         firedSeen[code] = t0
@@ -4123,14 +4138,8 @@ makeToggle(3, "Webhook",
         L.Settings.WebhookOn = on
         L.SaveSettings()
     end)
-makeToggle(4, "Packet Dedup",
-    function() return L.DedupOn end,
-    function(on)
-        L.DedupOn = on
-        L.Settings.DedupOn = on
-        L.SaveSettings()
-        L.SyncHot()
-    end)
+-- No Packet Dedup toggle: the word-level guard is gone (see PacketSeen above),
+-- so there is nothing for it to switch.
 makeToggle(5, "Rainbow Stats",
     function() return L.RainbowStats end,
     function(on)
@@ -4150,10 +4159,7 @@ makeToggle(9, "Hide Settings Tab",
     function() return L.SettingsHidden end,
     function(on) L.SetSettingsHidden(on, true) end)
 
-makeStepper(8, "Dup Window",
-    function() return L.PacketDupWindow end,
-    function(v) L.PacketDupWindow = v; L.Settings.DupWindow = v; L.SaveSettings(); L.SyncHot() end,
-    0, 2, 0.05, function(v) return string.format("%.2fs", v) end)
+-- No Dup Window stepper either, for the same reason.
 
 -- repaints every accent-baked element after a theme swap: the refresh suite
 -- covers anything stateful, the explicit list covers the statics.
