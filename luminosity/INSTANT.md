@@ -75,6 +75,28 @@ queueing behind it. That alone lifts the hard cap the 0.5s lockout imposed.
   being load-bearing. The label watcher is gated off while the wire is live
   precisely because it *does* see those local toasts.
 
+## The Box slot (A/B)
+
+The speed selector has a fifth segment, `Box`. It forces the original NoRemote
+behaviour end to end so the two paths can be compared on a real drop:
+
+| | detect | redeem |
+|---|---|---|
+| Normal / Medium / Fast | wire | `InvokeServer` |
+| **Luminosity** | wire, raw lane | `InvokeServer` |
+| **Box** | label watcher | TextBox + Confirm button |
+
+Exactly one detector is live in any mode — the wire handler bails on `hotBox`,
+and the label gate lifts only for `hotBox` — so there is no double-fire between
+them. Switching is instant in both directions; nothing reconnects.
+
+History rows are tagged `wire` or `box` by the mode that actually fired them, so
+the comparison isn't self-poisoning. Watch `detect->send` in the status line.
+
+Bear in mind Box inherits `submitCode`'s `task.wait(0.5)`, so on a burst it will
+not just be slower, it will *miss codes entirely*. That is the thing being
+measured, not a bug in the slot.
+
 ## Fallback
 
 If `Packages.Net` can't be resolved, `resolveNet()` retries in the background

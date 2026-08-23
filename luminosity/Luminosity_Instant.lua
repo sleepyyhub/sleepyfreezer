@@ -81,7 +81,9 @@ end
 local function normalizeSettings(source)
     source = type(source) == "table" and source or {}
     local out = {
-        SpeedIndex = settingInt(source.SpeedIndex, SETTINGS_DEFAULTS.SpeedIndex, 1, 4),
+        -- 5 modes now: Normal, Medium, Fast, Luminosity, Box. The clamp is a
+        -- literal because SpeedModes is built further down, after settings load.
+        SpeedIndex = settingInt(source.SpeedIndex, SETTINGS_DEFAULTS.SpeedIndex, 1, 5),
         AutoOn = type(source.AutoOn) == "boolean" and source.AutoOn or SETTINGS_DEFAULTS.AutoOn,
         ThresholdMode = source.ThresholdMode == "custom" and "custom" or "preset",
         CustomThreshold = settingInt(source.CustomThreshold, 0, 0, 50),
@@ -325,6 +327,11 @@ L.SpeedModes = {
     {name = "Medium",     clean = true,  filter = false, recheck = false },
     {name = "Fast",       clean = false, filter = false, recheck = false },
     {name = "Luminosity", clean = false, filter = false, recheck = false, raw = true },
+    -- Box: the original NoRemote behaviour, kept selectable as an A/B control.
+    -- Label watcher for detect, TextBox + Confirm button for the redeem, wire
+    -- untouched. Not a speed step -- it is the baseline the others are measured
+    -- against, which is why it sits past Luminosity rather than before Normal.
+    {name = "Box",        clean = true,  filter = false, recheck = false, box = true },
 }
 L.SpeedIndex = math.clamp(L.Settings.SpeedIndex or 1, 1, #L.SpeedModes)
 L.Mode = L.SpeedModes[L.SpeedIndex]
@@ -621,12 +628,19 @@ local hotGuess = false
 local hotArmed, hotInvoke, hotIsEvent = nil, nil, false
 local hotDedup, hotFiredTTL = true, 30
 local hotMode = "remote"
+-- Box mode: force the whole original path back on -- label watcher for detect,
+-- Confirm button for the redeem. Read on every packet and in front of every
+-- fire, so it lives here rather than as an L.Mode.box lookup.
+local hotBox = false
 
 L.SyncHot = function()
     packetDupWindow = L.PacketDupWindow
     hotDedup     = L.DedupOn ~= false
     if L.SyncBuf then L.SyncBuf() end
     hotMode      = "normal"
+    hotBox       = (L.Mode and L.Mode.box) == true
+    -- Label the source honestly: an A/B is worthless if both modes log "wire".
+    if L.WireLive then L.NotifyRemoteName = hotBox and "box" or "wire" end
     hotFiredTTL  = L.FIRED_TTL or 30
     hotAuto      = L.AutoOn
     hotGuess     = L.GuessCode
@@ -1220,7 +1234,15 @@ do
             L.LastGapMs = (os.clock() - L.TextAt) * 1000
             if not L.BestGapMs or L.LastGapMs < L.BestGapMs then L.BestGapMs = L.LastGapMs end
         end
-        if not RF then return uiFire(code) end
+        -- Box mode routes the redeem back through the TextBox and the Confirm
+        -- button, debounce and 0.5s lockout included. That is the point: it is
+        -- the baseline, not a tuned path.
+        if hotBox or not RF then
+            -- No remote verdict on this path, so make sure a stale one from an
+            -- earlier wire fire cannot be read as this code's result.
+            L.LastVerdict = nil
+            return uiFire(code)
+        end
         local ok, msg = fireWire(code)
         -- Stashed rather than returned: the caller's signature has no room for
         -- a verdict, and the deferred tail reads it a moment later.
@@ -1261,6 +1283,10 @@ do
     local payload = L.PayloadText
 
     handle = function(msg)
+        -- Box mode: the wire goes silent and the label watcher below does the
+        -- detecting, exactly as the NoRemote build did. Bailing here rather
+        -- than disconnecting keeps the switch instant in both directions.
+        if hotBox then return end
         local t0 = clock()
         local text = msg
         if type(text) ~= "string" then
@@ -1419,7 +1445,8 @@ do
         -- also carries our OWN local "Code redeemed!" / "Invalid code" toasts,
         -- which the wire never sees -- reading them would redeem our own
         -- results back at the server. Fallback only.
-        if L.WireLive then return end
+        -- Box mode wants this path, so the gate lifts for it.
+        if L.WireLive and not (L.Mode and L.Mode.box) then return end
         L.TextAt = os.clock()          -- the instant the string reached us
 
         -- Colour only decides anything while one of our fires is awaiting a
@@ -2918,7 +2945,13 @@ L.SetSpeed = function(idx, silent)
     if L.ApplyLum then L.ApplyLum(lum) end
 
     if not silent and L.Notify then
-        L.Notify("Speed: " .. L.Mode.name, lum and T.WHITE or T.HIGH)
+        if L.Mode.box then
+            -- Say what it actually switched to. "Speed: Box" reads like a
+            -- faster setting, and it is the opposite of one.
+            L.Notify("Baseline: label + button", T.MUTED)
+        else
+            L.Notify("Speed: " .. L.Mode.name, lum and T.WHITE or T.HIGH)
+        end
     end
 end
 
