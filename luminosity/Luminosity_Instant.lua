@@ -1074,7 +1074,7 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2)
         if status then
             status.set(("sent  ·  %s  ·  %.3fms detect->send%s"):format(
                 code, L.LastGapMs or 0,
-                L.InstantHook and "  ·  instant" or "  ·  signal"), T.MUTED)
+                L.NotifyHooked and "  ·  notify" or "  ·  label"), T.MUTED)
         end
         task.delay(L.OURS_WINDOW, function()
             -- Nothing came back inside the window: record the send so it is
@@ -1233,10 +1233,22 @@ do
 
     -- Worker pool. submitCode yields on the game's remote; one recycled worker
     -- would queue a burst behind that yield.
-    local W, WN = {}, 4
+    -- coroutine.status is NOT enough to pick a free worker. submitCode yields
+    -- on the game's remote, and a worker parked mid-redeem waiting on that
+    -- reports "suspended" exactly like one parked on its own yield. Resuming
+    -- that one would inject a code into the middle of an in-flight redeem and
+    -- corrupt the wait. An explicit busy flag, set across the whole of handle
+    -- including the yield, is the only thing that distinguishes them.
+    local W, BUSY, WN = {}, {}, 4
     local function spawnWorker(i)
+        BUSY[i] = false
         W[i] = coroutine.create(function()
-            while true do handle(coroutine.yield()) end
+            while true do
+                local m = coroutine.yield()
+                BUSY[i] = true
+                handle(m)
+                BUSY[i] = false
+            end
         end)
         coroutine.resume(W[i])
     end
@@ -1244,9 +1256,8 @@ do
 
     L.Dispatch = function(msg)
         for i = 1, WN do
-            local w = W[i]
-            if coroutine.status(w) == "suspended" then
-                if not coroutine.resume(w, msg) then spawnWorker(i) end
+            if not BUSY[i] and coroutine.status(W[i]) == "suspended" then
+                if not coroutine.resume(W[i], msg) then spawnWorker(i) end
                 return
             end
         end
@@ -1254,6 +1265,18 @@ do
     end
 
     local payload = L.PayloadText
+
+    -- Our own redeem results arrive as LOCAL toasts (NotificationController
+    -- :Success / :Error), which carry no position and land on the side root --
+    -- not the Top root the code announcements use. The old build watched Top
+    -- only, so claimOurs was reading announcements and never actually saw a
+    -- result. The Notify hook gets both and tells them apart by position, so
+    -- the verdict finally lands on the right message.
+    L.ClaimResult = function(text)
+        if not L.OursPending then return end
+        L.LastLabelColor = nil
+        protected(L.NotifyHandler, text)
+    end
 
     handle = function(msg)
         local t0 = clock()
@@ -1370,6 +1393,10 @@ do
     -- Shared by the instant hook (value handed in) and the signal fallback.
     local function dispatchText(obj, t)
         if t == "" then return end
+        -- Fallback only. The Notify hook below catches the same announcement
+        -- ~1.1ms earlier (measured), and this path additionally sees toasts
+        -- the hook already handled.
+        if L.NotifyHooked then return end
         L.TextAt = os.clock()          -- the instant the string reached us
 
         -- Colour only decides anything while one of our fires is awaiting a
@@ -1414,51 +1441,20 @@ do
     -- errors. A thread is required -- but task.spawn ALLOCATES a coroutine on
     -- every single announcement.
     --
-    -- One worker is parked on coroutine.yield instead and resumed with the
-    -- text, so the common path costs a resume rather than an allocation. If it
-    -- is still busy (its previous send has not returned from the server yet) we
-    -- fall back to task.spawn rather than queue behind it -- a queued code
-    -- would fire stale.
-    local worker
-    local function workerLoop()
-        while true do
-            local obj, txt = coroutine.yield()
-            dispatchText(obj, txt)
-        end
-    end
-    local function startWorker()
-        worker = coroutine.create(workerLoop)
-        coroutine.resume(worker)          -- run to the first yield, then park
-    end
-    startWorker()
-
-    local function fireAsync(obj, txt)
-        if coroutine.status(worker) == "suspended" then
-            local ok = coroutine.resume(worker, obj, txt)
-            if not ok then startWorker() end   -- worker died: replace it
-            return
-        end
-        task.spawn(dispatchText, obj, txt)     -- busy, take the slow path
-    end
-
-    L.InstantHook = false
-    do
-        local hookmeta = hookmetamethod
-        local wrap = newcclosure or function(f) return f end
-        if type(hookmeta) == "function" then
-            pcall(function()
-                local old
-                old = hookmeta(game, "__newindex", wrap(function(self, key, value)
-                    if key == "Text" and watched[self]
-                       and type(value) == "string" and value ~= "" then
-                        fireAsync(self, value)
-                    end
-                    return old(self, key, value)
-                end))
-                L.InstantHook = true
-            end)
-        end
-    end
+    -- The __newindex "instant hook" that used to live here has been removed.
+    --
+    -- Measured on the live client, it never fired for a real notification. The
+    -- game clones a fresh Template per announcement, writes its Text via
+    -- CustomRichTextController.apply, and parents it AFTER that write -- so at
+    -- the moment the Text is assigned the clone is not in `watched` yet and the
+    -- hook's guard rejects it. It only ever caught writes to labels already in
+    -- the tree, and the game reuses none (it Destroys each toast). Confirmed:
+    -- textAlreadySetWhenParented = true.
+    --
+    -- So it was paying a metamethod detour on EVERY property write in the whole
+    -- game for zero detections. Detection now happens at the entry to
+    -- NotificationController:Notify instead -- see the block below -- and the
+    -- label watcher stays only as the fallback.
 
     local function watchLabel(obj)
         if watched[obj] then return end
@@ -1485,6 +1481,77 @@ do
         for _, d in ipairs(root:GetDescendants()) do watchLabel(d) end
         root.DescendantAdded:Connect(watchLabel)
         return true
+    end
+end
+
+-- ═════════════════════════════════════════════ NOTIFICATION ENTRY HOOK
+--
+-- The earliest local point the announcement exists.
+--
+-- NotificationController:Notify is a plain method on the module table, and the
+-- remote handler calls it as `v_u_19:Notify(...)` -- a runtime table index, not
+-- a captured function. So swapping the field is picked up. Verified live.
+--
+-- Everything the old label detection waited through happens INSIDE Notify,
+-- after this point: task.spawn, Template:Clone(), the seven gsub passes in
+-- transformRichText, and the parent into TopNotification that the label
+-- watcher actually triggers on. Measured gap from this hook to that watcher,
+-- six samples: 0.263 / 1.509 / 1.338 / 1.288 / 1.140 / 1.308 ms, mean 1.141.
+--
+-- Position tells the two kinds of message apart, which the old build could not:
+--   position == "Top"  -> a server announcement. This is a code. Fire.
+--   position == nil    -> our OWN result toast, raised locally by :Success or
+--                         :Error. Never a code; it is the verdict for a redeem
+--                         we already sent, so it goes to the claim path.
+-- The old build watched the Top root only, so its result-claiming never saw a
+-- result at all -- the outcome messages were on the side root the whole time.
+L.NotifyHooked = false
+do
+    local function hookNotify()
+        if L.NotifyHooked then return true end
+        local ctrl = RepS and RepS:FindFirstChild("Controllers")
+        local mod = ctrl and ctrl:FindFirstChild("NotificationController")
+        if not mod then return false end
+        local okReq, NC = pcall(require, mod)
+        if not okReq or type(NC) ~= "table" or type(NC.Notify) ~= "function" then
+            return false
+        end
+        -- Re-execution guard. Hooking a module table is permanent for the
+        -- session, so running the script twice without rejoining would chain a
+        -- second wrapper onto the first and every announcement would fire
+        -- twice. Restore the original first, then hook once.
+        local G = (getgenv and getgenv()) or shared
+        if type(G.__LumNotifyReal) == "function" then
+            NC.Notify = G.__LumNotifyReal
+        end
+        local real = NC.Notify
+        G.__LumNotifyReal = real
+        NC.Notify = function(self, msg, dur, sound, position, ...)
+            -- Never let our work break the game's notifications: the pass
+            -- through happens regardless of what goes wrong above it.
+            if type(msg) == "string" and msg ~= "" then
+                if position == "Top" then
+                    L.TextAt = os.clock()
+                    protected(L.Dispatch, msg)
+                elseif L.OursPending and L.ClaimResult then
+                    protected(L.ClaimResult, msg)
+                end
+            end
+            return real(self, msg, dur, sound, position, ...)
+        end
+        L.NotifyHooked, L.GuiHooked, L.PacketHooked = true, true, true
+        L.NotifyRemoteName = "notify"
+        return true
+    end
+    L.HookNotify = hookNotify
+
+    if not hookNotify() then
+        task.spawn(function()
+            for _ = 1, 600 do
+                if hookNotify() then return end
+                task.wait(0.1)
+            end
+        end)
     end
 end
 
