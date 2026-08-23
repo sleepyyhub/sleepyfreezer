@@ -80,7 +80,12 @@ export async function scrapeUserMessages({
     }
   }
 
-  return { messages: found.reverse(), scanned, skipped, channelCount: targets.length };
+  // Discord liefert pro Channel neueste zuerst. Ein reverse() über die
+  // Gesamtliste würde nur die Channel-Reihenfolge umdrehen — deshalb über die
+  // Snowflake-ID sortieren, in der der Zeitstempel steckt.
+  found.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+
+  return { messages: found, scanned, skipped, channelCount: targets.length };
 }
 
 function serialize(msg, channel) {

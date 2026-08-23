@@ -1,0 +1,14 @@
+{
+  "name": "discord-message-exporter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone CLI that exports every message a Discord user sent in a server",
+  "bin": { "dexport": "src/index.js" },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
