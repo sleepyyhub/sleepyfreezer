@@ -81,9 +81,7 @@ end
 local function normalizeSettings(source)
     source = type(source) == "table" and source or {}
     local out = {
-        -- 5 modes now: Normal, Medium, Fast, Luminosity, Box. The clamp is a
-        -- literal because SpeedModes is built further down, after settings load.
-        SpeedIndex = settingInt(source.SpeedIndex, SETTINGS_DEFAULTS.SpeedIndex, 1, 5),
+        SpeedIndex = settingInt(source.SpeedIndex, SETTINGS_DEFAULTS.SpeedIndex, 1, 4),
         AutoOn = type(source.AutoOn) == "boolean" and source.AutoOn or SETTINGS_DEFAULTS.AutoOn,
         ThresholdMode = source.ThresholdMode == "custom" and "custom" or "preset",
         CustomThreshold = settingInt(source.CustomThreshold, 0, 0, 50),
@@ -318,20 +316,15 @@ end
 -- Every mode now shares the same prevalidated, allocation-light fire path.
 -- Normal retains its optional result-word filter; the other modes progressively
 -- remove policy checks while keeping the same fast decoder and expiring dedup.
--- All four modes now detect and fire on the wire; they differ only in how much
--- policy sits between the packet and the send. Luminosity (raw) removes the
--- last of it: no accumulator, no result-word filter, no colour classification,
--- no claimOurs. Dedup, fired-once, send.
+-- All four modes detect on the notification label and redeem through the game's
+-- own submitCode; they differ only in how much policy sits between the two.
+-- Luminosity (raw) removes the last of it: no accumulator, no result-word
+-- filter. Dedup, fired-once, send.
 L.SpeedModes = {
     {name = "Normal",     clean = true,  filter = true,  recheck = true  },
     {name = "Medium",     clean = true,  filter = false, recheck = false },
     {name = "Fast",       clean = false, filter = false, recheck = false },
     {name = "Luminosity", clean = false, filter = false, recheck = false, raw = true },
-    -- Box: the original NoRemote behaviour, kept selectable as an A/B control.
-    -- Label watcher for detect, TextBox + Confirm button for the redeem, wire
-    -- untouched. Not a speed step -- it is the baseline the others are measured
-    -- against, which is why it sits past Luminosity rather than before Normal.
-    {name = "Box",        clean = true,  filter = false, recheck = false, box = true },
 }
 L.SpeedIndex = math.clamp(L.Settings.SpeedIndex or 1, 1, #L.SpeedModes)
 L.Mode = L.SpeedModes[L.SpeedIndex]
@@ -628,19 +621,12 @@ local hotGuess = false
 local hotArmed, hotInvoke, hotIsEvent = nil, nil, false
 local hotDedup, hotFiredTTL = true, 30
 local hotMode = "remote"
--- Box mode: force the whole original path back on -- label watcher for detect,
--- Confirm button for the redeem. Read on every packet and in front of every
--- fire, so it lives here rather than as an L.Mode.box lookup.
-local hotBox = false
 
 L.SyncHot = function()
     packetDupWindow = L.PacketDupWindow
     hotDedup     = L.DedupOn ~= false
     if L.SyncBuf then L.SyncBuf() end
     hotMode      = "normal"
-    hotBox       = (L.Mode and L.Mode.box) == true
-    -- Label the source honestly: an A/B is worthless if both modes log "wire".
-    if L.WireLive then L.NotifyRemoteName = hotBox and "box" or "wire" end
     hotFiredTTL  = L.FIRED_TTL or 30
     hotAuto      = L.AutoOn
     hotGuess     = L.GuessCode
@@ -1082,23 +1068,6 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2)
             ok, reply = nil, "Request failed"
         end
     elseif fireOnly then
-        -- Wire path: the remote already answered. Report the server's own words
-        -- instead of holding the send open for six seconds and guessing an
-        -- outcome from the colour of a toast.
-        local v = L.LastVerdict
-        if v and v.code == code then
-            L.LastVerdict, L.OursPending = nil, nil
-            L.LastOursOk, L.LastOursPrize = v.ok, v.msg
-            if status then
-                status.set(("%s  ·  %s  ·  %.3fms detect->send  ·  wire"):format(
-                    v.ok and "redeemed" or "rejected", code, L.LastGapMs or 0),
-                    v.ok and T.HIGH or T.MUTED)
-            end
-            if v.ok and L.GuessCode then L.ResetBuf() end
-            postRedeem(t0, L.NotifyRemoteName, code, v.ok,
-                       v.msg or (v.ok and "redeemed" or "rejected"), timing)
-            return
-        end
         -- No return value on this path. Hold the send open and let the game's
         -- own Top notification supply the reply; PostOursResult closes it.
         L.OursT0, L.OursTiming, L.OursCode = t0, timing, code
@@ -1134,142 +1103,146 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2)
     postRedeem(t0, L.NotifyRemoteName, code, ok, reply, timing)
 end
 
--- ══════════════════════════════════════════════════════════════ INSTANT CORE
+-- ═══════════════════════════════════════════════════════════════════════ UI CORE
 --
--- Everything above this line detects a code by watching the game's own
--- notification LABEL and redeems it by driving the game's own Confirm BUTTON.
--- Both ends of that are the slowest surface the client offers. Read against
--- the live game, this is what each announcement actually costs before the old
--- path even sees a string:
+-- UI path only, both ends. No RemoteEvent connect, no RemoteFunction, no
+-- InvokeServer anywhere in this build. Detection reads the game's own
+-- notification labels; redeeming drives the game's own redeem handler.
 --
---   RemoteEvent "NotificationService/Notify" arrives
---     -> OnClientEvent (deferred: queued, flushed at the next resumption)
---     -> NotificationController:Notify
---     -> task.spawn                        (thread allocation)
---     -> Template:Clone()                  (Instance clone)
---     -> CustomRichTextController.apply
---          -> transformRichText: 7 gsub passes over the message
---     -> label.Text = <transformed>        <- the old detector wakes up HERE
+-- Which means the thing standing between this script and "instant" is not the
+-- network, it is the game's own submitCode, in CodesController:
 --
--- and then the redeem cost, in CodesController.submitCode:
+--   if v_u_18 or not p_u_16.Active then return end   <- returns at line 1
+--   ...
+--   task.wait(0.5)                                    <- then re-opens the gate
+--   p_u_16.Active = true ; v_u_18 = false
 --
---   box.Text = code   -> the game's own Text sanitiser signal (gsub/upper/sub)
---   submitCode        -> debounce check, box.Text read, Text="", Active=false,
---                        ReleaseFocus, InvokeServer, THEN task.wait(0.5)
+-- That is a LOCKOUT, not a delay: a code announced inside half a second plus a
+-- round trip does not arrive late, it never fires at all -- submitCode returns
+-- on its first line and the announcement is gone. It is the single biggest
+-- thing costing this script codes, and it is entirely local.
 --
--- That trailing wait is not a delay, it is a LOCKOUT: a second code announced
--- inside half a second plus a round trip is silently dropped, because Active
--- is false and submitCode returns immediately. The old path could not be
--- instant; it was queued behind a clone, seven pattern passes and a debounce.
+-- So it gets cleared in place, before every fire. Read off the live client:
+-- submitCode's upvalue 1 IS that debounce boolean and it is writable, and
+-- upvalue 2 is the real TextBox. Setting it false and putting Active back is
+-- still the button path -- we drive the game's own handler, we just refuse to
+-- let it lock itself out behind us.
 --
--- So both ends move to the wire.
+-- Three more things this path does that the old one did not:
 --
---   DETECT: connect to the Notify RemoteEvent itself. That is the packet, and
---           arg 1 is the message. No clone, no gsub, no label, no render. It
---           is the earliest moment the string exists on this client.
---
---   REDEEM: call Net:RemoteFunction("RequestRedemption"):InvokeServer(code) --
---           the exact call submitCode makes, with the debounce, the UI writes
---           and the 0.5s lockout removed. Both handles are resolved once and
---           cached, and InvokeServer is cached as a bare function so firing is
---           one call with no property crossing in front of it.
---
--- The remote is resolved through the game's OWN Net package by name, not
--- guessed from the remote tree, so "we picked the wrong remote" -- the reason
--- the button path existed -- cannot happen.
---
--- Two things fall out of this for free:
---   * Real verdicts. InvokeServer returns (ok, message). Outcomes stop being
---     inferred from notification colour, and the 6s "no result" hold is gone.
---   * No self-feedback. Codes arrive over the wire from the server; our own
---     "Code redeemed!" is raised LOCALLY by NotificationController and never
---     touches the remote, so the detector cannot hear itself.
+--   * calls submitCode DIRECTLY, off the OnActivated handler list, instead of
+--     the Confirm button's Activated connection. That connection is the
+--     AnimatedButton wrapper, which fires a sound and an Expand tween before
+--     the redeem ever runs. Skipping the wrapper skips both.
+--   * pre-sanitises the code to what the game's own TextBox sanitiser would
+--     produce (gsub non-alphanumerics, upper, cap at 50). The game's Text
+--     handler then finds nothing to change and does not write a second time.
+--   * fires from a pool of four parked worker coroutines. submitCode yields on
+--     the game's own remote, so one worker would serialise a burst behind that
+--     yield -- which, combined with the lockout, is exactly how bursts were
+--     being dropped.
 do
-    local RS = game:GetService("ReplicatedStorage")
+    local PGx = PG
+    local uiFireLegacy = fireNormal   -- the pre-existing button path, as fallback
 
-    local RF, RE, invoke        -- remote function, notify event, cached method
-    local uiFire = fireNormal   -- the button path, kept as the fallback
+    local uiBox2, submitCode
+    local getupv, setupv = debug.getupvalue, debug.setupvalue
 
-    L.Instant, L.WireLive = false, false
+    L.UIDirect, L.Unlocked = false, false
 
-    -- Non-blocking: FindFirstChild rather than WaitForChild, retried in the
-    -- background. A missing package must not stall the script at load.
-    local function resolveNet()
-        local pkgs = RS:FindFirstChild("Packages")
-        local net = pkgs and pkgs:FindFirstChild("Net")
-        if not net then return false end
-        local okN, Net = pcall(require, net)
-        if not okN or type(Net) ~= "table" then return false end
-        if not RF then
-            local ok, rf = pcall(function() return Net:RemoteFunction("RequestRedemption") end)
-            if ok and typeof(rf) == "Instance" then
-                RF, invoke = rf, rf.InvokeServer
+    -- Walk the Confirm button's AnimatedButton wrapper to the signal it fires,
+    -- and take CodesController's handler off that list. Resolved once.
+    local function resolveUI()
+        local ok = pcall(function()
+            local box = PGx.Codes.Codes.CodeRedeem.TextBox
+            local btn = PGx.Codes.Codes.Confirm
+            if not (box and btn) then return end
+            uiBox2 = box
+            if typeof(getconnections) ~= "function" then return end
+            local conns = getconnections(btn.Activated)
+            local wrapper = conns and conns[1] and conns[1].Function
+            if not wrapper then return end
+            local selfT = getupv(wrapper, 1)
+            local sig = type(selfT) == "table" and selfT.OnActivated
+            local node = sig and rawget(sig, "_handlerListHead")
+            while node do
+                local fn = rawget(node, "_fn")
+                if type(fn) == "function" then
+                    local src = tostring(debug.getinfo(fn).source)
+                    if src:find("CodesController", 1, true) then
+                        -- Confirm the shape before trusting it: upvalue 1 must
+                        -- be the debounce bool, upvalue 2 our TextBox.
+                        if type(getupv(fn, 1)) == "boolean" and getupv(fn, 2) == box then
+                            submitCode = fn
+                            break
+                        end
+                    end
+                end
+                node = rawget(node, "_next")
             end
-        end
-        if not RE then
-            local ok, re = pcall(function() return Net:RemoteEvent("NotificationService/Notify") end)
-            if ok and typeof(re) == "Instance" then RE = re end
-        end
-        L.Instant = RF ~= nil
-        return RF ~= nil and RE ~= nil
+        end)
+        L.UIBox, L.UIDirect = uiBox2, submitCode ~= nil
+        return ok and uiBox2 ~= nil
+    end
+    L.ResolveUIDirect = resolveUI
+
+    -- What the game's own TextBox handler would turn the text into. Doing it
+    -- here means its GetPropertyChangedSignal finds v29 == v26 and skips its
+    -- own write.
+    local function sanitise(code)
+        return (code:gsub("[^%w]", "")):upper():sub(1, 50)
     end
 
-    -- One call. No :InvokeServer index, no Parent read, no UI touched.
-    local function fireWire(code)
-        if not RF then
-            if not resolveNet() or not RF then
-                return uiFire(code) and true or nil, "ui path"
-            end
+    local function fireUI(code)
+        if not submitCode or not uiBox2 then
+            if not resolveUI() then return false end
+            if not submitCode then return uiFireLegacy(code) end
         end
-        local ok, a, b = pcall(invoke, RF, code)
-        if not ok then return nil, tostring(a) end
-        return a, (type(b) == "string" and b or nil)
-    end
-    L.FireWire = fireWire
+        local box = uiBox2
+        code = sanitise(code)
+        if code == "" then return false end
 
-    -- The redeem the rest of the file calls. Rebinding the existing local means
-    -- NotifyHandler's captured upvalue picks this up without touching its body.
-    fireNormal = function(code)
         if L.TextAt then
             L.LastGapMs = (os.clock() - L.TextAt) * 1000
             if not L.BestGapMs or L.LastGapMs < L.BestGapMs then L.BestGapMs = L.LastGapMs end
         end
-        -- Box mode routes the redeem back through the TextBox and the Confirm
-        -- button, debounce and 0.5s lockout included. That is the point: it is
-        -- the baseline, not a tuned path.
-        if hotBox or not RF then
-            -- No remote verdict on this path, so make sure a stale one from an
-            -- earlier wire fire cannot be read as this code's result.
-            L.LastVerdict = nil
-            return uiFire(code)
-        end
-        local ok, msg = fireWire(code)
-        -- Stashed rather than returned: the caller's signature has no room for
-        -- a verdict, and the deferred tail reads it a moment later.
-        L.LastVerdict = {code = code, ok = ok == true, msg = msg}
+
+        -- Clear the game's lockout ahead of the write, not after the fire: this
+        -- is what stops a code announced inside the previous redeem's 0.5s tail
+        -- from being dropped on submitCode's first line.
+        if getupv(submitCode, 1) == true then setupv(submitCode, 1, false) end
+        if not box.Active then box.Active = true end
+        L.Unlocked = true
+
+        -- Write and submit with nothing between them. submitCode reads
+        -- box.Text synchronously at its top, before it yields, so the capture
+        -- is atomic and two overlapping fires cannot cross codes.
+        box.Text = code
+        submitCode()
         return true
+    end
+    L.FireUI = fireUI
+
+    -- The redeem the rest of the file calls.
+    fireNormal = function(code)
+        return fireUI(code) and true or false
     end
     L.FireNormal = fireNormal
 
-    local handle   -- forward decl; the worker pool below parks on it
+    local handle
 
-    -- Worker pool.
-    --
-    -- InvokeServer yields for a full round trip. One recycled worker would
-    -- serialise a burst of announcements behind that yield, so there are four:
-    -- a code announced while an earlier redeem is still in flight takes the
-    -- next free thread instead of waiting. Each worker parks on coroutine.yield
-    -- after handling, so the common path is a resume, not an allocation.
+    -- Worker pool. submitCode yields on the game's remote; one recycled worker
+    -- would queue a burst behind that yield.
     local W, WN = {}, 4
     local function spawnWorker(i)
         W[i] = coroutine.create(function()
             while true do handle(coroutine.yield()) end
         end)
-        coroutine.resume(W[i])          -- run to the first yield, then park
+        coroutine.resume(W[i])
     end
     for i = 1, WN do spawnWorker(i) end
 
-    local function dispatch(msg)
+    L.Dispatch = function(msg)
         for i = 1, WN do
             local w = W[i]
             if coroutine.status(w) == "suspended" then
@@ -1277,36 +1250,27 @@ do
                 return
             end
         end
-        task.spawn(handle, msg)         -- all four busy: take the slow path
+        task.spawn(handle, msg)
     end
 
     local payload = L.PayloadText
 
     handle = function(msg)
-        -- Box mode: the wire goes silent and the label watcher below does the
-        -- detecting, exactly as the NoRemote build did. Bailing here rather
-        -- than disconnecting keeps the switch instant in both directions.
-        if hotBox then return end
         local t0 = clock()
         local text = msg
         if type(text) ~= "string" then
             text = payload(msg, 0)
             if not text then return end
         end
-        L.TextAt = t0
 
-        -- Luminosity: the raw lane.
-        --
-        -- No accumulator, no result-word filter, no colour classification, no
-        -- claimOurs -- the remote returns the verdict, so none of that is load
-        -- bearing any more. What is left in front of the send is a dedup read
-        -- and a fired-once read. Two table lookups, then the call.
+        -- Luminosity: the raw lane. No accumulator, no result-word filter.
+        -- Dedup, fired-once, send. Everything else runs the normal handler.
         if not (L.Mode and L.Mode.raw) then
             L.NotifyHandler(text)
             return
         end
         if not (hotAuto or hotGuess) then
-            defer(logHeard, t0, "wire", text)
+            defer(logHeard, t0, L.NotifyRemoteName, text)
             return
         end
         if hotDedup then
@@ -1314,55 +1278,25 @@ do
             if prev and (t0 - prev) <= packetDupWindow then return end
             packetSeen[text] = t0
         end
-        local was = firedSeen[text]
+        local code = codeFrom(text)
+        if not code then return end
+        local was = firedSeen[code]
         if was and (t0 - was) <= hotFiredTTL then return end
-        firedSeen[text] = t0
+        firedSeen[code] = t0
 
+        -- No return value on this path, so the outcome is claimed from the
+        -- game's own notification a moment later, same as every other mode.
+        L.OursPending, L.OursAt = code, t0
         local tCall = clock()
-        local ok, reply = fireWire(text)
+        local pok = protected(fireUI, code)
         local tDone = clock()
-        L.LastGapMs = (tCall - t0) * 1000
-        if not L.BestGapMs or L.LastGapMs < L.BestGapMs then L.BestGapMs = L.LastGapMs end
-
-        local code = text
-        -- Fire raw, correct after. The raw lane sends the announcement string
-        -- untouched because that IS the code in the normal case; only when the
-        -- server rejects it does the markup get stripped and the real code sent.
-        -- The retry costs nothing on the path that matters.
-        if ok ~= true then
-            local clean = codeFrom(text)
-            if clean and clean ~= text then
-                local ok2, reply2 = fireWire(clean)
-                if ok2 == true then ok, reply, code = ok2, reply2, clean end
-            end
-        end
-
-        L.LastDetect, L.RecentRedeem, L.LastSource, L.LastFireAt = t0, t0, "wire", t0
-        L.LastOursOk, L.LastOursPrize = ok == true, reply
-        local timing = {client = (tCall - t0) * 1000, server = (tDone - tCall) * 1000}
-        L.LastTiming = timing
-        if status then
-            status.set(("%s  ·  %s  ·  %.3fms detect->send  ·  wire"):format(
-                ok == true and "redeemed" or "rejected", code, L.LastGapMs or 0),
-                ok == true and T.HIGH or T.MUTED)
-        end
-        defer(postRedeem, t0, "wire", code,
-              ok == true, reply or (ok == true and "redeemed" or "rejected"), timing)
+        defer(rawFire, t0, tCall, tDone, text, code, pok, pok, "sent")
     end
 
-    local function hookWire()
-        if L.WireLive or not RE then return false end
-        RE.OnClientEvent:Connect(dispatch)
-        L.WireLive, L.GuiHooked, L.PacketHooked = true, true, true
-        L.NotifyRemoteName = "wire"
-        L.Priority, L.PriorityRank, L.PriorityTarget = true, 1, 1
-        return true
-    end
-
-    if not (resolveNet() and hookWire()) then
+    if not resolveUI() then
         task.spawn(function()
             for _ = 1, 600 do
-                if resolveNet() and hookWire() then return end
+                if resolveUI() then return end
                 task.wait(0.1)
             end
         end)
@@ -1406,18 +1340,14 @@ end
 -- and the notification labels ARE the announcement. Every label under the
 -- notification roots is watched, and its Text change feeds the same handler
 -- the packet path used to.
--- These are the GUI-fallback defaults. They must not stomp the wire hook when
--- it came up synchronously at load, which is the normal case.
-if not L.WireLive then
-    L.PacketHooked = false
-    L.Priority = false      -- nothing to fight for on the label path
-end
+L.PacketHooked = false
+L.Priority = false          -- nothing to fight for: there is no signal
 L.PriorityRank, L.PriorityTarget = 1, 1
 L.MyRank = function() return 1 end
 L.TakeFirst = function() return true end
 L.HookNotifyPacket = function() return L.GuiHooked == true end
 
-L.GuiHooked = L.WireLive == true
+L.GuiHooked = false
 L.WatchedLabels = 0
 
 do
@@ -1440,23 +1370,16 @@ do
     -- Shared by the instant hook (value handed in) and the signal fallback.
     local function dispatchText(obj, t)
         if t == "" then return end
-        -- The wire beat us here by a clone, seven gsub passes and a render, so
-        -- this label write is the same announcement arriving late. Worse, it
-        -- also carries our OWN local "Code redeemed!" / "Invalid code" toasts,
-        -- which the wire never sees -- reading them would redeem our own
-        -- results back at the server. Fallback only.
-        -- Box mode wants this path, so the gate lifts for it.
-        if L.WireLive and not (L.Mode and L.Mode.box) then return end
         L.TextAt = os.clock()          -- the instant the string reached us
 
         -- Colour only decides anything while one of our fires is awaiting a
         -- verdict; with nothing pending it is pure cost.
         if L.OursPending then
             L.LastLabelColor = L.ClassifyColor(obj.TextColor3, t)
-            L.NotifyHandler(t)
+            L.Dispatch(t)
             L.LastLabelColor = nil
         else
-            L.NotifyHandler(t)
+            L.Dispatch(t)
         end
     end
 
@@ -2945,13 +2868,7 @@ L.SetSpeed = function(idx, silent)
     if L.ApplyLum then L.ApplyLum(lum) end
 
     if not silent and L.Notify then
-        if L.Mode.box then
-            -- Say what it actually switched to. "Speed: Box" reads like a
-            -- faster setting, and it is the opposite of one.
-            L.Notify("Baseline: label + button", T.MUTED)
-        else
-            L.Notify("Speed: " .. L.Mode.name, lum and T.WHITE or T.HIGH)
-        end
+        L.Notify("Speed: " .. L.Mode.name, lum and T.WHITE or T.HIGH)
     end
 end
 

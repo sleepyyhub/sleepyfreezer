@@ -1,119 +1,82 @@
-# Luminosity — Instant Path
+# Luminosity — UI Path
 
 Target: `[🐝] Sakumi Bee Game` (placeId `81639382631672`). Everything below was
-read off the live client, not guessed.
+read off the live client.
 
-## What was slow
+**UI path only, both ends.** No RemoteEvent connect, no RemoteFunction, no
+`InvokeServer` anywhere in this build. Detection reads the game's own
+notification labels; redeeming drives the game's own redeem handler.
 
-The `NoRemote` build detected a code by watching the notification **label**, and
-redeemed it by driving the game's **Confirm button**. Both are the slowest
-surface the client offers.
+## The thing that was actually costing codes
 
-Detection, from `ReplicatedStorage.Controllers.NotificationController`:
-
-```
-RemoteEvent "NotificationService/Notify" arrives
-  -> OnClientEvent                     (deferred: queued, flushed next resumption)
-  -> NotificationController:Notify
-  -> task.spawn                        (thread allocation)
-  -> Template:Clone()                  (Instance clone)
-  -> CustomRichTextController.apply
-       -> transformRichText: 7 gsub passes over the message
-  -> label.Text = <transformed>        <- the old detector woke up HERE
-```
-
-Redeeming, from `ReplicatedStorage.Controllers.CodesController.submitCode`:
+Not the network — `submitCode`, in `ReplicatedStorage.Controllers.CodesController`:
 
 ```lua
-if v_u_18 or not p_u_16.Active then return end   -- debounce + Active gate
+if v_u_18 or not p_u_16.Active then return end   -- returns on line 1
 ...
-p_u_16.Text = ""; p_u_16.Active = false; p_u_16:ReleaseFocus()
-pcall(function() return Net:RemoteFunction("RequestRedemption"):InvokeServer(code) end)
-...
-task.wait(0.5)                                    -- lockout, not a delay
-p_u_16.Active = true; v_u_18 = false
+task.wait(0.5)                                    -- then re-opens the gate
+p_u_16.Active = true ; v_u_18 = false
 ```
 
-That trailing `task.wait(0.5)` is the real killer: a second code announced
-inside half a second plus a round trip is **silently dropped**, because `Active`
-is false and `submitCode` returns immediately. Writing `box.Text` also triggers
-the game's own Text sanitiser signal (`gsub` + `upper` + `sub`, and a possible
-second write) on top.
+That is a **lockout, not a delay**. A code announced inside half a second plus a
+round trip does not arrive late — it never fires at all. `submitCode` returns on
+its first line and the announcement is gone. It is entirely local, and it was
+the single biggest source of dropped codes.
 
-## What it does now
+So it gets cleared in place, before every fire. Verified on the live client:
+`submitCode`'s upvalue 1 **is** that debounce boolean and it is writable
+(`debug.setupvalue` → read back `false`), and upvalue 2 is the real TextBox.
+Clearing it and restoring `Active` is still the button path — we drive the
+game's own handler, we just refuse to let it lock itself out behind us.
 
-Both ends moved to the wire.
+## Three more wins on the same path
 
-**Detect** — connect straight to `Net:RemoteEvent("NotificationService/Notify")`.
-Arg 1 is the message. No clone, no gsub, no label, no render: it is the earliest
-moment the string exists on this client.
+- **Calls `submitCode` directly**, off the `OnActivated` handler list, instead
+  of the Confirm button's `Activated` connection. That connection is the
+  `AnimatedButton` wrapper, which fires a sound and an Expand tween before the
+  redeem ever runs. Skipping the wrapper skips both. Handle resolved once and
+  cached; shape is validated before it is trusted (upvalue 1 boolean, upvalue 2
+  our TextBox).
+- **Pre-sanitises the code** to exactly what the game's TextBox handler would
+  produce (`gsub` non-alphanumerics, `upper`, cap 50), so its
+  `GetPropertyChangedSignal` finds `v29 == v26` and skips its own second write.
+  Parity with the game's own routine checked across 8 cases including rich-text
+  markup — identical output.
+- **Four parked worker coroutines.** `submitCode` yields on the game's remote,
+  so a single worker would serialise a burst behind that yield — which, together
+  with the lockout, is how bursts were being lost.
 
-**Redeem** — call `Net:RemoteFunction("RequestRedemption"):InvokeServer(code)`,
-the exact call `submitCode` makes, with the debounce, the UI writes and the 0.5s
-lockout removed. Both handles resolve once through the game's own `Net` package
-**by name**, and `InvokeServer` is cached as a bare function, so firing is one
-call with no property crossing in front of it.
+Write and submit happen with nothing between them. `submitCode` reads
+`box.Text` synchronously at its top, before it yields, so the capture is atomic
+and two overlapping fires cannot cross codes.
 
-Verified live: `InvokeServer("ZZQXINVALIDTEST")` returned `false, "Invalid Code"`
-with no Codes UI open and no TextBox involved — the button path is not needed at
-all. Round trip was 444 ms, which is the server; the client-side portion is now
-a dedup read, a fired-once read, and the call.
+## Detection
 
-Four parked worker coroutines handle packets, so a code announced while an
-earlier redeem is still mid-round-trip takes the next free thread instead of
-queueing behind it. That alone lifts the hard cap the 0.5s lockout imposed.
+`__newindex` hook on the notification labels, so the string is caught during the
+assignment rather than waiting for the deferred `GetPropertyChangedSignal` to
+flush. Falls back to the signal where `hookmetamethod` is unavailable.
 
-## Two things that fall out for free
+## Modes
 
-- **Real verdicts.** `InvokeServer` returns `(ok, message)`. Outcomes are no
-  longer inferred from the colour of a toast, and the 6-second "no result" hold
-  is gone.
-- **No self-feedback.** Codes arrive over the wire *from the server*; the game's
-  own `"Code redeemed!"` / `"Invalid code"` toasts are raised **locally** by
-  `NotificationController:Error/Success` and never touch the remote. The
-  detector cannot hear itself, so `claimOurs` and the colour classifier stop
-  being load-bearing. The label watcher is gated off while the wire is live
-  precisely because it *does* see those local toasts.
+All four detect on the label and redeem through `submitCode`; they differ only
+in how much policy sits between the two. Luminosity (raw) removes the last of
+it — no accumulator, no result-word filter. Dedup, fired-once, send.
 
-## The Box slot (A/B)
+Default is Luminosity on PC (`SpeedIndex = IS_PC and 4 or 1`).
 
-The speed selector has a fifth segment, `Box`. It forces the original NoRemote
-behaviour end to end so the two paths can be compared on a real drop:
+## Verified / not verified
 
-| | detect | redeem |
-|---|---|---|
-| Normal / Medium / Fast | wire | `InvokeServer` |
-| **Luminosity** | wire, raw lane | `InvokeServer` |
-| **Box** | label watcher | TextBox + Confirm button |
+Verified live: `submitCode` resolves off the handler list; upvalue 1 is the
+debounce and `debug.setupvalue` writes it; upvalue 2 is the real TextBox.
+Verified locally: sanitiser parity, and the whole file compiles
+(`luau-compile`).
 
-Exactly one detector is live in any mode — the wire handler bails on `hotBox`,
-and the label gate lifts only for `hotBox` — so there is no double-fire between
-them. Switching is instant in both directions; nothing reconnects.
-
-History rows are tagged `wire` or `box` by the mode that actually fired them, so
-the comparison isn't self-poisoning. Watch `detect->send` in the status line.
-
-Bear in mind Box inherits `submitCode`'s `task.wait(0.5)`, so on a burst it will
-not just be slower, it will *miss codes entirely*. That is the thing being
-measured, not a bug in the slot.
-
-## Fallback
-
-If `Packages.Net` can't be resolved, `resolveNet()` retries in the background
-for 60s and the original label-watch + Confirm-button path stays active
-untouched. `L.WireLive` is the flag; `L.Instant` says the remote resolved.
-
-## Not measured
-
-The wire-vs-label lead time. The server was quiet for a 26-second capture
-window, so no announcement landed to time head-to-head. The ordering is
-structural — same signal, our handler in the same flush, the game's handler
-doing a clone plus seven pattern passes plus a thread spawn before it writes the
-label — but the millisecond figure is unproven. Run a capture during an actual
-drop to get it.
+**Not verified:** the assembled block running end to end in game. The client
+dropped before that check could run. Load it and watch `detect->send` in the
+status line, and whether a burst still loses codes.
 
 ## Build
 
-Single file, no dependencies: `Luminosity_Instant.lua`. Executor needs
-`getconnections` and `hookmetamethod` only for the fallback path; the wire path
-needs neither. Compile-checked with `luau-compile`.
+Single file, no dependencies: `Luminosity_Instant.lua`. Needs `getconnections`
+and `debug.getupvalue`/`setupvalue`; `hookmetamethod` is optional (detection
+falls back to the property signal without it).
