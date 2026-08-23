@@ -5,6 +5,8 @@ import { handleCommand } from './commands.js';
 import { chat } from './openrouter.js';
 import { getPersonality } from './personalities/index.js';
 import { getGuildPersonality, getHistory, pushHistory } from './state.js';
+import { startKeepAlive } from './keepalive.js';
+import { deployCommands } from './deploy-commands.js';
 
 const client = new Client({
   intents: [
@@ -18,9 +20,26 @@ const client = new Client({
 // Pro Channel nur eine Anfrage gleichzeitig — sonst überholen sich Antworten.
 const busy = new Set();
 
-client.once(Events.ClientReady, (c) => {
+client.once(Events.ClientReady, async (c) => {
   console.log(`Eingeloggt als ${c.user.tag} — Modell: ${config.model}`);
+
+  // Auf Render gibt es keine Shell für "npm run deploy" — beim Start selbst
+  // registrieren. Der PUT ist idempotent.
+  if (process.env.AUTO_DEPLOY_COMMANDS !== 'false') {
+    try {
+      await deployCommands();
+    } catch (err) {
+      console.error('[commands] Registrieren fehlgeschlagen:', err.message);
+    }
+  }
 });
+
+startKeepAlive(() => ({
+  bot: client.user?.tag ?? null,
+  ready: client.isReady(),
+  guilds: client.guilds.cache.size,
+  uptime: Math.floor((client.uptime ?? 0) / 1000),
+}));
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
