@@ -1489,7 +1489,9 @@ do
             if not L.BestFloorUs or us < L.BestFloorUs then L.BestFloorUs = us end
         end
         if fastIsEvent then a, b = true, "sent" end
-        if a == nil then L.OursPending, L.OursAt = code, t0 end
+        if a == nil then
+            L.OursPending, L.OursAt = code, t0 ~= 0 and t0 or clock()
+        end
         if L.Note then L.Note(L.NotifyRemoteName or "remote", code, t0) end
         if L.NotifyRedeem then killFeed(text) end
         rawFire(t0, tCall, tDone, text, raw, pok, a, b, fastIsEvent or a == nil)
@@ -1581,9 +1583,8 @@ do
             return soloSlow(msg, fastTime and clock() or nil)
         end
         local a, b = fastInvoke(fastRemote, msg)
-        local tDone = clock()
         sent[msg] = true
-        defer(tail, tDone, tDone, tDone, msg, msg, true, a, b)
+        defer(tail, 0, 0, 0, msg, msg, true, a, b)
     end
 
     local idle = function(msg, _, _, position)

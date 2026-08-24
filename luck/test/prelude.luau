@@ -134,6 +134,16 @@ withSignals(early, "OnClientEvent")
 RepS:_add(early)
 EARLY_REMOTE = early
 
+local refRemote = newInstance("RemoteEvent", "RE/Reference")
+withSignals(refRemote, "OnClientEvent")
+RepS:_add(refRemote)
+REF_REMOTE = refRemote
+
+local ref2 = newInstance("RemoteEvent", "RE/Reference2")
+withSignals(ref2, "OnClientEvent")
+RepS:_add(ref2)
+REF2_REMOTE = ref2
+
 local codeValue = newInstance("StringValue", "ActiveCode")
 rawset(codeValue, "Value", "")
 withSignals(codeValue, "Changed")

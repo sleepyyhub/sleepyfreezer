@@ -49,6 +49,8 @@ table.sort(samples)
 local sum = 0
 for _, v in ipairs(samples) do sum += v end
 
+print(("NOTIFY_CONNECTIONS=%d"):format(#(getconnections(signal) or {})))
+print(("SENDS_PER_FIRE=%.2f"):format(warmed / math.min(N, 500)))
 print(("VERSION=%s"):format(BENCH_LABEL or "?"))
 print(("SENDS_PER_WARM=%d"):format(warmed))
 print(("N=%d ROUNDS=%d"):format(N, ROUNDS))
@@ -98,3 +100,54 @@ print(("LATENCY_MAX=%.1f"):format(latency[#latency]))
 local lraw = {}
 for _, v in ipairs(latency) do lraw[#lraw + 1] = ("%.1f"):format(v) end
 print(("LATENCY_ALL=%s"):format(table.concat(lraw, " ")))
+
+-- Reference: the same signal, the same fire, but the handler does nothing
+-- except the send. Whatever this costs is dispatch and call overhead that
+-- belongs to the engine, not to the script. The gap between it and the real
+-- build is the script's actual contribution to latency.
+local refSignal = REF_REMOTE._signals.OnClientEvent
+refSignal:Connect(function(msg)
+    LAST_SEND_AT = os.clock()
+end)
+local refFire = refSignal.Fire
+
+local ref = {}
+for _ = 1, ROUNDS do
+    local acc = 0
+    for i = 1, N do
+        local t0 = os.clock()
+        refFire(refSignal, codes[i], 5, nil, "Top")
+        acc += (LAST_SEND_AT - t0)
+    end
+    ref[#ref + 1] = math.max(acc / N - pairCost, 0) * 1e9
+end
+table.sort(ref)
+print(("DISPATCH_MEDIAN=%.1f"):format(ref[(#ref + 1) // 2]))
+print(("SCRIPT_SHARE=%.1f"):format(
+    latency[(#latency + 1) // 2] - ref[(#ref + 1) // 2]))
+
+-- Second reference, shaped like the real handler: it reaches the stamp
+-- through a call rather than inline, because the real handler cannot stamp
+-- inline -- it has to call into the send. The gap between this and the real
+-- build is the script's logic and nothing else.
+local sink = function(_, msg) LAST_SEND_AT = os.clock() end
+local shaped = REF2_REMOTE._signals.OnClientEvent
+shaped:Connect(function(msg, _, _, position)
+    return sink(nil, msg)
+end)
+local shapedFire = shaped.Fire
+
+local ref2 = {}
+for _ = 1, ROUNDS do
+    local acc = 0
+    for i = 1, N do
+        local t0 = os.clock()
+        shapedFire(shaped, codes[i], 5, nil, "Top")
+        acc += (LAST_SEND_AT - t0)
+    end
+    ref2[#ref2 + 1] = math.max(acc / N - pairCost, 0) * 1e9
+end
+table.sort(ref2)
+local m2 = ref2[(#ref2 + 1) // 2]
+print(("DISPATCH_PLUS_CALL=%.1f"):format(m2))
+print(("LOGIC_ONLY=%.1f"):format(latency[(#latency + 1) // 2] - m2))
