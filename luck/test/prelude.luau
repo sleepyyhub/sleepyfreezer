@@ -109,7 +109,8 @@ end
 
 -- ── services ──────────────────────────────────────────────────────────────
 local RepS = newInstance("ReplicatedStorage", "ReplicatedStorage")
-withSignals(RepS, "DescendantAdded")
+withSignals(RepS, "DescendantAdded", "AttributeChanged")
+function RepS:GetAttribute() return nil end
 
 -- The two remotes the script resolves by direct name (modded-place path).
 local redeem = newInstance("RemoteFunction", "RF/RequestRedemption")
@@ -117,6 +118,17 @@ local notify = newInstance("RemoteEvent", "RE/NotificationService/Notify")
 withSignals(notify, "OnClientEvent")
 RepS:_add(redeem)
 RepS:_add(notify)
+
+local early = newInstance("RemoteEvent", "RE/CodeService/Sync")
+withSignals(early, "OnClientEvent")
+RepS:_add(early)
+EARLY_REMOTE = early
+
+local codeValue = newInstance("StringValue", "ActiveCode")
+rawset(codeValue, "Value", "")
+withSignals(codeValue, "Changed")
+RepS:_add(codeValue)
+CODE_VALUE = codeValue
 
 local SENT = {}
 function redeem:InvokeServer(code)
@@ -248,4 +260,6 @@ SENT_LOG = SENT
 NOTIFY_REMOTE = notify
 FLUSH = flush
 REDEEM_REMOTE = redeem
+EARLY = EARLY_REMOTE
+CODEVAL = CODE_VALUE
 end

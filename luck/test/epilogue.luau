@@ -6,6 +6,7 @@ assert(L, "LUCK did not publish itself into getgenv()")
 local function reset()
     for k in pairs(SENT_LOG) do SENT_LOG[k] = nil end
     if L.SentCodes then table.clear(L.SentCodes) end
+    if L.RaceLog then table.clear(L.RaceLog) end
     if L.FiredSeen then table.clear(L.FiredSeen) end
     L.OursPending = nil
     L.ResetBuf()
@@ -115,6 +116,58 @@ check("floor measured when instrumented", type(L.FloorUs) == "number",
     tostring(L.FloorUs))
 L.Instrument = false
 L.SyncHot()
+
+
+print("\n-- surface race --")
+L.AutoOn = true
+L.Threshold = 1
+L.SyncHot()
+reset()
+
+local armedRemotes, armedValues = L.RaceOn()
+check("race armed extra remotes", armedRemotes >= 1, tostring(armedRemotes))
+check("race armed string values", armedValues >= 1, tostring(armedValues))
+check("timestamping switched on by the race", L.RaceArmed == true)
+
+print("\n-- an earlier remote wins the race --")
+reset()
+EARLY._signals.OnClientEvent:Fire("EARLYCODE1")
+fire("EARLYCODE1", 5, nil, "Top")
+local log = L.RaceLog[1]
+check("race logged the code", log and log.code == "EARLYCODE1",
+    log and log.code or "nothing")
+check("the early remote is named the winner",
+    log and log.winner == "re:RE/CodeService/Sync", log and log.winner or "?")
+check("notify remote recorded as late",
+    log and type(log.late["remote"]) == "number",
+    log and tostring(log.late["remote"]) or "?")
+check("observe-only surface did not send", #SENT_LOG == 1, codes())
+check("the send came from the notify lane",
+    SENT_LOG[1] and SENT_LOG[1].code == "EARLYCODE1", codes())
+
+print("\n-- promoting the winner makes it fire --")
+reset()
+L.Promote("re:RE/CodeService/Sync")
+EARLY._signals.OnClientEvent:Fire("PROMOTED2")
+check("promoted surface sent immediately", #SENT_LOG == 1, codes())
+check("sent the right code", SENT_LOG[1] and SENT_LOG[1].code == "PROMOTED2", codes())
+fire("PROMOTED2", 5, nil, "Top")
+check("notify lane did not send it again", #SENT_LOG == 1, codes())
+
+print("\n-- shape filter rejects chatter --")
+reset()
+EARLY._signals.OnClientEvent:Fire("hello there friend")
+EARLY._signals.OnClientEvent:Fire("x")
+EARLY._signals.OnClientEvent:Fire(12345)
+check("non-code payloads send nothing", #SENT_LOG == 0, codes())
+
+print("\n-- report --")
+L.RacePrint()
+check("report lists the winner first",
+    L.RaceReport()[1] and L.RaceReport()[1].wins >= 1)
+
+L.RaceOff()
+check("race off returns to no timestamping", L.RaceArmed == false)
 
 print(("\n%d passed, %d failed\n"):format(pass, fail))
 if fail > 0 then error("harness failures", 0) end

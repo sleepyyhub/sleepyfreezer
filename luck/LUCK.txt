@@ -1453,7 +1453,7 @@ do
             fastRemote, fastInvoke, fastIsEvent, fastSafe = nil, nil, false, false
         end
         fastRaw  = L.RawFire ~= false
-        fastTime = L.Instrument == true
+        fastTime = L.Instrument == true or L.RaceArmed == true
         fastReady = fastInvoke ~= nil
             and L.AutoOn == true
             and not L.GuessCode
@@ -1480,6 +1480,7 @@ do
         end
         if fastIsEvent then a, b = true, "sent" end
         if a == nil then L.OursPending, L.OursAt = code, t0 end
+        if L.Note then L.Note(L.NotifyRemoteName or "remote", code, t0) end
         if L.NotifyRedeem then killFeed(text) end
         rawFire(t0, tCall, tDone, text, code, pok, a, b, fastIsEvent or a == nil)
     end
@@ -1539,6 +1540,205 @@ do
         return L.ConnectNotifyRemote()
     end
     if L.RemoteDetectOn then L.BindFast() end
+end
+
+do
+    local upper, find = string.upper, string.find
+    local surfaces, raceSeen = {}, {}
+    local sentCodes = L.SentCodes
+
+    L.Surfaces = surfaces
+    L.RaceLog = {}
+    L.RaceMax = 12
+    L.ArmedRemotes = 0
+    L.ArmedValues = 0
+
+    local function surface(name)
+        local s = surfaces[name]
+        if not s then
+            s = {name = name, sights = 0, wins = 0, live = false,
+                 lateSum = 0, lateN = 0, lateBest = nil}
+            surfaces[name] = s
+        end
+        return s
+    end
+    L.Surface = surface
+    surface("remote").live = true
+    surface("notify").live = true
+    surface("gui").live = true
+
+    L.Promote = function(name)
+        surface(name).live = true
+        return true
+    end
+    L.Demote = function(name)
+        surface(name).live = false
+        return true
+    end
+
+    L.Note = function(name, code, at)
+        local s = surface(name)
+        s.sights += 1
+        local first = raceSeen[code]
+        if not first then
+            raceSeen[code] = {at = at, who = name}
+            s.wins += 1
+            table.insert(L.RaceLog, 1, {code = code, winner = name, at = at, late = {}})
+            while #L.RaceLog > L.RaceMax do table.remove(L.RaceLog) end
+            return true
+        end
+        local ms = (at - first.at) * 1000
+        s.lateSum += ms
+        s.lateN += 1
+        if not s.lateBest or ms < s.lateBest then s.lateBest = ms end
+        for i = 1, #L.RaceLog do
+            local entry = L.RaceLog[i]
+            if entry.code == code then
+                if entry.late[name] == nil then entry.late[name] = ms end
+                break
+            end
+        end
+        return false
+    end
+
+    local function shaped(s)
+        if type(s) ~= "string" then return nil end
+        local n = #s
+        if n < 4 or n > 30 then return nil end
+        if find(s, "[^%w]") then return nil end
+        if s ~= upper(s) then return nil end
+        return s
+    end
+    L.Shaped = shaped
+
+    L.Sight = function(name, code, at)
+        at = at or clock()
+        local won = L.Note(name, code, at)
+        if not won then return false end
+        if not surfaces[name].live then return false end
+        if sentCodes[code] then return false end
+        local inv, rem = L.FastInvoke, L.FastRemote
+        if not inv or L.AutoOn ~= true then return false end
+        sentCodes[code] = true
+        L.OursPending, L.OursAt = code, at
+        local pok, a, b = protected(inv, rem, code)
+        local tDone = clock()
+        defer(rawFire, at, at, tDone, code, code, pok, a, b, a == nil)
+        return true
+    end
+
+    L.SightArgs = function(name, a1, a2, a3, a4)
+        local hit = shaped(a1) or shaped(a2) or shaped(a3) or shaped(a4)
+        if hit then L.Sight(name, hit, clock()) end
+    end
+
+    L.ArmRemotes = function()
+        local n = 0
+        for _, d in ipairs(RepS:GetDescendants()) do
+            if d:IsA("RemoteEvent") and d ~= L.NotifyRemote then
+                local name = "re:" .. d.Name
+                surface(name)
+                local ok = pcall(function()
+                    d.OnClientEvent:Connect(function(...)
+                        L.SightArgs(name, ...)
+                    end)
+                end)
+                if ok then n += 1 end
+            end
+        end
+        L.ArmedRemotes = n
+        return n
+    end
+
+    L.ArmValues = function()
+        local n = 0
+        local function watch(d)
+            local ok = pcall(function()
+                if d:IsA("StringValue") then
+                    local name = "value:" .. d.Name
+                    surface(name)
+                    d:GetPropertyChangedSignal("Value"):Connect(function()
+                        local hit = shaped(d.Value)
+                        if hit then L.Sight(name, hit, clock()) end
+                    end)
+                    n += 1
+                end
+            end)
+            return ok
+        end
+        for _, d in ipairs(RepS:GetDescendants()) do watch(d) end
+        pcall(function()
+            surface("descendant")
+            RepS.DescendantAdded:Connect(function(d)
+                local at = clock()
+                local hit = shaped(d.Name)
+                if hit then L.Sight("descendant", hit, at) end
+                watch(d)
+            end)
+            surface("attribute")
+            RepS.AttributeChanged:Connect(function(key)
+                local at = clock()
+                local hit = shaped(key) or shaped(RepS:GetAttribute(key))
+                if hit then L.Sight("attribute", hit, at) end
+            end)
+        end)
+        L.ArmedValues = n
+        return n
+    end
+
+    L.RaceOn = function()
+        if L.RaceArmed then return L.ArmedRemotes, L.ArmedValues end
+        L.RaceArmed = true
+        L.SyncFast()
+        local a = L.ArmRemotes()
+        local b = L.ArmValues()
+        return a, b
+    end
+
+    L.RaceReport = function()
+        local rows = {}
+        for name, s in pairs(surfaces) do
+            if s.sights > 0 then
+                rows[#rows + 1] = {
+                    name = name, sights = s.sights, wins = s.wins,
+                    live = s.live,
+                    avgLate = s.lateN > 0 and (s.lateSum / s.lateN) or nil,
+                    bestLate = s.lateBest,
+                }
+            end
+        end
+        table.sort(rows, function(x, y)
+            if x.wins ~= y.wins then return x.wins > y.wins end
+            return (x.avgLate or 0) < (y.avgLate or 0)
+        end)
+        return rows
+    end
+
+    L.RacePrint = function()
+        print("[LUCK] surface            wins  sights  live   avg late   best late")
+        for _, r in ipairs(L.RaceReport()) do
+            print(("[LUCK] %-18s %5d %7d  %-5s %9s %11s"):format(
+                r.name, r.wins, r.sights, tostring(r.live),
+                r.avgLate and ("%.3fms"):format(r.avgLate) or "-",
+                r.bestLate and ("%.3fms"):format(r.bestLate) or "-"))
+        end
+        return L.RaceReport()
+    end
+
+    L.FpsCap = nil
+    L.SetFpsCap = function(n)
+        if type(setfpscap) ~= "function" then return false end
+        local ok = pcall(setfpscap, n)
+        if ok then L.FpsCap = n end
+        return ok
+    end
+    L.SetFpsCap(999)
+end
+
+L.RaceOff = function()
+    L.RaceArmed = false
+    L.SyncFast()
+    return true
 end
 
 L.SignalMode = "unknown"
