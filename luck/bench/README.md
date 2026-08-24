@@ -51,6 +51,30 @@ against that fiction, `solo_inline` looked like an 8ns regression. Once the
 variant modelled what actually ships, `solo_inline` came out 35% cheaper on
 side toasts at identical code latency, and it is what the script now binds.
 
+## What the ns/call number is made of
+
+Three references decompose it, so no part of the total is charged to the
+handler by accident:
+
+| reference | what it adds | measured |
+|---|---|---|
+| `noop` | the timing loop and an empty handler call | 22.0 |
+| `floorcall_c` | + the send as a C builtin (FASTCALL) | 27.3 |
+| `floorcall` | + the send as a Lua closure | 47.6 |
+| `solo_bare` | + the script's own logic | 49.9 |
+
+The send in the live client is `InvokeServer`, a generic C function. That is
+cheaper than the Lua closure `floorcall` uses and dearer than the FASTCALL
+`floorcall_c` gets, so the send call costs between **5.3 and 25.6 ns** and
+the handler's total, net of the benchmark's own loop, is **7.7 to 28 ns**.
+The script's share of that is 2.4 ns and does not move.
+
+Two scaffolding costs used to sit inside that number and were removed: the
+fake send incremented a table field (`ctx.n += 1`, a GETTABLEKS + ADD +
+SETTABLEKS on every call), and the timed loop ran an integer modulo per
+iteration to decide when to clear the dedup set. Both were charged to every
+variant. The counter is now an upvalue and the loop is chunked.
+
 ## The logic column
 
 Total ns/call is dominated by two calls that are not the script's to remove:

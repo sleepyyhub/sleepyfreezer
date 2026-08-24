@@ -8,7 +8,7 @@ local measureSide = H.measureSide
 
 -- ── run ───────────────────────────────────────────────────────────────────
 local order = {"current", "swapgate", "rawdedup", "lastslot", "foldedgate",
-               "swapgate_cold", "minimal", "minimal_raw", "solo", "solo_inline", "solo_typelast", "solo_bare", "floorcall"}
+               "swapgate_cold", "minimal", "minimal_raw", "solo", "solo_inline", "solo_typelast", "solo_bare", "floorcall", "floorcall_c", "noop"}
 
 print(("\n%d iterations x %d rounds, best round per variant\n"):format(
     H.ITERATIONS, H.ROUNDS))
@@ -17,12 +17,13 @@ local results, broken = {}, {}
 for _, name in ipairs(order) do
     local build = V[name]
     local ok, why = true, nil
-    if name ~= "floorcall" then ok, why = correct(name, build) end
+    local ref = name == "floorcall" or name == "floorcall_c" or name == "noop"
+    if not ref then ok, why = correct(name, build) end
     if not ok then
         broken[#broken + 1] = ("%-16s BROKEN  %s"):format(name, why)
     else
         local side = nil
-        if name ~= "floorcall" then side = measureSide(build) end
+        if not ref then side = measureSide(build) end
         results[#results + 1] = {name = name, ns = measure(build), side = side}
     end
 end

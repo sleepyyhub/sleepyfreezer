@@ -34,12 +34,16 @@ local function newCtx()
     return ctx
 end
 
+-- The counter lives in an upvalue, not a table field. As ctx.n it was a
+-- GETTABLEKS + ADD + SETTABLEKS inside the fake send, charged to every
+-- variant on every call, and it was a sizeable share of what looked like
+-- irreducible call overhead.
 local function newFastCtx()
-    local ctx = {sent = {}, remote = {}, n = 0}
+    local n = 0
+    local ctx = {sent = {}, remote = {}, state = {}}
     ctx.payloadText = payloadText
-    ctx.invoke = function()
-        ctx.n += 1
-    end
+    ctx.invoke = function() n += 1 end
+    ctx.count = function() return n end
     return ctx
 end
 
@@ -111,13 +115,17 @@ local function measure(build)
         local v = build(ctx)
         local handler = v.get()
         local sent = ctx.sent
+        local chunks = ITERATIONS // WORKING_SET
         local start = os.clock()
-        for i = 1, ITERATIONS do
-            handler(codes[i], 5, nil, "Top")
-            if i % WORKING_SET == 0 then table.clear(sent) end
+        for chunk = 0, chunks - 1 do
+            local base = chunk * WORKING_SET
+            for k = 1, WORKING_SET do
+                handler(codes[base + k], 5, nil, "Top")
+            end
+            table.clear(sent)
         end
         local elapsed = os.clock() - start
-        if ctx.n ~= ITERATIONS then
+        if v.sends ~= false and ctx.count() ~= chunks * WORKING_SET then
             error("variant dropped sends during the timed run")
         end
         if elapsed < best then best = elapsed end
@@ -156,13 +164,17 @@ local function duel(nameA, nameB, rounds)
             local v = build(ctx)
             local handler = v.get()
             local sent = ctx.sent
+            local chunks = ITERATIONS // WORKING_SET
             local start = os.clock()
-            for k = 1, ITERATIONS do
-                handler(codes[k], 5, nil, "Top")
-                if k % WORKING_SET == 0 then table.clear(sent) end
+            for chunk = 0, chunks - 1 do
+                local base = chunk * WORKING_SET
+                for k = 1, WORKING_SET do
+                    handler(codes[base + k], 5, nil, "Top")
+                end
+                table.clear(sent)
             end
-            into[#into + 1] = (os.clock() - start) / ITERATIONS * 1e9
-            assert(ctx.n == ITERATIONS)
+            into[#into + 1] = (os.clock() - start) / (chunks * WORKING_SET) * 1e9
+            assert(v.sends == false or ctx.count() == chunks * WORKING_SET)
         end
         if first then one(buildA, a) one(buildB, b)
         else one(buildB, b) one(buildA, a) end
@@ -201,7 +213,7 @@ local function measureSide(build)
             handler(codes[i], 5, nil, nil)
         end
         local elapsed = os.clock() - start
-        if ctx.n ~= 0 then error("a side toast reached the send") end
+        if ctx.count() ~= 0 then error("a side toast reached the send") end
         if elapsed < best then best = elapsed end
     end
     return best / ITERATIONS * 1e9

@@ -339,4 +339,29 @@ V.solo_bare = function(ctx)
     }
 end
 
+-- Second reference: a handler that does nothing at all. The gap between this
+-- and floorcall is the send call; the gap between this and zero is whatever
+-- the timing loop itself costs.
+V.noop = function()
+    local handler = function() end
+    return {get = function() return handler end, gate = function() end,
+            sends = false}
+end
+
+-- Third reference, bounding the modelling error in the other two. The fake
+-- send is a Lua closure; the real one is InvokeServer, a C function, and
+-- Luau reaches those through a cheaper path. This calls a C builtin instead,
+-- which the compiler turns into a FASTCALL and so undershoots a generic C
+-- call. floorcall is therefore the ceiling on the send call and this is the
+-- floor; the live cost sits between them.
+V.floorcall_c = function(ctx)
+    local remote = ctx.remote
+    local rawequal = rawequal
+    local handler = function(msg)
+        return rawequal(remote, msg)
+    end
+    return {get = function() return handler end, gate = function() end,
+            sends = false}
+end
+
 return V
