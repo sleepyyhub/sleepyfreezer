@@ -197,5 +197,29 @@ check("fps cap lowered again", L.FpsCap == 240, tostring(L.FpsCap))
 check("executor without setfpscap is reported, not hidden",
     type(L.SetFpsCap) == "function")
 
+
+print("\n-- in-client bench and honest instrumentation --")
+reset()
+L.AutoOn = true
+L.Threshold = 1
+L.Instrument = false
+L.SyncHot()
+local ns = L.BenchPrint(5000)
+check("bench returns a number", type(ns) == "number", tostring(ns))
+check("bench is in the single-digit to low-double-digit ns range",
+    type(ns) == "number" and ns > 0 and ns < 400, tostring(ns))
+check("bench sent no real redeems", #SENT_LOG == 0, codes())
+check("dedup set left clean", next(L.SentCodes) == nil)
+
+reset()
+L.Instrument = true
+L.SyncHot()
+fire("FLOORCHK1", 5, nil, "Top")
+check("FloorNs reported", type(L.FloorNs) == "number", tostring(L.FloorNs))
+check("floor is entry-to-send, not two adjacent clocks",
+    type(L.FloorUs) == "number" and L.FloorUs >= 0, tostring(L.FloorUs))
+L.Instrument = false
+L.SyncHot()
+
 print(("\n%d passed, %d failed\n"):format(pass, fail))
 if fail > 0 then error("harness failures", 0) end

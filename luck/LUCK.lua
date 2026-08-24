@@ -1484,7 +1484,7 @@ do
         L.TextAt = t0
         if fastTime then
             local us = (tCall - t0) * 1e6
-            L.FloorUs = us
+            L.FloorUs, L.FloorNs = us, us * 1000
             if not L.BestFloorUs or us < L.BestFloorUs then L.BestFloorUs = us end
         end
         if fastIsEvent then a, b = true, "sent" end
@@ -1511,7 +1511,7 @@ do
         return dispatch(msg)
     end
 
-    soloSlow = function(msg)
+    soloSlow = function(msg, entered)
         if type(msg) ~= "string" then
             msg = payloadText(msg, 0)
             if not msg then return end
@@ -1521,8 +1521,8 @@ do
             code = codeFrom(msg)
             if not code then return end
         end
-        local t0, tCall
-        if fastTime then t0 = clock() tCall = clock() end
+        local t0, tCall = entered, nil
+        if t0 then tCall = clock() end
         local pok, a, b
         if fastSafe then
             a, b = fastInvoke(fastRemote, code)
@@ -1541,6 +1541,7 @@ do
             if L.OursPending then return side(msg) end
             return
         end
+        local entry = fastTime and clock() or nil
         if type(msg) ~= "string" then
             msg = payloadText(msg, 0)
             if not msg then return end
@@ -1555,8 +1556,8 @@ do
         if sent[code] then return end
         sent[code] = true
 
-        local t0, tCall
-        if fastTime then t0 = clock() tCall = clock() end
+        local t0, tCall = entry, nil
+        if t0 then tCall = clock() end
         local pok, a, b
         if fastSafe then
             a, b = fastInvoke(fastRemote, code)
@@ -1575,7 +1576,9 @@ do
             if L.OursPending then return side(msg) end
             return
         end
-        if fastTime or not fastRaw then return soloSlow(msg) end
+        if fastTime or not fastRaw then
+            return soloSlow(msg, fastTime and clock() or nil)
+        end
         local a, b = fastInvoke(fastRemote, msg)
         local tDone = clock()
         sent[msg] = true
@@ -1615,6 +1618,76 @@ do
 
     L.FastPath = function(text)
         return L.FastNotify(text, nil, nil, "Top")
+    end
+
+    L.BenchNs = nil
+    L.Bench = function(n)
+        n = tonumber(n) or 20000
+        if n < 1000 then n = 1000 end
+        if not fastInvoke then return nil, "no redeem remote resolved" end
+
+        local realRemote, realInvoke, realSafe = fastRemote, fastInvoke, fastSafe
+        local realTime, realDefer = fastTime, defer
+        local hits = 0
+
+        fastRemote = {}
+        fastInvoke = function() hits += 1 end
+        fastSafe = true
+        fastTime = false
+        defer = function() end
+
+        local codes = table.create(n)
+        for i = 1, n do codes[i] = "LUCKBENCH" .. i end
+
+        local handler = L.Handlers and L.Handlers.solo or L.FastNotify
+        local warm = math.min(n, 2000)
+        for i = 1, warm do handler(codes[i], 5, nil, "Top") end
+        table.clear(sent)
+
+        local chunks = n // 32
+        local reference = function(msg, _, _, position)
+            if position ~= "Top" then return end
+            return fastInvoke(fastRemote, msg)
+        end
+
+        local started = clock()
+        for c = 0, chunks - 1 do
+            local base = c * 32
+            for k = 1, 32 do handler(codes[base + k], 5, nil, "Top") end
+            table.clear(sent)
+        end
+        local elapsed = clock() - started
+
+        local refStart = clock()
+        for c = 0, chunks - 1 do
+            local base = c * 32
+            for k = 1, 32 do reference(codes[base + k], 5, nil, "Top") end
+        end
+        local refElapsed = clock() - refStart
+        n = chunks * 32
+
+        fastRemote, fastInvoke, fastSafe = realRemote, realInvoke, realSafe
+        fastTime, defer = realTime, realDefer
+        table.clear(sent)
+
+        if hits < n then return nil, ("only %d of %d reached the send"):format(hits, n) end
+        L.BenchNs = elapsed / n * 1e9
+        L.BenchSendNs = refElapsed / n * 1e9
+        return L.BenchNs, L.BenchSendNs
+    end
+
+    L.BenchPrint = function(n)
+        local ns, ref = L.Bench(n)
+        if not ns then
+            print("[LUCK] bench: " .. tostring(ref))
+            return nil
+        end
+        print(("[LUCK] handler, end to end        %7.1f ns"):format(ns))
+        print(("[LUCK] the send call alone        %7.1f ns"):format(ref))
+        print(("[LUCK] everything after the send  %7.1f ns   does not delay the packet")
+            :format(math.max(ns - ref, 0)))
+        print("[LUCK] amortised over the run; one redeem cannot resolve this")
+        return ns, ref
     end
 
     L.BindFast = function()
