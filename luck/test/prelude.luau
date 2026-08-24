@@ -131,8 +131,10 @@ RepS:_add(codeValue)
 CODE_VALUE = codeValue
 
 local SENT = {}
+LAST_SEND_AT = 0
 function redeem:InvokeServer(code)
-    SENT[#SENT + 1] = {code = code, at = os.clock()}
+    LAST_SEND_AT = os.clock()
+    SENT[#SENT + 1] = {code = code, at = LAST_SEND_AT}
     -- A non-string argument is legal over a real remote: it serialises and
     -- the server rejects it. Erroring here would be the stub inventing a
     -- failure the live game does not have.

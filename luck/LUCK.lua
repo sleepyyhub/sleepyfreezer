@@ -1690,6 +1690,50 @@ do
         return ns, ref
     end
 
+    L.Ping = function()
+        local ok, ms = pcall(function()
+            local stats = game:GetService("Stats")
+            return stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+        end)
+        if ok and type(ms) == "number" and ms > 0 then return ms end
+        return nil
+    end
+
+    L.Budget = function(pingMs, fps)
+        pingMs = tonumber(pingMs) or L.Ping() or 10
+        fps = tonumber(fps) or (L.Fps and L.Fps > 1 and L.Fps) or 60
+
+        local frame = 1000 / fps
+        local half = pingMs / 2
+        local immediate = L.SignalMode == "Immediate"
+        local deferred = immediate and 0 or (frame / 2)
+        local netStep = frame / 2
+
+        local script = (L.BenchNs or 160) / 1e6
+
+        local total = half + deferred + script + netStep + half
+        local rows = {
+            {"announcement over the wire", half},
+            {immediate and "deferred queue (immediate)" or "deferred queue wait", deferred},
+            {"this script", script},
+            {"network step wait", netStep},
+            {"redeem over the wire", half},
+        }
+
+        print(("[LUCK] budget at %.0f ms ping and %.0f fps"):format(pingMs, fps))
+        for _, r in ipairs(rows) do
+            print(("[LUCK]   %-28s %8.3f ms  %6.2f%%"):format(
+                r[1], r[2], r[2] / total * 100))
+        end
+        print(("[LUCK]   %-28s %8.3f ms"):format("total announce to server", total))
+
+        local faster = half + 0 + script + 0 + half
+        print(("[LUCK] floor if the frame clock vanished: %.3f ms"):format(faster))
+        print(("[LUCK] the frame clock is worth %.3f ms here; the script is worth %.6f ms")
+            :format(total - faster, script))
+        return total, script
+    end
+
     L.BindFast = function()
         if not L.NotifyRemote then return false end
         L.RemoteDetectOn = false

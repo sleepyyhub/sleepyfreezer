@@ -221,5 +221,19 @@ check("floor is entry-to-send, not two adjacent clocks",
 L.Instrument = false
 L.SyncHot()
 
+
+print("\n-- latency budget at 8 and 12 ms ping --")
+L.BenchPrint(5000)
+for _, ping in ipairs({8, 12}) do
+    for _, fps in ipairs({60, 240}) do
+        print("")
+        L.Budget(ping, fps)
+    end
+end
+local total, script = L.Budget(10, 60)
+check("budget returns numbers", type(total) == "number" and type(script) == "number")
+check("script share is a rounding error at 10ms ping",
+    script / total < 0.001, tostring(script / total))
+
 print(("\n%d passed, %d failed\n"):format(pass, fail))
 if fail > 0 then error("harness failures", 0) end
