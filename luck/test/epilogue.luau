@@ -184,9 +184,10 @@ check("race off returns to no timestamping", L.RaceArmed == false)
 
 print("\n-- turbo --")
 check("fps meter present", type(L.Fps) == "number", tostring(L.Fps))
-check("turbo starts off", L.TurboOn == false)
+check("turbo is already on after load, max settings on execute",
+    L.TurboOn == true, tostring(L.TurboOn))
 local applied = L.SetTurbo(true)
-check("turbo switched on", L.TurboOn == true)
+check("turbo stays on when re-applied", L.TurboOn == true)
 check("every step reported a result", applied["3d rendering"] ~= nil
     and applied["quality level"] ~= nil and applied["shadows"] ~= nil)
 check("fps cap raised with turbo", L.FpsCap == 999 and applied["fps cap"] == true,
@@ -287,11 +288,44 @@ check("boost reported immediate signals", got["immediate signals"] ~= nil,
 check("boost reported fps cap", got["fps cap"] ~= nil, tostring(got["fps cap"]))
 check("boost reported pole position", got["pole position"] ~= nil,
     tostring(got["pole position"]))
-check("boost left 3d rendering alone unless asked",
+check("boost without blind leaves 3d rendering alone",
     got["3d rendering"] == "left on, pass true to drop it", tostring(got["3d rendering"]))
+local full = L.Boost(true)
+check("boost with blind reports 3d rendering", full["3d rendering"] ~= nil,
+    tostring(full["3d rendering"]))
 
 print("")
 L.Diag()
+
+
+print("\n-- redeem result on screen --")
+reset()
+TOASTS = {}
+L.AutoOn = true
+L.Threshold = 1
+L.SyncHot()
+fire("TOASTCODE1", 5, nil, "Top")
+check("a toast was raised for the redeem", #TOASTS >= 1, tostring(#TOASTS))
+check("the toast names the code",
+    TOASTS[1] and TOASTS[1]:find("TOASTCODE1", 1, true) ~= nil,
+    TOASTS[1] or "none")
+check("the toast is coloured",
+    TOASTS[1] and TOASTS[1]:find("<font", 1, true) ~= nil, TOASTS[1] or "none")
+check("the toast did not become a redeem itself",
+    #SENT_LOG == 1, codes())
+
+reset()
+TOASTS = {}
+L.ToastOn = false
+fire("NOTOAST1", 5, nil, "Top")
+check("toasts can be switched off", #TOASTS == 0, tostring(#TOASTS))
+L.ToastOn = true
+
+reset()
+TOASTS = {}
+L.Toast("plain line")
+check("a plain toast goes through", #TOASTS == 1, tostring(#TOASTS))
+check("toast raised nothing to redeem", #SENT_LOG == 0, codes())
 
 print(("\n%d passed, %d failed\n"):format(pass, fail))
 if fail > 0 then error("harness failures", 0) end

@@ -163,6 +163,14 @@ function redeem:InvokeServer(code)
     return true, "REDEEMED"
 end
 
+TOASTS = {}
+local controllers = newInstance("Folder", "Controllers")
+local ncMod = newInstance("ModuleScript", "NotificationController")
+controllers:_add(ncMod)
+RepS:_add(controllers)
+NC_TABLE = {Notify = function(_, msg) TOASTS[#TOASTS + 1] = msg end}
+MODULES = {[ncMod] = NC_TABLE}
+
 local PlayerGui = newInstance("PlayerGui", "PlayerGui")
 withSignals(PlayerGui, "DescendantAdded", "ChildAdded")
 
@@ -281,6 +289,11 @@ end
 
 
 warn = print
+local realRequire = require
+function require(m)
+    if MODULES and MODULES[m] then return MODULES[m] end
+    return realRequire(m)
+end
 function getconnections(sig)
     return sig.conns or {}
 end

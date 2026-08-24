@@ -47,7 +47,7 @@ local SETTINGS_KEY = "LUCKSettingsV1"
 local SETTINGS_FILE = "LUCK/settings.json"
 local SETTINGS_DEFAULTS = {
     SpeedIndex = IS_PC and 4 or 1,
-    AutoOn = false,
+    AutoOn = true,
     Threshold = 1,
     ThresholdMode = "preset",
     CustomThreshold = 0,
@@ -81,7 +81,8 @@ local function normalizeSettings(source)
     source = type(source) == "table" and source or {}
     local out = {
         SpeedIndex = settingInt(source.SpeedIndex, SETTINGS_DEFAULTS.SpeedIndex, 1, 4),
-        AutoOn = type(source.AutoOn) == "boolean" and source.AutoOn or SETTINGS_DEFAULTS.AutoOn,
+        AutoOn = type(source.AutoOn) == "boolean" and source.AutoOn
+            or SETTINGS_DEFAULTS.AutoOn,
         ThresholdMode = source.ThresholdMode == "custom" and "custom" or "preset",
         CustomThreshold = settingInt(source.CustomThreshold, 0, 0, 50),
         LastPreset = settingInt(source.LastPreset, 1, 1, 5),
@@ -876,6 +877,7 @@ L.PostFragment = function(t0, src, code)
 end
 
 L.PostRedeem = function(t0, src, code, ok, reply, timing)
+    if L.ToastResult then L.ToastResult(code, ok, reply) end
     L.LogHeard(t0, src, code)
     L.LastPreviewCode = code
     L.PreviewFlashUntil = clock() + 1.2
@@ -2274,14 +2276,17 @@ do
     end
 end
 
-if not L.HookGui() then
-    task.spawn(function()
-        for _ = 1, 1200 do
-            if L.HookGui() then return end
-            RunS.Heartbeat:Wait()
-        end
-    end)
-end
+task.spawn(function()
+    for _ = 1, 60 do
+        if L.RemoteDetectOn then return end
+        task.wait(0.1)
+    end
+    if L.HookGui() then return end
+    for _ = 1, 1200 do
+        if L.RemoteDetectOn or L.HookGui() then return end
+        RunS.Heartbeat:Wait()
+    end
+end)
 
 L.BoostApplied = {}
 L.Boost = function(blind)
@@ -2388,8 +2393,38 @@ task.spawn(function()
         if L.RemoteDetectOn then break end
         task.wait(0.1)
     end
-    pcall(L.Boost, false)
+    pcall(L.Boost, true)
 end)
+
+L.ToastOn = true
+L.Toast = function(text, colour)
+    if not L.ToastOn or type(text) ~= "string" or text == "" then return false end
+    local body = colour and ('<font color="%s">%s</font>'):format(colour, text) or text
+    local G = (getgenv and getgenv()) or shared
+    local NC, real = G.__LumNotifyNC, G.__LumNotifyReal
+    if NC and type(real) == "function" then
+        return (pcall(real, NC, body, 4, nil, nil))
+    end
+    return (pcall(function()
+        local controllers = RepS:FindFirstChild("Controllers")
+        local mod = controllers and controllers:FindFirstChild("NotificationController")
+        local c = mod and require(mod)
+        if c and type(c.Notify) == "function" then
+            c:Notify(body, 4, nil, nil)
+        end
+    end))
+end
+
+L.ToastResult = function(code, ok, reply)
+    if not L.ToastOn then return end
+    local mark = ok == true and "+" or (ok == false and "x" or "?")
+    local colour = ok == true and "#92ff67" or (ok == false and "#ff829b" or "#ffbe78")
+    local tail = L.Strip and L.Strip(reply or "") or tostring(reply or "")
+    if #tail > 60 then tail = tail:sub(1, 60) end
+    local line = ("LUCK %s %s"):format(mark, tostring(code))
+    if tail ~= "" and tail ~= "sent" then line = line .. "  -  " .. tail end
+    L.Toast(line, colour)
+end
 
 L.Webhook = function() return false end
 L.Track = function() end
