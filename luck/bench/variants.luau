@@ -222,9 +222,17 @@ end
 V.solo = function(ctx)
     local invoke, remote, sent = ctx.invoke, ctx.remote, ctx.sent
     local payloadText = ctx.payloadText
+    local state = ctx.state or {}
     local cold
+    -- Models the shipped handler, which hands every non-Top message to a
+    -- side function that checks for a pending verdict. An earlier version of
+    -- this variant just returned, which made it look 8ns cheaper on side
+    -- toasts than it is and made solo_inline look like a regression.
+    local side = function()
+        if state.pending then return end
+    end
     local live = function(msg, _, _, position)
-        if position ~= "Top" then return end
+        if position ~= "Top" then return side(msg) end
         if type(msg) == "string" then
             return invoke(remote, msg)
         end
@@ -234,6 +242,67 @@ V.solo = function(ctx)
         local text = payloadText(msg, 0)
         if not text then return end
         invoke(remote, text)
+    end
+    local idle = function() end
+    local current = live
+    return {
+        get = function() return current end,
+        gate = function(on) current = on and live or idle end,
+        solo = true,
+    }
+end
+
+-- solo still pays a function call to reject a side toast, and side toasts
+-- are the commonest message on this remote. The rejection is inlined to a
+-- single field read, so only an actual pending verdict costs a call.
+V.solo_inline = function(ctx)
+    local invoke, remote = ctx.invoke, ctx.remote
+    local payloadText = ctx.payloadText
+    local state = ctx.state or {}
+    local cold, side
+    local live = function(msg, _, _, position)
+        if position ~= "Top" then
+            if state.pending then return side(msg) end
+            return
+        end
+        if type(msg) == "string" then
+            return invoke(remote, msg)
+        end
+        return cold(msg)
+    end
+    cold = function(msg)
+        local text = payloadText(msg, 0)
+        if text then invoke(remote, text) end
+    end
+    side = function() end
+    local idle = function() end
+    local current = live
+    return {
+        get = function() return current end,
+        gate = function(on) current = on and live or idle end,
+        solo = true,
+    }
+end
+
+-- The type check flipped: a table payload is the rare case, so the string
+-- case is reached with one comparison against an interned constant and the
+-- table case tail-calls out.
+V.solo_typelast = function(ctx)
+    local invoke, remote = ctx.invoke, ctx.remote
+    local payloadText = ctx.payloadText
+    local state = ctx.state or {}
+    local cold
+    local live = function(msg, _, _, position)
+        if position ~= "Top" then
+            if state.pending then return cold(msg) end
+            return
+        end
+        if type(msg) ~= "string" then return cold(msg) end
+        return invoke(remote, msg)
+    end
+    cold = function(msg)
+        local text = payloadText(msg, 0)
+        if text then invoke(remote, text) end
     end
     local idle = function() end
     local current = live

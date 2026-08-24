@@ -1505,7 +1505,10 @@ do
     end
 
     local guarded = function(msg, _, _, position)
-        if position ~= "Top" then return side(msg) end
+        if position ~= "Top" then
+            if L.OursPending then return side(msg) end
+            return
+        end
         if type(msg) ~= "string" then
             msg = payloadText(msg, 0)
             if not msg then return end
@@ -1536,7 +1539,10 @@ do
     end
 
     local solo = function(msg, _, _, position)
-        if position ~= "Top" then return side(msg) end
+        if position ~= "Top" then
+            if L.OursPending then return side(msg) end
+            return
+        end
         if type(msg) ~= "string" then
             msg = payloadText(msg, 0)
             if not msg then return end
@@ -1565,7 +1571,10 @@ do
     end
 
     local idle = function(msg, _, _, position)
-        if position ~= "Top" then return side(msg) end
+        if position ~= "Top" then
+            if L.OursPending then return side(msg) end
+            return
+        end
         return slow(msg)
     end
 
@@ -1805,6 +1814,99 @@ L.RaceOff = function()
     L.RaceArmed = false
     L.SyncFast()
     return true
+end
+
+L.Fps = 0
+do
+    local frames, since = 0, os.clock()
+    RunS.Heartbeat:Connect(function()
+        frames += 1
+        local now = os.clock()
+        local span = now - since
+        if span >= 1 then
+            L.Fps = frames / span
+            frames, since = 0, now
+        end
+    end)
+end
+
+L.TurboOn = false
+L.TurboApplied = {}
+do
+    local Lighting = game:GetService("Lighting")
+
+    local saved = {}
+    local function remember(key, getter)
+        if saved[key] == nil then
+            local ok, value = pcall(getter)
+            saved[key] = ok and value or false
+        end
+    end
+
+    local steps = {
+        {
+            name = "3d rendering",
+            off = function()
+                remember("render3d", function() return true end)
+                RunS:Set3dRenderingEnabled(false)
+            end,
+            on = function() RunS:Set3dRenderingEnabled(true) end,
+        },
+        {
+            name = "quality level",
+            off = function()
+                local s = settings()
+                remember("quality", function() return s.Rendering.QualityLevel end)
+                s.Rendering.QualityLevel = Enum.QualityLevel.Level01
+            end,
+            on = function()
+                local s = settings()
+                if saved.quality then s.Rendering.QualityLevel = saved.quality end
+            end,
+        },
+        {
+            name = "shadows",
+            off = function()
+                remember("shadows", function() return Lighting.GlobalShadows end)
+                Lighting.GlobalShadows = false
+            end,
+            on = function()
+                if saved.shadows ~= nil and saved.shadows ~= false then
+                    Lighting.GlobalShadows = saved.shadows
+                end
+            end,
+        },
+        {
+            name = "lighting technology",
+            off = function()
+                remember("tech", function() return Lighting.Technology end)
+                Lighting.Technology = Enum.Technology.Compatibility
+            end,
+            on = function() end,
+        },
+    }
+
+    L.SetTurbo = function(on)
+        local applied = {}
+        for _, step in ipairs(steps) do
+            local ok = pcall(on and step.off or step.on)
+            applied[step.name] = ok
+        end
+        applied["fps cap"] = L.SetFpsCap(on and 999 or 240)
+        L.TurboApplied = applied
+        L.TurboOn = on and true or false
+        return applied
+    end
+
+    L.TurboReport = function()
+        print(("[LUCK] turbo %s   fps %.0f   cap %s   signals %s"):format(
+            L.TurboOn and "on" or "off", L.Fps or 0,
+            tostring(L.FpsCap), tostring(L.SignalMode)))
+        for name, ok in pairs(L.TurboApplied) do
+            print(("[LUCK]   %-22s %s"):format(name, ok and "applied" or "refused"))
+        end
+        return L.TurboApplied
+    end
 end
 
 L.SignalMode = "unknown"

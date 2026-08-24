@@ -151,6 +151,7 @@ function Players:GetPlayers() return {LocalPlayer} end
 
 local RunS = newInstance("RunService", "RunService")
 rawset(RunS, "Heartbeat", Signal())
+function RunS:Set3dRenderingEnabled() end
 
 local UIS = newInstance("UserInputService", "UserInputService")
 rawset(UIS, "TouchEnabled", false)
@@ -254,6 +255,9 @@ end
 
 
 warn = print
+FPSCAP = nil
+function setfpscap(n) FPSCAP = n end
+function settings() return {Rendering = {QualityLevel = 1}} end
 GENV = {}
 function getgenv() return GENV end
 SENT_LOG = SENT

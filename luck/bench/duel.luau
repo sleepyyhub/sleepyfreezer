@@ -5,8 +5,8 @@
 
 local H = require("./harness")
 
-local A = "solo"
-local B = "current"
+local A = "solo_inline"
+local B = "solo"
 local ROUNDS = 21
 
 local winner = H.duel(A, B, ROUNDS)

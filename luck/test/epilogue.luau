@@ -181,5 +181,21 @@ check("report lists the winner first",
 L.RaceOff()
 check("race off returns to no timestamping", L.RaceArmed == false)
 
+
+print("\n-- turbo --")
+check("fps meter present", type(L.Fps) == "number", tostring(L.Fps))
+check("turbo starts off", L.TurboOn == false)
+local applied = L.SetTurbo(true)
+check("turbo switched on", L.TurboOn == true)
+check("every step reported a result", applied["3d rendering"] ~= nil
+    and applied["quality level"] ~= nil and applied["shadows"] ~= nil)
+check("fps cap raised with turbo", L.FpsCap == 999 and applied["fps cap"] == true,
+    tostring(L.FpsCap))
+L.SetTurbo(false)
+check("turbo switched back off", L.TurboOn == false)
+check("fps cap lowered again", L.FpsCap == 240, tostring(L.FpsCap))
+check("executor without setfpscap is reported, not hidden",
+    type(L.SetFpsCap) == "function")
+
 print(("\n%d passed, %d failed\n"):format(pass, fail))
 if fail > 0 then error("harness failures", 0) end

@@ -37,17 +37,33 @@ The dedup set is cleared every 32 calls. An earlier version let it grow to
 difference being measured. A real session holds a handful of codes, so the
 table is kept session-sized.
 
+## Side toasts
+
+The Top-only loop is half the workload. Side toasts -- joins, purchases,
+quest popups -- are the majority of what the notify remote carries, and
+every one is work the handler does for nothing, so `bench.luau` times that
+rejection separately.
+
+That column caught a modelling bug worth more than the numbers it printed.
+`V.solo` used to just `return` on a non-Top message while the shipped
+handler called a side function that checks for a pending verdict. Measured
+against that fiction, `solo_inline` looked like an 8ns regression. Once the
+variant modelled what actually ships, `solo_inline` came out 35% cheaper on
+side toasts at identical code latency, and it is what the script now binds.
+
 ## Result
 
-| variant | ns/call | vs current |
-|---|---|---|
-| floorcall (reference) | 61.6 | -54% |
-| **solo** | **73.7** | **-45%** |
-| swapgate | 129.0 | -4.5% |
-| minimal | 130.7 | -3.3% |
-| current | 135.2 | — |
-| rawdedup | 138.1 | +2.2% |
-| lastslot | 143.7 | +6.3% |
+| variant | ns/call | vs current | side toast |
+|---|---|---|---|
+| floorcall (reference) | 49.5 | -56% | — |
+| **solo_inline** | **57.4** | **-49%** | **24.7** |
+| solo | 57.3 | -49% | 37.8 |
+| solo_typelast | 59.9 | -47% | 24.9 |
+| swapgate_cold | 102.8 | -6.9% | 17.0 |
+| minimal | 105.1 | -4.8% | 17.5 |
+| current | 113.0 | — | 17.1 |
+| rawdedup | 111.1 | +0.6% | 17.0 |
+| lastslot | 115.6 | +4.7% | 17.1 |
 
 Everything from `swapgate` down is inside the noise floor: reordering
 branches around the send buys nothing measurable.

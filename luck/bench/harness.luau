@@ -184,11 +184,34 @@ end
 
 
 
+
+-- Side toasts -- joins, purchases, quest popups -- are the majority of what
+-- this remote carries, and every one of them is work the handler does for
+-- nothing. The Top-only loop never measured that, so a variant could pay a
+-- call per side toast and still look free.
+local function measureSide(build)
+    local best = math.huge
+    for _ = 1, ROUNDS do
+        local ctx = newFastCtx()
+        local v = build(ctx)
+        local handler = v.get()
+        local start = os.clock()
+        for i = 1, ITERATIONS do
+            handler(codes[i], 5, nil, nil)
+        end
+        local elapsed = os.clock() - start
+        if ctx.n ~= 0 then error("a side toast reached the send") end
+        if elapsed < best then best = elapsed end
+    end
+    return best / ITERATIONS * 1e9
+end
+
 H.V = V
 H.ITERATIONS = ITERATIONS
 H.ROUNDS = ROUNDS
 H.correct = correct
 H.measure = measure
+H.measureSide = measureSide
 H.duel = duel
 H.median = median
 H.codes = codes
