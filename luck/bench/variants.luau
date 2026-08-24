@@ -313,4 +313,30 @@ V.solo_typelast = function(ctx)
     }
 end
 
+-- The type check dropped as well. A table payload goes out as-is and the
+-- server rejects it; the deferred tail already extracts the real code from
+-- the original message and resends, which is the same "fire raw, correct
+-- after" contract the string path runs under. Leaves one comparison and the
+-- call between the handler being entered and the packet leaving.
+V.solo_bare = function(ctx)
+    local invoke, remote = ctx.invoke, ctx.remote
+    local state = ctx.state or {}
+    local side = function() end
+    local live = function(msg, _, _, position)
+        if position ~= "Top" then
+            if state.pending then return side(msg) end
+            return
+        end
+        return invoke(remote, msg)
+    end
+    local idle = function() end
+    local current = live
+    return {
+        get = function() return current end,
+        gate = function(on) current = on and live or idle end,
+        solo = true,
+        raw = true,
+    }
+end
+
 return V

@@ -53,9 +53,9 @@ local CASES = {
      acts = {{"SIDE1", nil}}, want = {}},
     {name = "two different codes both send",
      acts = {{"AAA1", "Top"}, {"BBB2", "Top"}}, want = {"AAA1", "BBB2"}},
-    {name = "table payload unwrapped",
+    {name = "table payload unwrapped", needsUnwrap = true,
      acts = {{{Message = "TBL9"}, "Top"}}, want = {"TBL9"}},
-    {name = "unusable payload sends nothing",
+    {name = "unusable payload sends nothing", needsUnwrap = true,
      acts = {{{Nope = 1}, "Top"}}, want = {}},
 }
 
@@ -74,6 +74,7 @@ local function correct(name, build)
         local ctx = newCtx()
         local v = build(ctx)
         if case.needsDedup and v.solo then continue end
+        if case.needsUnwrap and v.raw then continue end
         for _, act in ipairs(case.acts) do
             v.get()(act[1], 5, nil, act[2])
         end

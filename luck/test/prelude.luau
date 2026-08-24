@@ -133,6 +133,10 @@ CODE_VALUE = codeValue
 local SENT = {}
 function redeem:InvokeServer(code)
     SENT[#SENT + 1] = {code = code, at = os.clock()}
+    -- A non-string argument is legal over a real remote: it serialises and
+    -- the server rejects it. Erroring here would be the stub inventing a
+    -- failure the live game does not have.
+    if type(code) ~= "string" then return false, "Invalid Code" end
     if string.find(code, "[^%w]") then return false, "Invalid Code" end
     return true, "REDEEMED"
 end

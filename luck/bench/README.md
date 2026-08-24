@@ -51,19 +51,32 @@ against that fiction, `solo_inline` looked like an 8ns regression. Once the
 variant modelled what actually ships, `solo_inline` came out 35% cheaper on
 side toasts at identical code latency, and it is what the script now binds.
 
+## The logic column
+
+Total ns/call is dominated by two calls that are not the script's to remove:
+the signal dispatch that enters the handler, and the send itself. `floorcall`
+is exactly that pair and nothing else, so subtracting it leaves the work the
+script controls -- the same quantity `L.FloorUs` reports on a live client.
+Judge variants on that column, not the total.
+
 ## Result
 
-| variant | ns/call | vs current | side toast |
+| variant | ns/call | side toast | logic |
 |---|---|---|---|
-| floorcall (reference) | 49.5 | -56% | — |
-| **solo_inline** | **57.4** | **-49%** | **24.7** |
-| solo | 57.3 | -49% | 37.8 |
-| solo_typelast | 59.9 | -47% | 24.9 |
-| swapgate_cold | 102.8 | -6.9% | 17.0 |
-| minimal | 105.1 | -4.8% | 17.5 |
-| current | 113.0 | — | 17.1 |
-| rawdedup | 111.1 | +0.6% | 17.0 |
-| lastslot | 115.6 | +4.7% | 17.1 |
+| floorcall (reference) | 50.0 | — | 0.0 |
+| **solo_bare** | **53.1** | **24.6** | **3.1** |
+| solo | 57.9 | 38.3 | 7.9 |
+| solo_inline | 59.4 | 25.1 | 9.3 |
+| solo_typelast | 60.5 | 24.8 | 10.5 |
+| swapgate_cold | ~104 | 17.1 | ~54 |
+| current (three rounds ago) | ~112 | 17.3 | ~62 |
+
+`solo_bare` won its duel against `solo_inline` 21 of 21 rounds at -7.6%.
+It drops the type check as well: a table payload goes out as-is, the server
+rejects it, and the tail extracts the real code and resends -- the same
+contract the string path already runs under. The tail hands `rawFire` the
+value that was actually sent rather than the unwrapped one, or the resend
+compares equal to itself and never fires.
 
 Everything from `swapgate` down is inside the noise floor: reordering
 branches around the send buys nothing measurable.

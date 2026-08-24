@@ -1475,6 +1475,12 @@ do
     end)
 
     local function tail(t0, tCall, tDone, text, code, pok, a, b)
+        local raw = code
+        if type(text) ~= "string" then
+            text = payloadText(text, 0) or ""
+            code = text
+            raw = ""
+        end
         L.TextAt = t0
         if fastTime then
             local us = (tCall - t0) * 1e6
@@ -1485,9 +1491,10 @@ do
         if a == nil then L.OursPending, L.OursAt = code, t0 end
         if L.Note then L.Note(L.NotifyRemoteName or "remote", code, t0) end
         if L.NotifyRedeem then killFeed(text) end
-        rawFire(t0, tCall, tDone, text, code, pok, a, b, fastIsEvent or a == nil)
+        rawFire(t0, tCall, tDone, text, raw, pok, a, b, fastIsEvent or a == nil)
     end
 
+    local soloSlow
     local function side(msg)
         if L.OursPending and L.ClaimResult then
             if type(msg) ~= "string" then msg = payloadText(msg, 0) end
@@ -1502,6 +1509,31 @@ do
             if not msg then return end
         end
         return dispatch(msg)
+    end
+
+    soloSlow = function(msg)
+        if type(msg) ~= "string" then
+            msg = payloadText(msg, 0)
+            if not msg then return end
+        end
+        local code = msg
+        if not fastRaw and (#msg > 50 or find(msg, "[^%w]")) then
+            code = codeFrom(msg)
+            if not code then return end
+        end
+        local t0, tCall
+        if fastTime then t0 = clock() tCall = clock() end
+        local pok, a, b
+        if fastSafe then
+            a, b = fastInvoke(fastRemote, code)
+            pok = true
+        else
+            pok, a, b = protected(fastInvoke, fastRemote, code)
+        end
+        local tDone = clock()
+        if not t0 then t0, tCall = tDone, tDone end
+        sent[code] = true
+        defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
     end
 
     local guarded = function(msg, _, _, position)
@@ -1543,31 +1575,11 @@ do
             if L.OursPending then return side(msg) end
             return
         end
-        if type(msg) ~= "string" then
-            msg = payloadText(msg, 0)
-            if not msg then return end
-        end
-
-        local code = msg
-        if not fastRaw and (#msg > 50 or find(msg, "[^%w]")) then
-            code = codeFrom(msg)
-            if not code then return end
-        end
-
-        local t0, tCall
-        if fastTime then t0 = clock() tCall = clock() end
-        local pok, a, b
-        if fastSafe then
-            a, b = fastInvoke(fastRemote, code)
-            pok = true
-        else
-            pok, a, b = protected(fastInvoke, fastRemote, code)
-        end
+        if fastTime or not fastRaw then return soloSlow(msg) end
+        local a, b = fastInvoke(fastRemote, msg)
         local tDone = clock()
-        if not t0 then t0, tCall = tDone, tDone end
-
-        sent[code] = true
-        defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
+        sent[msg] = true
+        defer(tail, tDone, tDone, tDone, msg, msg, true, a, b)
     end
 
     local idle = function(msg, _, _, position)

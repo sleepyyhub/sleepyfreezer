@@ -24,7 +24,7 @@ local function check(label, cond, detail)
 end
 local function codes()
     local out = {}
-    for _, s in ipairs(SENT_LOG) do out[#out + 1] = s.code end
+    for _, s in ipairs(SENT_LOG) do out[#out + 1] = tostring(s.code) end
     return table.concat(out, " | ")
 end
 local function fire(...)
@@ -116,8 +116,8 @@ reset()
 L.AutoOn = true
 L.SyncHot()
 fire({Message = "TABLECODE9"}, 5, nil, "Top")
-check("table payload still redeems",
-    SENT_LOG[1] and SENT_LOG[1].code == "TABLECODE9", codes())
+check("table payload is recovered by the tail",
+    SENT_LOG[#SENT_LOG] and SENT_LOG[#SENT_LOG].code == "TABLECODE9", codes())
 
 print("\n-- instrumentation --")
 reset()
