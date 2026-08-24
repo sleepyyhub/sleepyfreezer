@@ -1435,9 +1435,11 @@ do
     local find = string.find
     local fastRemote, fastInvoke, fastIsEvent, fastSafe = nil, nil, false, false
     local fastReady, fastRaw, fastTime = false, true, false
+    local binding = false
     local sent = {}
 
     L.SentCodes = sent
+    L.Solo = true
     L.RawFire = true
     L.Instrument = false
     L.FloorUs, L.BestFloorUs = nil, nil
@@ -1461,6 +1463,7 @@ do
             and L.RedeemPath ~= "both"
         L.FastRemote, L.FastInvoke, L.FastReady = fastRemote, fastInvoke, fastReady
         if not dispatch then dispatch = L.Dispatch end
+        if L.ApplyBinding and not binding then L.ApplyBinding() end
     end
     L.SyncFast()
 
@@ -1485,22 +1488,24 @@ do
         rawFire(t0, tCall, tDone, text, code, pok, a, b, fastIsEvent or a == nil)
     end
 
-    L.FastNotify = function(msg, _, _, position)
-        if position ~= "Top" then
-            if L.OursPending and L.ClaimResult then
-                if type(msg) ~= "string" then msg = payloadText(msg, 0) end
-                if msg then protected(L.ClaimResult, msg) end
-            end
-            return
+    local function side(msg)
+        if L.OursPending and L.ClaimResult then
+            if type(msg) ~= "string" then msg = payloadText(msg, 0) end
+            if msg then protected(L.ClaimResult, msg) end
         end
-        if not fastReady then
-            L.TextAt, L.FloorUs = clock(), nil
-            if type(msg) ~= "string" then
-                msg = payloadText(msg, 0)
-                if not msg then return end
-            end
-            return dispatch(msg)
+    end
+
+    local function slow(msg)
+        L.TextAt, L.FloorUs = clock(), nil
+        if type(msg) ~= "string" then
+            msg = payloadText(msg, 0)
+            if not msg then return end
         end
+        return dispatch(msg)
+    end
+
+    local guarded = function(msg, _, _, position)
+        if position ~= "Top" then return side(msg) end
         if type(msg) ~= "string" then
             msg = payloadText(msg, 0)
             if not msg then return end
@@ -1528,6 +1533,63 @@ do
         if not t0 then t0, tCall = tDone, tDone end
 
         defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
+    end
+
+    local solo = function(msg, _, _, position)
+        if position ~= "Top" then return side(msg) end
+        if type(msg) ~= "string" then
+            msg = payloadText(msg, 0)
+            if not msg then return end
+        end
+
+        local code = msg
+        if not fastRaw and (#msg > 50 or find(msg, "[^%w]")) then
+            code = codeFrom(msg)
+            if not code then return end
+        end
+
+        local t0, tCall
+        if fastTime then t0 = clock() tCall = clock() end
+        local pok, a, b
+        if fastSafe then
+            a, b = fastInvoke(fastRemote, code)
+            pok = true
+        else
+            pok, a, b = protected(fastInvoke, fastRemote, code)
+        end
+        local tDone = clock()
+        if not t0 then t0, tCall = tDone, tDone end
+
+        sent[code] = true
+        defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
+    end
+
+    local idle = function(msg, _, _, position)
+        if position ~= "Top" then return side(msg) end
+        return slow(msg)
+    end
+
+    L.Handlers = {solo = solo, guarded = guarded, idle = idle}
+    L.FastNotify = solo
+    L.HandlerName = "solo"
+
+    L.ApplyBinding = function()
+        local want, name
+        if not fastReady then
+            want, name = idle, "idle"
+        elseif L.Solo ~= false and L.RaceArmed ~= true and L.MultiSurface ~= true then
+            want, name = solo, "solo"
+        else
+            want, name = guarded, "guarded"
+        end
+        if want == L.FastNotify then return name end
+        L.FastNotify, L.HandlerName = want, name
+        if L.BindFast and L.RemoteDetectOn then
+            binding = true
+            pcall(L.BindFast)
+            binding = false
+        end
+        return name
     end
 
     L.FastPath = function(text)
@@ -1569,6 +1631,10 @@ do
 
     L.Promote = function(name)
         surface(name).live = true
+        if name ~= "remote" and name ~= "notify" and name ~= "gui" then
+            L.MultiSurface = true
+        end
+        L.SyncFast()
         return true
     end
     L.Demote = function(name)

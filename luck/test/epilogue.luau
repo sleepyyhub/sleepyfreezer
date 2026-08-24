@@ -54,11 +54,23 @@ fire("BANANA25", 5, nil, "Top")
 check("one send", #SENT_LOG == 1, codes())
 check("sent the code itself", SENT_LOG[1] and SENT_LOG[1].code == "BANANA25", codes())
 
-print("\n-- dedup --")
+print("\n-- dedup: solo trades it away, guarded keeps it --")
 reset()
+check("solo handler is bound by default", L.HandlerName == "solo", tostring(L.HandlerName))
 fire("OINKY7", 5, nil, "Top")
 fire("OINKY7", 5, nil, "Top")
-check("same code twice sends once", #SENT_LOG == 1, codes())
+check("solo mode does not dedup, by design", #SENT_LOG == 2, codes())
+
+reset()
+L.Solo = false
+L.SyncFast()
+check("guarded handler is bound when solo is off",
+    L.HandlerName == "guarded", tostring(L.HandlerName))
+fire("GUARD8", 5, nil, "Top")
+fire("GUARD8", 5, nil, "Top")
+check("guarded mode sends once", #SENT_LOG == 1, codes())
+L.Solo = true
+L.SyncFast()
 
 print("\n-- side toast is never a code --")
 reset()
