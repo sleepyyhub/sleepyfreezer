@@ -480,7 +480,7 @@ do
             G.__LUCKNotifyConn = nil
         end
         local ok, conn = pcall(function()
-            return r.OnClientEvent:Connect(onRemoteNotify)
+            return r.OnClientEvent:Connect(L.FastNotify or onRemoteNotify)
         end)
         if ok and conn then
             G.__LUCKNotifyConn = conn
@@ -1214,7 +1214,7 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
         L.OursPending = nil
         if ok == true and L.GuessCode then L.ResetBuf() end
 
-        if ok ~= true and text:find("<", 1, true) then
+        if ok ~= true then
             local cleaned = codeFrom(text)
             if cleaned and cleaned ~= code then
                 ok, reply = L.RedeemViaRemote(cleaned, t0, true)
@@ -1432,9 +1432,14 @@ end
 
 do
     local dispatch = L.Dispatch
+    local find = string.find
     local fastRemote, fastInvoke, fastIsEvent, fastSafe = nil, nil, false, false
-    local fastReady = false
+    local fastReady, fastRaw, fastTime = false, true, false
+    local sent = {}
 
+    L.SentCodes = sent
+    L.RawFire = true
+    L.Instrument = false
     L.FloorUs, L.BestFloorUs = nil, nil
 
     L.SyncFast = function()
@@ -1447,6 +1452,8 @@ do
         else
             fastRemote, fastInvoke, fastIsEvent, fastSafe = nil, nil, false, false
         end
+        fastRaw  = L.RawFire ~= false
+        fastTime = L.Instrument == true
         fastReady = fastInvoke ~= nil
             and L.AutoOn == true
             and not L.GuessCode
@@ -1457,34 +1464,58 @@ do
     end
     L.SyncFast()
 
-    L.FastPath = function(text, t0)
-        t0 = t0 or clock()
-
-        if type(text) ~= "string" then
-            text = payloadText(text, 0)
-            if not text then return end
+    task.spawn(function()
+        while true do
+            task.wait(30)
+            table.clear(sent)
         end
+    end)
 
-        if L.OursPending then
-            local cok, claimed = protected(claimOurs, text)
-            if cok and claimed then return end
+    local function tail(t0, tCall, tDone, text, code, pok, a, b)
+        L.TextAt = t0
+        if fastTime then
+            local us = (tCall - t0) * 1e6
+            L.FloorUs = us
+            if not L.BestFloorUs or us < L.BestFloorUs then L.BestFloorUs = us end
         end
+        if fastIsEvent then a, b = true, "sent" end
+        if a == nil then L.OursPending, L.OursAt = code, t0 end
+        if L.NotifyRedeem then killFeed(text) end
+        rawFire(t0, tCall, tDone, text, code, pok, a, b, fastIsEvent or a == nil)
+    end
 
+    L.FastNotify = function(msg, _, _, position)
+        if position ~= "Top" then
+            if L.OursPending and L.ClaimResult then
+                if type(msg) ~= "string" then msg = payloadText(msg, 0) end
+                if msg then protected(L.ClaimResult, msg) end
+            end
+            return
+        end
         if not fastReady then
-            L.TextAt, L.FloorUs = t0, nil
-            return dispatch(text)
+            L.TextAt, L.FloorUs = clock(), nil
+            if type(msg) ~= "string" then
+                msg = payloadText(msg, 0)
+                if not msg then return end
+            end
+            return dispatch(msg)
+        end
+        if type(msg) ~= "string" then
+            msg = payloadText(msg, 0)
+            if not msg then return end
         end
 
-        local code = codeFrom(text)
-        if not code then return end
+        local code = msg
+        if not fastRaw and (#msg > 50 or find(msg, "[^%w]")) then
+            code = codeFrom(msg)
+            if not code then return end
+        end
 
-        local prev = firedSeen[code]
-        if prev and (t0 - prev) <= hotFiredTTL then return end
-        firedSeen[code] = t0
+        if sent[code] then return end
+        sent[code] = true
 
-        L.OursPending, L.OursAt = code, t0
-
-        local tCall = clock()
+        local t0, tCall
+        if fastTime then t0 = clock() tCall = clock() end
         local pok, a, b
         if fastSafe then
             a, b = fastInvoke(fastRemote, code)
@@ -1493,18 +1524,21 @@ do
             pok, a, b = protected(fastInvoke, fastRemote, code)
         end
         local tDone = clock()
+        if not t0 then t0, tCall = tDone, tDone end
 
-        local us = (tCall - t0) * 1e6
-        L.TextAt, L.FloorUs = t0, us
-        if not L.BestFloorUs or us < L.BestFloorUs then L.BestFloorUs = us end
-
-        if fastIsEvent then
-            a, b = true, "sent"
-        end
-        if L.NotifyRedeem then defer(killFeed, text) end
-        defer(rawFire, t0, tCall, tDone, text, code, pok, a, b,
-              fastIsEvent or a == nil)
+        defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
     end
+
+    L.FastPath = function(text)
+        return L.FastNotify(text, nil, nil, "Top")
+    end
+
+    L.BindFast = function()
+        if not L.NotifyRemote then return false end
+        L.RemoteDetectOn = false
+        return L.ConnectNotifyRemote()
+    end
+    if L.RemoteDetectOn then L.BindFast() end
 end
 
 L.SignalMode = "unknown"
@@ -1526,6 +1560,8 @@ do
         L.ImmediateSignals = now == "Immediate"
         return ok and L.ImmediateSignals == (on and true or false), now
     end
+
+    L.SetImmediateSignals(true)
 end
 
 L.ClassifyColor = function(c, text)
