@@ -7,18 +7,28 @@ local function Signal()
     local s = {handlers = {}}
     function s:Connect(fn)
         table.insert(self.handlers, fn)
-        local c = {Connected = true, Function = fn}
+        local c = {Connected = true, Function = fn, Enabled = true}
+        function c:Disable() c.Enabled = false end
+        function c:Enable() c.Enabled = true end
+        s.conns = s.conns or {}
+        table.insert(s.conns, c)
+        c._signal = s
         function c:Disconnect()
             c.Connected = false
             for i, h in ipairs(s.handlers) do
                 if h == fn then table.remove(s.handlers, i) break end
+            end
+            for i, other in ipairs(s.conns or {}) do
+                if other == c then table.remove(s.conns, i) break end
             end
         end
         return c
     end
     function s:Wait() end
     function s:Fire(...)
-        for _, fn in ipairs(self.handlers) do fn(...) end
+        for _, c in ipairs(self.conns or {}) do
+            if c.Enabled then c.Function(...) end
+        end
     end
     return s
 end
@@ -261,6 +271,9 @@ end
 
 
 warn = print
+function getconnections(sig)
+    return sig.conns or {}
+end
 FPSCAP = nil
 function setfpscap(n) FPSCAP = n end
 function settings() return {Rendering = {QualityLevel = 1}} end

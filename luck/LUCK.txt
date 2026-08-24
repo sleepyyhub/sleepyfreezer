@@ -1436,6 +1436,7 @@ do
     local fastRemote, fastInvoke, fastIsEvent, fastSafe = nil, nil, false, false
     local fastReady, fastRaw, fastTime = false, true, false
     local binding = false
+    local poleInner
     local sent = {}
 
     L.SentCodes = sent
@@ -1606,6 +1607,10 @@ do
         else
             want, name = guarded, "guarded"
         end
+        if L.PoleOn and L.Handlers and L.Handlers.pole then
+            poleInner = want
+            want, name = L.Handlers.pole, "pole"
+        end
         if want == L.FastNotify then return name end
         L.FastNotify, L.HandlerName = want, name
         if L.BindFast and L.RemoteDetectOn then
@@ -1732,6 +1737,81 @@ do
         print(("[LUCK] the frame clock is worth %.3f ms here; the script is worth %.6f ms")
             :format(total - faster, script))
         return total, script
+    end
+
+    L.PoleOn = false
+    L.PoleTaken = nil
+    L.ConnIndex = function()
+        local r = L.NotifyRemote
+        if not r or typeof(getconnections) ~= "function" then return nil, nil end
+        local ok, conns = pcall(getconnections, r.OnClientEvent)
+        if not ok or type(conns) ~= "table" then return nil, nil end
+        local mine
+        for i, c in ipairs(conns) do
+            local fn
+            pcall(function() fn = c.Function end)
+            if fn == L.FastNotify then mine = i break end
+        end
+        return mine, #conns
+    end
+
+    local function redispatch(msg, dur, sound, position)
+        local taken = L.PoleTaken
+        if not taken then return end
+        for i = 1, #taken do
+            protected(taken[i], msg, dur, sound, position)
+        end
+    end
+
+    local pole = function(msg, dur, sound, position)
+        if position ~= "Top" then
+            redispatch(msg, dur, sound, position)
+            if L.OursPending then return side(msg) end
+            return
+        end
+        poleInner(msg, dur, sound, position)
+        redispatch(msg, dur, sound, position)
+    end
+
+    L.TakePole = function()
+        if L.PoleOn then return true, #L.PoleTaken end
+        local r = L.NotifyRemote
+        if not r then return false, "no notify remote" end
+        if typeof(getconnections) ~= "function" then
+            return false, "executor has no getconnections"
+        end
+        local ok, conns = pcall(getconnections, r.OnClientEvent)
+        if not ok or type(conns) ~= "table" then return false, "no connection list" end
+
+        local taken, held = {}, {}
+        for _, c in ipairs(conns) do
+            local fn
+            pcall(function() fn = c.Function end)
+            if fn and fn ~= L.FastNotify and fn ~= pole then
+                local okd = pcall(function() c:Disable() end)
+                if okd then
+                    taken[#taken + 1] = fn
+                    held[#held + 1] = c
+                end
+            end
+        end
+        if #taken == 0 then return false, "nothing to take over" end
+
+        L.PoleTaken, L.PoleHeld = taken, held
+        L.PoleOn = true
+        L.Handlers.pole = pole
+        L.SyncFast()
+        return true, #taken
+    end
+
+    L.DropPole = function()
+        if not L.PoleOn then return true end
+        for _, c in ipairs(L.PoleHeld or {}) do
+            pcall(function() c:Enable() end)
+        end
+        L.PoleOn, L.PoleTaken, L.PoleHeld = false, nil, nil
+        L.SyncFast()
+        return true
     end
 
     L.BindFast = function()
@@ -2201,6 +2281,114 @@ if not L.HookGui() then
         end
     end)
 end
+
+L.BoostApplied = {}
+L.Boost = function(blind)
+    local got = {}
+
+    local okSig = L.SetImmediateSignals(true)
+    got["immediate signals"] = (L.SignalMode == "Immediate") and "on"
+        or ("refused, still " .. tostring(L.SignalMode))
+
+    got["fps cap"] = L.SetFpsCap(999) and "999" or "no setfpscap"
+
+    if blind then
+        local steps = L.SetTurbo(true)
+        for name, ok in pairs(steps) do
+            got[name] = ok and "on" or "refused"
+        end
+    else
+        local ok1 = pcall(function()
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        end)
+        local ok2 = pcall(function()
+            game:GetService("Lighting").GlobalShadows = false
+        end)
+        got["quality level"] = ok1 and "minimum" or "refused"
+        got["shadows"] = ok2 and "off" or "refused"
+        got["3d rendering"] = "left on, pass true to drop it"
+    end
+
+    if L.SignalMode == "Immediate" then
+        local mine, total = L.ConnIndex()
+        if mine and total and mine > 1 then
+            local ok, n = L.TakePole()
+            got["pole position"] = ok
+                and ("taken from %d handler(s)"):format(n)
+                or ("not taken: " .. tostring(n))
+        elseif mine == 1 then
+            got["pole position"] = "already first"
+        else
+            got["pole position"] = "connection list unreadable"
+        end
+    else
+        got["pole position"] = "not needed while signals are deferred"
+    end
+
+    L.BoostApplied = got
+    return got
+end
+
+L.BoostPrint = function(blind)
+    local got = L.Boost(blind)
+    print("[LUCK] boost")
+    for name, state in pairs(got) do
+        print(("[LUCK]   %-20s %s"):format(name, state))
+    end
+    if L.BenchPrint then L.BenchPrint(8000) end
+    if L.Budget then L.Budget() end
+    return got
+end
+
+L.Diag = function()
+    local function yn(v) return v and "yes" or "no" end
+    print("[LUCK] ---- diagnostics ----")
+    print(("[LUCK] place %s   modded %s   platform %s"):format(
+        tostring(game.PlaceId), yn(L.Modded), L.IsMobile and "mobile" or "pc"))
+    print(("[LUCK] redeem  %s   source %s   tested %s   reply %s"):format(
+        L.RedeemRemote and L.RedeemRemote.Name or "none",
+        tostring(L.RedeemRemoteSource), tostring(L.RedeemRemoteTested),
+        tostring(L.RedeemRemoteReply)))
+    print(("[LUCK] notify  %s   source %s   live %s   name %s"):format(
+        L.NotifyRemote and L.NotifyRemote.Name or "none",
+        tostring(L.NotifyRemoteSource), yn(L.RemoteDetectOn),
+        tostring(L.NotifyRemoteName)))
+    local mine, total
+    if L.ConnIndex then mine, total = L.ConnIndex() end
+    print(("[LUCK] handler %s   conn %s of %s   pole %s"):format(
+        tostring(L.HandlerName), tostring(mine), tostring(total), yn(L.PoleOn)))
+    print(("[LUCK] detect %s   redeem %s   raw %s   solo %s   instrument %s"):format(
+        tostring(L.DetectMode), tostring(L.RedeemPath), yn(L.RawFire),
+        yn(L.Solo), yn(L.Instrument)))
+    print(("[LUCK] auto %s   threshold %s   guess %s   parts %s"):format(
+        yn(L.AutoOn), tostring(L.Threshold), yn(L.GuessCode), tostring(L.BufN)))
+    print(("[LUCK] signals %s   fps %.0f   cap %s   turbo %s"):format(
+        tostring(L.SignalMode), L.Fps or 0, tostring(L.FpsCap), yn(L.TurboOn)))
+    print(("[LUCK] bench %s ns   send %s ns   floor %s ns"):format(
+        L.BenchNs and ("%.1f"):format(L.BenchNs) or "-",
+        L.BenchSendNs and ("%.1f"):format(L.BenchSendNs) or "-",
+        L.FloorNs and ("%.1f"):format(L.FloorNs) or "-"))
+    local ping = L.Ping()
+    print(("[LUCK] ping %s ms   notify hook %s   gui hook %s   labels %s"):format(
+        ping and ("%.0f"):format(ping) or "?", yn(L.NotifyHooked),
+        yn(L.GuiHooked), tostring(L.WatchedLabels)))
+    local n = 0
+    for _ in pairs(L.SentCodes or {}) do n += 1 end
+    print(("[LUCK] sent this window %d   history %d   race %s"):format(
+        n, #(L.CodeHistory or {}), yn(L.RaceArmed)))
+    for i, h in ipairs(L.CodeHistory or {}) do
+        print(("[LUCK]   %d. %-20s %s"):format(i, h.code, h.status))
+    end
+    return true
+end
+
+task.spawn(function()
+    for _ = 1, 200 do
+        if L.RemoteDetectOn then break end
+        task.wait(0.1)
+    end
+    pcall(L.Boost, false)
+end)
 
 L.Webhook = function() return false end
 L.Track = function() end

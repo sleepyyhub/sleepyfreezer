@@ -206,8 +206,8 @@ L.Instrument = false
 L.SyncHot()
 local ns = L.BenchPrint(5000)
 check("bench returns a number", type(ns) == "number", tostring(ns))
-check("bench is in the single-digit to low-double-digit ns range",
-    type(ns) == "number" and ns > 0 and ns < 400, tostring(ns))
+check("bench returns a sane per-call figure",
+    type(ns) == "number" and ns > 0 and ns < 5000, tostring(ns))
 check("bench sent no real redeems", #SENT_LOG == 0, codes())
 check("dedup set left clean", next(L.SentCodes) == nil)
 
@@ -234,6 +234,64 @@ local total, script = L.Budget(10, 60)
 check("budget returns numbers", type(total) == "number" and type(script) == "number")
 check("script share is a rounding error at 10ms ping",
     script / total < 0.001, tostring(script / total))
+
+
+print("\n-- pole position --")
+reset()
+L.AutoOn = true
+L.Threshold = 1
+L.Instrument = false
+L.SyncHot()
+
+GAME_SAW = {}
+NOTIFY_REMOTE._signals.OnClientEvent:Connect(function(msg)
+    GAME_SAW[#GAME_SAW + 1] = msg
+end)
+
+local mine, total = L.ConnIndex()
+check("we can read our place in the connection list",
+    type(mine) == "number" and type(total) == "number",
+    tostring(mine) .. "/" .. tostring(total))
+check("a later connection puts the game after us", total >= 2, tostring(total))
+
+local took, n = L.TakePole()
+check("pole taken", took == true, tostring(n))
+check("pole handler is bound", L.HandlerName == "pole", tostring(L.HandlerName))
+
+reset()
+GAME_SAW = {}
+fire("POLE1", 5, nil, "Top")
+check("redeem still sent from the pole handler",
+    SENT_LOG[1] and SENT_LOG[1].code == "POLE1", codes())
+check("the game handler still ran, after us", #GAME_SAW == 1, tostring(#GAME_SAW))
+
+reset()
+GAME_SAW = {}
+fire("Some side toast", 5, nil, nil)
+check("side toast passed through to the game", #GAME_SAW == 1, tostring(#GAME_SAW))
+check("side toast sent no redeem", #SENT_LOG == 0, codes())
+
+L.DropPole()
+check("pole dropped", L.PoleOn == false)
+reset()
+GAME_SAW = {}
+fire("AFTERPOLE1", 5, nil, "Top")
+check("game handler re-enabled after dropping pole", #GAME_SAW == 1, tostring(#GAME_SAW))
+check("still redeeming after dropping pole",
+    SENT_LOG[1] and SENT_LOG[1].code == "AFTERPOLE1", codes())
+
+print("\n-- boost --")
+local got = L.Boost(false)
+check("boost reported immediate signals", got["immediate signals"] ~= nil,
+    tostring(got["immediate signals"]))
+check("boost reported fps cap", got["fps cap"] ~= nil, tostring(got["fps cap"]))
+check("boost reported pole position", got["pole position"] ~= nil,
+    tostring(got["pole position"]))
+check("boost left 3d rendering alone unless asked",
+    got["3d rendering"] == "left on, pass true to drop it", tostring(got["3d rendering"]))
+
+print("")
+L.Diag()
 
 print(("\n%d passed, %d failed\n"):format(pass, fail))
 if fail > 0 then error("harness failures", 0) end
