@@ -2208,7 +2208,13 @@ do
                 remember("tech", function() return Lighting.Technology end)
                 Lighting.Technology = Enum.Technology.Compatibility
             end,
-            on = function() end,
+            -- This used to be an empty function, so turning turbo back off left the
+            -- lighting permanently downgraded with no way back short of a rejoin.
+            on = function()
+                if saved.tech and saved.tech ~= false then
+                    Lighting.Technology = saved.tech
+                end
+            end,
         },
     }
 
@@ -2222,6 +2228,17 @@ do
         L.TurboApplied = applied
         L.TurboOn = on and true or false
         return applied
+    end
+
+    -- Blanking the 3D view is the single biggest fps win and also the most intrusive
+    -- thing this script can do to your screen, so it is opt-in and reversible on its
+    -- own, without dragging quality and lighting along with it.
+    L.Blind = function(on)
+        local ok = pcall(function()
+            RunS:Set3dRenderingEnabled(not on)
+        end)
+        L.BlindOn = ok and (on and true or false) or L.BlindOn
+        return ok, L.BlindOn
     end
 
     L.TurboReport = function()
@@ -2434,7 +2451,7 @@ L.Boost = function(blind)
         end)
         got["quality level"] = ok1 and "minimum" or "refused"
         got["shadows"] = ok2 and "off" or "refused"
-        got["3d rendering"] = "left on, pass true to drop it"
+        got["3d rendering"] = "left on -- LUCK.Blind(true) to blank it"
     end
 
     if L.SignalMode == "Immediate" then
@@ -2466,6 +2483,72 @@ L.BoostPrint = function(blind)
     if L.BenchPrint then L.BenchPrint(8000) end
     if L.Budget then L.Budget() end
     return got
+end
+
+-- Splitting a real redeem, rather than benching the handler in a loop.
+--
+-- BenchNs answers "how long does the handler take with nothing else going on", which
+-- is nanoseconds and is not what a redeem costs. These two answer the question that
+-- matters: of the wall time between the announcement landing and the answer coming
+-- back, how much was this script and how much was the wire.
+--
+-- Measure() flips L.Instrument, which moves the binding from soloRaw to solo. solo
+-- timestamps handler entry and the moment before the invoke; soloRaw deliberately does
+-- not, because reading the clock is work and work does not go ahead of the send. So
+-- measuring is not free -- turn it off again when you have your number.
+L.Measure = function(on)
+    on = on ~= false
+    L.Instrument = on
+    L.SyncFast()
+    print(("[LUCK] instrumentation %s   ·   handler now '%s'")
+        :format(on and "on" or "off", tostring(L.HandlerName)))
+    if on then
+        print("[LUCK] catch one code, then run LUCK.Split()")
+    end
+    return L.HandlerName
+end
+
+L.Split = function()
+    local t = L.LastTiming
+    if not t then
+        print("[LUCK] no redeem recorded yet")
+        return nil
+    end
+    local scriptMs = tonumber(t.client) or 0
+    local wireMs   = tonumber(t.server) or 0
+    local fps      = (L.Fps and L.Fps > 1) and L.Fps or nil
+    local ping     = L.Ping()
+
+    print("[LUCK] ---- last redeem ----")
+    if scriptMs <= 0 and wireMs <= 0 then
+        print("[LUCK] all zero -- that is soloRaw, which does not timestamp.")
+        print("[LUCK] run LUCK.Measure() and catch another code.")
+        return nil
+    end
+    print(("[LUCK]   detect -> invoke call    %9.4f ms   this script"):format(scriptMs))
+    print(("[LUCK]   invoke call -> reply     %9.1f ms   wire + server"):format(wireMs))
+    print(("[LUCK]   total                    %9.1f ms"):format(scriptMs + wireMs))
+    print(("[LUCK] fps %s   frame %s   ping %s   signals %s")
+        :format(fps and ("%.0f"):format(fps) or "?",
+                fps and ("%.1f ms"):format(1000 / fps) or "?",
+                ping and ("%.0f ms"):format(ping) or "?",
+                tostring(L.SignalMode)))
+    print(("[LUCK] route: detect %s   redeem %s   handler %s   remote %s")
+        :format(tostring(L.DetectMode), tostring(L.RedeemPath),
+                tostring(L.HandlerName), tostring(L.RedeemRemoteSource)))
+    if t.fireOnly then
+        print("[LUCK] fire-and-forget: the reply figure is not a round trip")
+    end
+    if ping and wireMs > ping * 1.5 then
+        print(("[LUCK] the reply took %.0f ms more than a round trip -- that is the")
+            :format(wireMs - ping))
+        print("[LUCK] server thinking, or a cold remote. try LUCK.WarmRemote()")
+    end
+    if L.RedeemPath == "ui" or L.HandlerName == "idle" then
+        print("[LUCK] you are on the UI path, not the remote -- that adds the game's")
+        print("[LUCK] own controller to every redeem. LUCK.Diag() shows why.")
+    end
+    return scriptMs, wireMs
 end
 
 L.Diag = function()
@@ -2518,7 +2601,12 @@ do
     local function boostOnce()
         if boosted then return end
         boosted = true
-        pcall(L.Boost, true)
+        -- Not blind. The old call passed true here, which routed through SetTurbo and
+        -- ran Set3dRenderingEnabled(false) -- your whole screen goes white and the game
+        -- stops drawing. That is a legitimate AFK-sniper setup and it is the biggest
+        -- single fps win available, but it is not something to do to someone's screen
+        -- without being asked. LUCK.Blind(true) turns it on, LUCK.Blind(false) off.
+        pcall(L.Boost)
     end
     L.OnDiscovered = boostOnce
     if L.Discovered or L.RemoteDetectOn then
