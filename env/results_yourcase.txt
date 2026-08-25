@@ -1,0 +1,48 @@
+
+================================================================
+  YOUR SETUP
+================================================================
+  you        9 ms ping   480 fps   handler=soloRaw
+  the rival  11 ms ping   480 fps   reactive, same speed
+  frame      2.083 ms      flush step 2.083 ms
+  your wire edge  1.0 ms one way, 2.0 ms both ways
+
+  frame phase is the one thing you do not control, so it is swept.
+  negative gap = you reached the server first.
+
+  rival's grid vs yours            win   tie  lose   median gap
+  ----------------------------------------------------------------
+  theirs 0.000 ms earlier           32     0     0    -0.994 ms
+  theirs 0.260 ms earlier           32     0     0    -2.814 ms
+  theirs 0.521 ms earlier           32     0     0    -2.556 ms
+  theirs 0.781 ms earlier           32     0     0    -2.297 ms
+  theirs 1.042 ms earlier           31     1     0    -2.036 ms
+  theirs 1.302 ms earlier           32     0     0    -1.777 ms
+  theirs 1.562 ms earlier           32     0     0    -1.516 ms
+  theirs 1.823 ms earlier           32     0     0    -1.257 ms
+  ----------------------------------------------------------------
+  across every phase               255     1     0
+
+  you take the code in 99.6% of races (100.0% incl. ties)
+
+  why -- and this is the part that is NOT like a detection head start:
+    your 2.0 ms edge is two separate legs, and only one of them
+    is subject to the frame clock.
+
+      inbound   1.0 ms  the announcement reaches you sooner.
+                        QUANTISED -- it only pays if it crosses
+                        a 2.083 ms flush boundary.
+      outbound  1.0 ms  your redeem flies home faster.
+                        NOT quantised -- it lands after the flush,
+                        straight on the wire. phase cannot take it.
+
+    that outbound half is why the gap at a 0 ms phase offset is
+    1.0 ms and not zero: both clients flush at the same instant and
+    your packet still gets there first. a ping edge always pays at
+    least half. a detection edge can pay nothing at all.
+  control -- pings swapped, you on 11 ms, them on 9 ms
+  ----------------------------------------------------------------
+  across every phase                 0     1   255
+  you take the code in 0.0% of races
+  inverts cleanly -- the result above is the ping, not the harness.
+

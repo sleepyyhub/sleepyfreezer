@@ -48,7 +48,16 @@ local CFG = {
 	jitterMs = 0,         -- +/- on each wire hop
 }
 Env.CFG = CFG
-local function oneWay() return (CFG.pingMs / 2) / 1000 end
+-- Per client. Two racers rarely sit on the same route, and a 2 ms difference
+-- in round trip is the whole margin at high frame rates -- sharing one global
+-- ping would quietly erase exactly the thing being tested.
+local rivalRef
+local function pingOf(cid)
+	if cid == 2 and rivalRef and rivalRef.pingMs then return rivalRef.pingMs end
+	return CFG.pingMs
+end
+local function oneWay(cid) return (pingOf(cid) / 2) / 1000 end
+Env.pingOf = pingOf
 local function jitter()
 	if CFG.jitterMs <= 0 then return 0 end
 	return ((math.random() * 2) - 1) * CFG.jitterMs / 1000
@@ -618,7 +627,7 @@ Env.queueToClient = function(signal, args, sentAt, cid, extraDelay)
 	local inn = netOf(cid).inn
 	inn[#inn + 1] = {
 		signal = signal, args = args,
-		arriveAt = (sentAt or now()) + oneWay() + jitter() + (extraDelay or 0),
+		arriveAt = (sentAt or now()) + oneWay(cid) + jitter() + (extraDelay or 0),
 	}
 end
 
@@ -631,7 +640,7 @@ local function networkStep(cid)
 		local flushAt = now()
 		for _, pkt in ipairs(batch) do
 			Env.stats.packetsOut += 1
-			local arriveAt = flushAt + oneWay() + jitter()
+			local arriveAt = flushAt + oneWay(pkt.cid) + jitter()
 			local handler = serverHandlers[pkt.remote]
 			-- the server thread: wakes when the packet lands
 			task.delay(arriveAt - now(), function()
@@ -708,9 +717,10 @@ end
 --------------------------------------------------------------------------------
 local rival = nil
 Env.setRival = function(cfg)
-	if not cfg then rival = nil; return end
+	if not cfg then rival = nil; rivalRef = nil; return end
 	rival = {
 		fps = cfg.fps or CFG.fps,
+		pingMs = cfg.pingMs,            -- nil = same route as us
 		phase = cfg.phase or 0,        -- seconds its grid leads ours by
 		handler = cfg.handler,          -- function(deliveredAt) -- runs on its frame
 		onFrame = cfg.onFrame,          -- function(t) -- runs every rival frame
@@ -718,6 +728,7 @@ Env.setRival = function(cfg)
 		frames = 0,
 	}
 	nets[2] = { out = {}, inn = {} }
+	rivalRef = rival
 	return rival
 end
 Env.rival = function() return rival end

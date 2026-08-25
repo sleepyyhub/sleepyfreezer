@@ -57,5 +57,6 @@ cd "$DIR"
 case "$SCENARIO" in
   race) exec ./luau race.luau ;;
   diag) exec ./luau diagtest.luau ;;
+  yourcase) exec ./luau yourcase.luau ;;
 esac
 exec ./luau run.luau
