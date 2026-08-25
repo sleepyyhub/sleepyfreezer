@@ -1603,6 +1603,9 @@ do
             code = codeFrom(msg)
             if not code then return end
         end
+        -- Check-and-set before the invoke, not after: see the note on soloRaw.
+        if sent[code] then return end
+        sent[code] = true
         local t0, tCall = entered, nil
         if t0 then tCall = clock() end
         local pok, a, b
@@ -1614,7 +1617,6 @@ do
         end
         local tDone = clock()
         if not t0 then t0, tCall = tDone, tDone end
-        sent[code] = true
         defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
     end
 
@@ -1661,8 +1663,9 @@ do
         if fastTime or not fastRaw then
             return soloSlow(msg, fastTime and clock() or nil)
         end
-        local a, b = fastInvoke(fastRemote, msg)
+        if sent[msg] then return end
         sent[msg] = true
+        local a, b = fastInvoke(fastRemote, msg)
         defer(tail, 0, 0, 0, msg, msg, true, a, b)
     end
 
@@ -1672,10 +1675,19 @@ do
     -- at 12.13 ns, which is 26% of everything that runs before the send.
     -- The Top branch comes first so the hot path falls through instead of
     -- taking a jump: measured at 2.07 ns, free, and semantically identical.
+    --
+    -- The sent[] test is a check-and-set BEFORE the invoke, and it has to be.
+    -- InvokeServer yields until the server answers, so writing the flag after it
+    -- left the whole round trip -- 100ms and more -- with no record that this code
+    -- had already gone out. Every surface that saw the same announcement in that
+    -- window sent it again: the notify remote, the notification hook, and one
+    -- dispatch per TextLabel the GUI watcher had hooked. That is the repeat
+    -- redeeming. One hash lookup and one store, about 25 ns, buys exactly-once.
     local soloRaw = function(msg, _, _, position)
         if position == "Top" then
-            local a, b = fastInvoke(fastRemote, msg)
+            if sent[msg] then return end
             sent[msg] = true
+            local a, b = fastInvoke(fastRemote, msg)
             defer(tail, 0, 0, 0, msg, msg, true, a, b)
             return
         end
@@ -1709,7 +1721,11 @@ do
         end
         if L.PoleOn and L.Handlers and L.Handlers.pole then
             poleInner = want
-            want, name = L.Handlers.pole, "pole"
+            if L.EagerRedispatch == false and L.Handlers.poleLate then
+                want, name = L.Handlers.poleLate, "poleLate"
+            else
+                want, name = L.Handlers.pole, "pole"
+            end
         end
         if want == L.FastNotify then return name end
         L.FastNotify, L.HandlerName = want, name
@@ -1868,19 +1884,55 @@ do
         end
     end
 
+    -- Handing the game's handlers to the scheduler, as cheaply as it can be done.
+    --
+    -- task.defer(fn, a, b, c, d) has to pack four varargs into a table for the queue.
+    -- Measured in front of the invoke that cost about 490 ns -- three times the entire
+    -- rest of the send path. Writing the four values into upvalues and deferring a
+    -- zero-argument closure skips the pack entirely.
+    --
+    -- The slots are single-buffered: two announcements inside one resumption point
+    -- would leave the game showing the second popup twice instead of one of each.
+    -- That is cosmetic, it is the game's own UI, and codes do not arrive in pairs.
+    local rdMsg, rdDur, rdSound, rdPos
+    local function drainRedispatch()
+        redispatch(rdMsg, rdDur, rdSound, rdPos)
+    end
+
     local pole = function(msg, dur, sound, position)
         if position ~= "Top" then
             defer(redispatch, msg, dur, sound, position)
             if L.OursPending then return side(msg) end
             return
         end
-        -- poleInner first, always: nothing may run ahead of the send. The game's own
-        -- handlers then go on the deferred queue rather than inline, so their GUI and
-        -- sound work happens on their own thread instead of ours -- which matters only
-        -- if a second code lands while we are still holding this one.
+        -- Queued BEFORE poleInner, and this one earns its keep.
+        --
+        -- poleInner ends in InvokeServer, which yields until the server answers. With
+        -- redispatch after it, the game's own notification handlers did not run until
+        -- that round trip finished -- so the game's "new code" popup appeared ~150ms
+        -- late, every time. Pole was making the game look laggy, and that is most of
+        -- what "it doesn't feel instant" was. It never affected the redeem itself.
+        rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
+        defer(drainRedispatch)
         poleInner(msg, dur, sound, position)
-        defer(redispatch, msg, dur, sound, position)
     end
+
+    -- The other half of that trade, bound instead of branched so it costs nothing when
+    -- it is the one in use. Here the game's handlers go out after our invoke returns,
+    -- which keeps the send at its floor and leaves the game's own popup a round trip
+    -- late. Measured, detect -> send: this one ~250 ns, the eager one ~540 ns.
+    -- L.EagerRedispatch picks between them.
+    local poleLate = function(msg, dur, sound, position)
+        if position ~= "Top" then
+            defer(redispatch, msg, dur, sound, position)
+            if L.OursPending then return side(msg) end
+            return
+        end
+        poleInner(msg, dur, sound, position)
+        rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
+        defer(drainRedispatch)
+    end
+    L.EagerRedispatch = true
 
     L.TakePole = function()
         if L.PoleOn then return true, #L.PoleTaken end
@@ -1896,7 +1948,7 @@ do
         for _, c in ipairs(conns) do
             local fn
             pcall(function() fn = c.Function end)
-            if fn and fn ~= L.FastNotify and fn ~= pole then
+            if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate then
                 local okd = pcall(function() c:Disable() end)
                 if okd then
                     taken[#taken + 1] = fn
@@ -1910,6 +1962,7 @@ do
         L.PoleRemote = r
         L.PoleOn = true
         L.Handlers.pole = pole
+        L.Handlers.poleLate = poleLate
         L.SyncFast()
         return true, #taken
     end
@@ -1945,7 +1998,7 @@ do
         for _, c in ipairs(conns) do
             local fn
             pcall(function() fn = c.Function end)
-            if fn and fn ~= L.FastNotify and fn ~= pole then
+            if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate then
                 local known = false
                 for i = 1, #taken do
                     if taken[i] == fn then known = true break end
@@ -2452,7 +2505,13 @@ L.NotifyHooked = false
 do
     local function hookNotify()
         if L.NotifyHooked then return true end
-        if L.DetectMode == "remote" and L.RemoteDetectOn then return true end
+        -- Not while the remote is the detection route. The old test also required
+        -- RemoteDetectOn, so at load -- before discovery had finished -- the answer was
+        -- "remote path, but not live yet", and it hooked anyway. It got unhooked later
+        -- when the remote came up, but until then we were inside the game's own Notify,
+        -- and every announcement was being seen twice: once through their controller
+        -- and once through the remote. Detection mode alone decides now.
+        if L.DetectMode == "remote" then return true end
         local ctrl = RepS and RepS:FindFirstChild("Controllers")
         local mod = ctrl and ctrl:FindFirstChild("NotificationController")
         if not mod then return false end
@@ -2718,15 +2777,17 @@ end
 -- measured rather than assumed. Numbers are detect -> send, amortised over 3000
 -- announcements each, same rig, same run:
 --
---   defaults (soloRaw, pole held)      163 ns   1.0x  <- what Fastest() restores
---   MultiSurface = true                244 ns   1.5x   forces the guarded handler
---   Solo = false                       257 ns   1.6x   guarded: dedupe before the send
---   Instrument = true                  301 ns   1.8x   moves the binding to solo
---   RaceArmed = true (RaceOn)          322 ns   2.0x   forces guarded, and puts a
+--   EagerRedispatch = false            263 ns   0.5x   fastest send; the game's own
+--                                                      popup lands a round trip late
+--   defaults (soloRaw, pole, eager)    550 ns   1.0x  <- what Fastest() restores
+--   Solo = false                       561 ns   1.0x   guarded: dedupe before the send
+--   MultiSurface = true                570 ns   1.0x   forces the guarded handler
+--   RaceArmed = true (RaceOn)          667 ns   1.2x   forces guarded, and puts a
 --                                                      callback on every remote
---   RawFire = false                    349 ns   2.1x   codeFrom runs before the send
---   Threshold = 2                     1515 ns   9.3x   AND only 1350 of 3000 sent
---   RedeemPath = "both"               1690 ns  10.4x   AND only 2700 of 3000 sent
+--   Instrument = true                  708 ns   1.3x   moves the binding to solo
+--   RawFire = false                    890 ns   1.6x   codeFrom runs before the send
+--   Threshold = 2                     2081 ns   3.8x   AND only 1350 of 3000 sent
+--   RedeemPath = "both"               2377 ns   4.3x   AND only 2700 of 3000 sent
 --   GuessCode = true                  0 of 3000 sent   under a rapid burst; the
 --                                                      accumulate buffer passes 50
 --                                                      chars, gets truncated to the
@@ -2738,8 +2799,13 @@ end
 --                                                      it never fires -- but it is a
 --                                                      long way off the fast path.
 --
--- Pole is a separate axis: the wrapper costs about 4 ns here, and without it our
--- invoke goes out behind the game's own notification handler, measured at 3204 ns.
+-- Pole is a separate axis: dropping it measures 232 ns, but then our invoke goes out
+-- behind the game's own notification handler, measured at 3204 ns.
+--
+-- EagerRedispatch is the one real choice left. On, the game's handlers are handed to
+-- the scheduler before our invoke, so their popup appears on time; off, they wait out
+-- our round trip and the send is ~290 ns cheaper. It is cosmetic either way -- it
+-- changes when the GAME's popup draws, never when our redeem leaves.
 --
 -- RedeemPath = "ui" sent nothing in the rig, but that is the rig's fault -- it has no
 -- real Codes GUI for the UI path to drive. Treat that row as untested, not as broken.
@@ -2757,6 +2823,9 @@ L.FastCheck = function()
     if L.RaceArmed then off[#off + 1] = "RaceArmed is on (RaceOn)" end
     if L.Solo == false then off[#off + 1] = "Solo is off" end
     if L.MultiSurface then off[#off + 1] = "MultiSurface is on" end
+    if L.ToastOn then
+        off[#off + 1] = "ToastOn is on -- results go through the game's notifier"
+    end
     if L.AutoOn ~= true then off[#off + 1] = "AutoOn is off -- nothing will send" end
     if not L.PoleOn then off[#off + 1] = "pole is not held" end
     return off
@@ -2772,6 +2841,7 @@ L.Fastest = function()
     L.RaceArmed    = false
     L.Solo         = true
     L.MultiSurface = false
+    L.ToastOn      = false
     L.AutoMeasureLeft = 0
     L.Settings.RedeemPath     = "remote"
     L.Settings.Threshold      = 1
@@ -2794,7 +2864,7 @@ L.FastestPrint = function()
         print("[LUCK] moved onto the fast path, was:")
         for _, line in ipairs(before) do print("[LUCK]   " .. line) end
     end
-    print(("[LUCK] handler %s   pole %s   expect about 163 ns detect -> send")
+    print(("[LUCK] handler %s   pole %s   expect about 550 ns detect -> send")
         :format(tostring(handler), pole and "held" or "not held"))
     return handler
 end
@@ -2873,7 +2943,12 @@ do
     end
 end
 
-L.ToastOn = true
+-- Off. This pushes our result text through the GAME's NotificationController, so a
+-- redeem produced two confirmations: one in the script's own feed, and one dressed up
+-- as a message from the game. On the remote path the game never told us anything --
+-- that line was us talking to ourselves through their UI. The script's own notify is
+-- the only confirmation now. Set L.ToastOn = true to put it back.
+L.ToastOn = false
 L.Toast = function(text, colour)
     if not L.ToastOn or type(text) ~= "string" or text == "" then return false end
     local body = colour and ('<font color="%s">%s</font>'):format(colour, text) or text
