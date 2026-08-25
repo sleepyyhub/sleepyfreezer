@@ -36,6 +36,16 @@ getgenv = function() return genvTable end
 local fpsCapSet = nil
 setfpscap = function(n) fpsCapSet = n end
 
+firesignal = function(sig, ...)
+    -- Executors fire every connection on the signal, whether or not it has been
+    -- Disabled. Pole relies on Disable to keep the game's handlers out of the way, so
+    -- a firesignal reaches them anyway -- and pole then re-dispatches them itself.
+    if type(sig) == "table" and sig.conns then
+        local snap = table.clone(sig.conns)
+        for i = 1, #snap do pcall(snap[i].Function, ...) end
+    end
+end
+
 getconnections = function(sig)
     if type(sig) == "table" and sig.conns then return table.clone(sig.conns) end
     error("not a signal")

@@ -244,6 +244,46 @@ do
     check("fake OFF again: back to 1 redeem", n3 == 1, n3 .. " redeems")
 end
 
+
+-- 12. the test sender must announce once per action, not twice
+do
+    pcall(L.Fastest); H.pump(20000)
+    -- firesignal is what fireFake uses; give the rig one that fires every listener
+    local box = PlayerGuiRef:FindFirstChild("__SendBoxProbe")
+    local announces = 0
+    local realNotify = L.NotifyRemote
+    local probeConn = realNotify.OnClientEvent:Connect(function() announces += 1 end)
+
+    -- Both entry points delivered for one user action, the way a touch client does it:
+    -- the click handler and the FocusLost that the click itself caused.
+    local before = announces
+    local gui, sbox = L.SenderSubmit, L.SenderBox
+    if gui and sbox then
+        sbox.Text = "DOUBLETEST"
+        local redeemBefore = R.invokeCount()
+        local gameBefore = R.gameHandlerCalls()
+        gui()                 -- the click
+        gui()                 -- the FocusLost that click caused
+        H.pump(20000)
+        local redeems = R.invokeCount() - redeemBefore
+        local popups = R.gameHandlerCalls() - gameBefore
+        check("sender: one action -> one redeem", redeems == 1, redeems .. " redeems")
+        check("sender: one action -> one game popup", popups == 1, popups .. " popups")
+
+        -- and a genuinely new code still gets all the way to a redeem
+        local r2 = R.invokeCount()
+        sbox.Text = "SECONDTEST"
+        gui()
+        H.pump(20000)
+        check("sender: a different code still redeems", R.invokeCount() - r2 == 1,
+            (R.invokeCount() - r2) .. " redeems")
+    else
+        check("sender submit is reachable for testing", false,
+            "SenderSubmit=" .. tostring(gui) .. " SenderBox=" .. tostring(sbox))
+    end
+    pcall(function() probeConn:Disconnect() end)
+end
+
 print("")
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end

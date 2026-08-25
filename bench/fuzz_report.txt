@@ -1,9 +1,8 @@
-STRESS / FUZZ -- 18 checks, run against the real file under standalone Luau
+STRESS / FUZZ -- 21 checks against the real file under standalone Luau
 
-STRESS / FUZZ
 ================================================================
      probe: calling PoleTaken[1] moved gameCalls 361 -> 362  (src=/tmp/claude-0/-home-user-sleepyfreezer/3c80a013-19ae-5c42-b389-3413efa9c1f7/scratchpad/fuzz.luau)
      conns on the notify remote: 2 total, 1 enabled
 
-checks: 18   failures: 0
+checks: 21   failures: 0
 runtime errors during the whole run: 0

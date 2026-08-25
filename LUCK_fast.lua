@@ -3865,9 +3865,28 @@ local uiOK, uiErr = pcall(function()
     local function fireFake(txt)
         txt = (txt or ""):gsub("^%s+", ""):gsub("%s+$", "")
         if txt == "" then return end
+
+        -- Drive the bound handler directly rather than firesignal.
+        --
+        -- firesignal fires EVERY connection on the signal, and executors ignore
+        -- Disable -- so it reaches the game's own notification handlers even though
+        -- pole has disabled them. Pole then re-dispatches those same handlers itself,
+        -- and one fake announcement came out as two popups. Reproduced in the fuzz rig
+        -- as exactly that: one click, two game popups.
+        --
+        -- The bound handler is the path a real announcement takes anyway, it fires
+        -- once, and it does not need firesignal to exist at all -- which several
+        -- executors do not provide.
+        local fast = L.FastNotify
+        if fast then
+            pcall(fast, txt, 5.5, "Sounds.Sfx.Blop", "Top")
+            L.Notify("sent fake: " .. txt, T.MUTED)
+            return
+        end
+
         local r = L.NotifyRemote
         if not (r and typeof(firesignal) == "function") then
-            L.Notify("no notify remote / firesignal", T.RED)
+            L.Notify("nothing bound to announce into", T.RED)
             return
         end
         pcall(firesignal, r.OnClientEvent, txt, 5.5,
@@ -3897,20 +3916,44 @@ local uiOK, uiErr = pcall(function()
     rev(TestBtn, "BackgroundTransparency", 0)
     rev(TestBtn, "TextTransparency", 0)
     rev(TestStroke, "Transparency", 0.45)
-    SendBtn.MouseButton1Click:Connect(function()
-        fireFake(SendBox.Text)
+    -- One submit path for both the button and the Enter key.
+    --
+    -- These were two independent handlers, each of which read SendBox.Text, fired, and
+    -- only then cleared it. Clicking SEND while the box has focus makes the box lose
+    -- focus, so both handlers ran for one action and the announcement went out twice --
+    -- and because each read the text before either cleared it, both read the same code.
+    -- CaptureFocus() called from inside FocusLost compounded it: it re-focuses the box
+    -- while that event is still being handled, which can hand back a second FocusLost.
+    --
+    -- The text is taken and cleared BEFORE anything is sent now, so whichever handler
+    -- arrives second reads an empty box and stops. A short repeat guard covers any
+    -- platform that manages to deliver both before the clear lands, and the refocus is
+    -- deferred so it cannot re-enter the handler that scheduled it.
+    local lastFake, lastFakeAt = nil, 0
+    local function submitFake(text)
+        local txt = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if txt == "" then return end
+        local now = os.clock()
+        if txt == lastFake and (now - lastFakeAt) < 0.35 then return end
+        lastFake, lastFakeAt = txt, now
+        fireFake(txt)
+    end
+    local function submitFromBox()
+        local txt = SendBox.Text
         SendBox.Text = ""
-        SendBox:CaptureFocus()
-    end)
+        submitFake(txt)
+        task.defer(function()
+            if SendBox.Parent then pcall(function() SendBox:CaptureFocus() end) end
+        end)
+    end
+    -- Exposed so the fuzz suite can drive the real submit path with real text.
+    L.SenderSubmit, L.SenderBox = submitFromBox, SendBox
+    SendBtn.MouseButton1Click:Connect(submitFromBox)
     SendBox.FocusLost:Connect(function(enter)
-        if enter then
-            fireFake(SendBox.Text)
-            SendBox.Text = ""
-            SendBox:CaptureFocus()
-        end
+        if enter then submitFromBox() end
     end)
     TestBtn.MouseButton1Click:Connect(function()
-        fireFake("TESTCODE" .. tostring(math.random(1000, 9999)))
+        submitFake("TESTCODE" .. tostring(math.random(1000, 9999)))
     end)
     hover(TestBtn, T.RAISED, TestStroke)
 
