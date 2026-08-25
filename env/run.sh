@@ -59,5 +59,7 @@ case "$SCENARIO" in
   diag) exec ./luau diagtest.luau ;;
   yourcase) exec ./luau yourcase.luau ;;
   notify) exec ./luau notifytest.luau ;;
+  burst) exec ./luau bursttest.luau ;;
+  arm) exec ./luau armtest.luau ;;
 esac
 exec ./luau run.luau

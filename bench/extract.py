@@ -33,7 +33,9 @@ def main():
     # CodeFrom: `L.IsNotifyMetadata = function` through the line before
     # `local codeFrom, payloadText, selectArg`
     c = find_unique(lines, r"^L\.IsNotifyMetadata = function", "IsNotifyMetadata")
-    d = find_unique(lines, r"^local codeFrom, payloadText, selectArg",
+    # `selectArg` is not always on this line -- anchor on the two names that
+    # are, or a build that drops it fails extraction for no good reason.
+    d = find_unique(lines, r"^local codeFrom, payloadText\b",
                     "codeFrom/payloadText locals")
     codefrom = lines[c:d]
 
