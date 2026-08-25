@@ -112,6 +112,61 @@ a 65× difference in the microbenchmark — does not survive contact with a fram
 | redeem over the wire | 20.000 | 41.7% |
 | total | 47.923 | |
 
+## Can it be made faster? The levers, measured
+
+The stage breakdown at 40 ms ping / 60 fps says where the time is:
+
+| stage | ms | share |
+|---|---:|---:|
+| 1. announcement over the wire (incl. waiting for the client's replication step) | 28.124 | 58.4% |
+| 2. LUCK's handler | 0.005 | 0.01% |
+| 3. waiting for the outgoing flush | 0.004 | 0.01% |
+| 4. redeem over the wire | 20.000 | 41.6% |
+
+Stage 3 is the surprise: **the outgoing side is already free.** The handler runs
+during the client's replication step, and the outgoing flush is later in the same
+frame, so the packet never waits. The entire frame tax is inbound — waiting for
+the client to pick the announcement up.
+
+### Lever 1 — frame rate. The only one that moves anything.
+
+| fps | inbound wait | script | flush wait | total |
+|---|---:|---:|---:|---:|
+| 30 | 16.250 | 0.0035 | 0.0029 | 55.84 |
+| 60 | 8.125 | 0.0044 | 0.0037 | 47.92 |
+| 120 | 4.062 | 0.0047 | 0.0031 | 43.97 |
+| 240 | 2.032 | 0.0040 | 0.0030 | 41.98 |
+| 480 | 1.016 | 0.0042 | 0.0031 | 41.00 |
+
+The inbound wait is exactly half a frame and halves every time the frame rate
+doubles. **14.85 ms between 30 and 480 fps**, at fixed ping.
+
+### Lever 2 — connection order
+
+| | min | med | max |
+|---|---:|---:|---:|
+| LUCK alone on the signal | 40.01 | 47.92 | 56.25 |
+| a heavy listener ahead of it | 40.61 | 48.55 | 56.84 |
+
+A listener registered ahead of yours costs you exactly its own CPU time, 0.6 ms
+here, and nothing more. It does not make you miss the flush.
+
+### Lever 3 — firing more than once
+
+| | min | med | max |
+|---|---:|---:|---:|
+| one fire | 40.00 | 47.93 | 56.25 |
+| five fires | 40.01 | 47.92 | 56.27 |
+
+Identical. Every copy rides the same replication step, so the first one lands at
+the same instant. Spamming buys nothing and costs bandwidth.
+
+### What that leaves
+
+Ping is 40 of the 48 ms and no client-side code touches it. Frame rate is worth
+up to ~7 ms from 60 fps. The script's own code is 0.005 ms and is already at the
+floor. There is no fourth lever hiding in the source.
+
 ## What this does not model, stated plainly
 
 - **Rendering, physics, input.** Absent. On a real client they are what makes

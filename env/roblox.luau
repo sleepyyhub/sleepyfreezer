@@ -625,7 +625,11 @@ local function networkStep()
 			-- the server thread: wakes when the packet lands
 			task.delay(arriveAt - now(), function()
 				local reply
-				if handler then reply = table.pack(handler(pkt.kind, pkt.payload, arriveAt)) end
+				if handler then
+					reply = table.pack(handler(pkt.kind, pkt.payload, arriveAt, {
+						queuedAt = pkt.queuedAt, flushAt = flushAt,
+					}))
+				end
 				if pkt.replyTo then
 					local think = CFG.serverThinkMs / 1000
 					task.delay(think, function()

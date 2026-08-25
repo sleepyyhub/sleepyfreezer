@@ -225,7 +225,7 @@ function Server:publish(code)
 	self.live[code] = true
 end
 
-Env.serverHandlers[redeemRemote] = function(kind, payload, arrivedAt)
+Env.serverHandlers[redeemRemote] = function(kind, payload, arrivedAt, wire)
 	local code = payload[1]
 	if type(code) ~= "string" then return false, "INVALID" end
 	code = code:upper()
@@ -244,6 +244,9 @@ Env.serverHandlers[redeemRemote] = function(kind, payload, arrivedAt)
 
 	Server.receipts[#Server.receipts + 1] = {
 		code = code, at = arrivedAt, accepted = accepted,
+		-- when the script handed the packet to the engine, and when the
+		-- engine's outgoing replication step actually put it on the wire
+		queuedAt = wire and wire.queuedAt, flushAt = wire and wire.flushAt,
 	}
 	return accepted, msg
 end
@@ -252,7 +255,12 @@ end
 -- the wire delays it, the client's frame picks it up
 function Server:announce(text, code)
 	if code then self:publish(code) end
-	Env.queueToClient(notifySignal, table.pack(text, 5, nil, "Top"), now())
+	-- deliver through a function so the exact moment the client's replication
+	-- step handed the packet up can be timestamped
+	Env.queueToClient(function(...)
+		Place.lastNotifyAt = now()
+		notifySignal:Fire(...)
+	end, table.pack(text, 5, nil, "Top"), now())
 	return now()
 end
 

@@ -108,17 +108,33 @@ local function drop(phaseIndex, phaseTotal)
 	local before = #Place.Server.receipts
 	local t0 = Place.Server:announce(text, code)
 
-	-- give the pipeline a generous window to complete
+	-- Wait for a receipt carrying THIS code. Counting new receipts instead
+	-- would break the poll on a packet still in flight from an earlier drop,
+	-- which is exactly how the multi-fire test first came back empty.
+	local function found()
+		for i = before + 1, #Place.Server.receipts do
+			if Place.Server.receipts[i].code == code then return true end
+		end
+		return false
+	end
+
 	local deadline = Env.now() + 1.5
 	while Env.now() < deadline do
 		Env.run(1 / Env.CFG.fps)
-		if #Place.Server.receipts > before then break end
+		if found() then break end
 	end
 
 	for i = before + 1, #Place.Server.receipts do
 		local r = Place.Server.receipts[i]
 		if r.code == code then
-			return r.at - t0, r.accepted, code
+			-- the four stages the total is made of
+			local trace = {
+				wireIn   = (Place.lastNotifyAt or t0) - t0,       -- server -> client
+				handler  = (r.queuedAt or 0) - (Place.lastNotifyAt or t0), -- the script
+				flushWait= (r.flushAt or 0) - (r.queuedAt or 0),  -- waiting for the send
+				wireOut  = r.at - (r.flushAt or r.at),            -- client -> server
+			}
+			return r.at - t0, r.accepted, code, trace
 		end
 	end
 	return nil, false, code
@@ -136,19 +152,28 @@ local SAMPLES = 40
 local function sample(n)
 	local total = n or SAMPLES
 	local out = {}
+	local acc = { wireIn = 0, handler = 0, flushWait = 0, wireOut = 0 }
+	local traced = 0
 	for i = 1, total do
-		local dt = drop(i, total)
+		local dt, _, _, tr = drop(i, total)
 		if dt then out[#out + 1] = dt * 1000 end
+		if tr then
+			traced += 1
+			for k, v in pairs(tr) do acc[k] += v * 1000 end
+		end
 		Env.run(0.05)
 	end
 	if #out == 0 then return nil end
+	if traced > 0 then
+		for k, v in pairs(acc) do acc[k] = v / traced end
+	end
 	table.sort(out)
 	local sum = 0
 	for _, v in ipairs(out) do sum += v end
 	local function q(p) return out[math.clamp(math.ceil(#out * p), 1, #out)] end
 	return {
 		min = out[1], p10 = q(0.10), med = q(0.50), p90 = q(0.90),
-		max = out[#out], mean = sum / #out, n = #out,
+		max = out[#out], mean = sum / #out, n = #out, stages = acc,
 	}
 end
 
@@ -295,32 +320,104 @@ if L.ApplyBinding then L.ApplyBinding() end
 if L.SyncFast then L.SyncFast() end
 warmup(2)
 
-header("where the milliseconds go, 40 ms ping / 60 fps / Immediate")
+--------------------------------------------------------------------------------
+-- "can it be faster" -- test the levers instead of arguing about them
+--------------------------------------------------------------------------------
+if SCENARIO == "faster" or SCENARIO == "all" or SCENARIO == "sweep" then
+	Env.CFG.pingMs = 40
+	Env.CFG.signalBehavior = "Immediate"
+	L.RawFire, L.Instrument, L.Solo = true, false, true
+	if L.ApplyBinding then L.ApplyBinding() end
+	if L.SyncFast then L.SyncFast() end
+
+	header("lever 1: frame rate, and where in the pipe it pays")
+	print(string.format("  %-12s %11s %11s %11s %11s", "fps",
+		"inbound", "script", "flush wait", "total"))
+	print("  " .. string.rep("-", 62))
+	for _, f in ipairs({ 30, 60, 120, 240, 480 }) do
+		Env.CFG.fps = f
+		warmup(1)
+		local st = sample()
+		if st then
+			local sg = st.stages
+			print(string.format("  %-12s %8.3f ms %8.4f ms %8.4f ms %8.2f ms",
+				f .. " fps", sg.wireIn - Env.CFG.pingMs / 2, sg.handler, sg.flushWait, st.med))
+		end
+	end
+	print("  inbound = waiting for the client's replication step to hand the")
+	print("  announcement up. it is the ONLY client-side cost left, and frame")
+	print("  rate is the only thing that moves it.")
+
+	header("lever 2: does connection order matter? (pole position)")
+	colhead()
+	Env.CFG.fps = 60
+	warmup(1)
+	row("LUCK alone on the signal", sample())
+
+	-- a heavy listener registered AHEAD of LUCK's, the way the game's own
+	-- controller sits in front of you on a real client
+	local hog = Place.notifySignal:Connect(function()
+		local x = 0
+		for i = 1, 20000 do x += i % 7 end
+		return x
+	end)
+	-- move it to the front of the list
+	local conns = rawget(Place.notifySignal, "_conns")
+	for i, c in ipairs(conns) do
+		if c == conns[#conns] and i == #conns then
+			table.remove(conns, i)
+			table.insert(conns, 1, c)
+			break
+		end
+	end
+	warmup(1)
+	row("a heavy listener ahead of it", sample())
+	hog:Disconnect()
+
+	header("lever 3: firing the redeem more than once")
+	colhead()
+	warmup(1)
+	row("one fire (normal)", sample())
+
+	local extra = Place.notifySignal:Connect(function(msg, _, _, position)
+		if position ~= "Top" then return end
+		for _ = 1, 4 do Place.redeemRemote:InvokeServer(msg) end
+	end)
+	warmup(1)
+	row("five fires", sample())
+	extra:Disconnect()
+	print("  all copies ride the same replication step, so the first one lands")
+	print("  at the same instant. spamming buys nothing and costs bandwidth.")
+
+	Env.CFG.fps = 60
+end
+
+header("where the milliseconds actually go, measured stage by stage")
 
 local s = sample()
-local oneWay = Env.CFG.pingMs / 2
 if s then
-	local cpuNs = L.BenchNs
-	if not cpuNs and L.Bench then cpuNs = L.Bench(300000) end
-	local cpuMs = (cpuNs or 0) / 1e6
-	local frameMs = 1000 / Env.CFG.fps
-
-	print(string.format("  %-34s %9.3f ms", "announcement over the wire", oneWay))
-	print(string.format("  %-34s %9.3f ms", "waiting for the client frame", s.med - oneWay * 2 - cpuMs))
-	print(string.format("  %-34s %9.6f ms", "LUCK's own code", cpuMs))
-	print(string.format("  %-34s %9.3f ms", "redeem over the wire", oneWay))
-	print("  " .. string.rep("-", 62))
-	print(string.format("  %-34s %9.3f ms  (median measured)", "TOTAL", s.med))
+	local st = s.stages
+	local tot = st.wireIn + st.handler + st.flushWait + st.wireOut
+	local rows = {
+		{ "1. announcement over the wire", st.wireIn,
+		  "server -> your client, includes waiting for the client's replication step" },
+		{ "2. LUCK's handler", st.handler,
+		  "signal fires -> the redeem is handed to the engine" },
+		{ "3. waiting for the outgoing flush", st.flushWait,
+		  "the engine holds your packet until the next replication step" },
+		{ "4. redeem over the wire", st.wireOut,
+		  "your client -> server" },
+	}
 	print("")
-	print(string.format("  LUCK's share            %.6f ms  =  %.5f %%",
-		cpuMs, cpuMs / s.med * 100))
-	print(string.format("  network's share         %9.3f ms  =  %.2f %%",
-		oneWay * 2, oneWay * 2 / s.med * 100))
-	print(string.format("  frame clock's share     %9.3f ms  =  %.2f %%",
-		s.med - oneWay * 2 - cpuMs, (s.med - oneWay * 2 - cpuMs) / s.med * 100))
+	for _, r in ipairs(rows) do
+		print(string.format("  %-34s %9.4f ms  %6.2f%%", r[1], r[2], r[2] / tot * 100))
+		print(string.format("  %-34s %s", "", r[3]))
+	end
+	print("  " .. string.rep("-", 70))
+	print(string.format("  %-34s %9.4f ms   (median total %.2f ms)", "sum of stages", tot, s.med))
 	print("")
-	print(string.format("  one frame at %d fps is %.2f ms — %.0fx the entire script",
-		Env.CFG.fps, frameMs, frameMs / math.max(cpuMs, 1e-9)))
+	print(string.format("  the script is %.5f%% of it. the other %.2f%% is wire and frame clock.",
+		st.handler / tot * 100, (tot - st.handler) / tot * 100))
 end
 
 print("")
