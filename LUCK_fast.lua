@@ -1,12 +1,10 @@
--- Two settings decide how long a redeem packet sits in the outgoing queue before it
--- goes on the wire: the frame clock (the packet leaves on the next network send step)
--- and the signal mode (Deferred parks the handler until the next resumption point,
--- Immediate runs it inside the replication step, in time for this frame's send).
--- Both are set here, on the first line, so nothing that follows is sent under the old
--- ones. They are applied again further down through L.SetFpsCap / L.SetImmediateSignals
--- so the reported state stays honest; these two calls just win back the load time.
+-- Frame rate first, before any service lookup. The client flushes its outgoing packets
+-- on the network send step, so the faster the frames the shorter the wait between the
+-- invoke and the packet actually leaving. This is the one client-side setting that
+-- moves that number, and it costs nothing to set it on line 1 rather than two thirds
+-- of the way down the file. Applied again later through L.SetFpsCap so the reported
+-- state stays honest.
 if type(setfpscap) == "function" then pcall(setfpscap, 999) end
-pcall(function() workspace.SignalBehavior = Enum.SignalBehavior.Immediate end)
 
 local Players       = game:GetService("Players")
 local UIS           = game:GetService("UserInputService")
@@ -466,10 +464,23 @@ do
                 end
             end
         end
-        -- Any successful (re)connect puts us at the back of the list and may leave
-        -- handlers that attached since the last sweep still live, so re-hold pole here
-        -- rather than only at boost time.
-        if ok and conn and L.PoleOn and L.RetakePole then pcall(L.RetakePole) end
+        -- Pole, the moment we are listening. Connecting puts us at the BACK of the
+        -- handler list, so until pole is held every code goes out behind the game's own
+        -- notification handler -- which builds GUI and plays a sound before yielding
+        -- control back. Boost used to be the only thing that took it, and boost can be
+        -- seconds away; anything dropping in that window was sent late for no reason.
+        if ok and conn and L.AutoPole ~= false then
+            if L.PoleOn then
+                if L.RetakePole then pcall(L.RetakePole) end
+            elseif L.TakePole then
+                pcall(L.TakePole)
+                -- One late sweep for handlers that attach after we got here.
+                task.delay(3, function()
+                    if L.PoleOn and L.RetakePole then pcall(L.RetakePole)
+                    elseif L.TakePole then pcall(L.TakePole) end
+                end)
+            end
+        end
         L.RefreshRemoteStatus()
         return ok and conn ~= nil
     end
@@ -820,6 +831,8 @@ task.spawn(function()
         end
         local sentCodes = L.SentCodes
         if sentCodes then table.clear(sentCodes) end
+        local raceSeen = L.RaceSeen
+        if raceSeen then table.clear(raceSeen) end
     end
 end)
 
@@ -940,7 +953,20 @@ L.ResultNotify = function(code, ok, reply)
     return true
 end
 
-L.PostRedeem = function(t0, src, code, ok, reply, timing)
+-- Everything here is presentation: toasts, feed lines, history rows, label text. None
+-- of it is read by the send path -- OursPending, LastTiming and LastDetect are all set
+-- back in rawFire, before this runs.
+--
+-- It used to run on task.defer, which is the SAME resumption queue that deferred
+-- OnClientEvent handlers are resumed from. So if a second code landed in the same
+-- frame, this work -- Instance.new for a toast and its corner and its stroke, two
+-- tweens, a history insert, a row of label writes -- could be resumed ahead of the
+-- second announcement's handler, and delay detecting it by however long all of that
+-- takes. Pushed onto a real delay so it can never sit in front of the next code. 30ms
+-- late on screen is invisible; 30ms late on a send is the whole game.
+L.PostDelay = 0.03
+
+local function postRedeemBody(t0, src, code, ok, reply, timing)
     if L.ResultNotify then L.ResultNotify(code, ok, reply) end
     if L.ToastResult then L.ToastResult(code, ok, reply) end
     L.LogHeard(t0, src, code)
@@ -953,6 +979,10 @@ L.PostRedeem = function(t0, src, code, ok, reply, timing)
     task.delay(1.25, function()
         if L.RefreshPreview then L.RefreshPreview() end
     end)
+end
+
+L.PostRedeem = function(t0, src, code, ok, reply, timing)
+    task.delay(L.PostDelay, postRedeemBody, t0, src, code, ok, reply, timing)
 end
 
 local logHeard, postFragment, postRedeem, feed =
@@ -1167,7 +1197,10 @@ L.NotifyHandler = function(a)
 
     if L.OursPending and claimOurs(text) then return end
 
-    if L.NotifyRedeem then defer(killFeed, text) end
+    -- Delayed, not deferred: killFeed walks every player in the server doing two string
+    -- finds each, and on task.defer that walk can be resumed ahead of the next code's
+    -- handler. It only draws a "X sniped CODE" feed line, so it can wait.
+    if L.NotifyRedeem then task.delay(L.PostDelay, killFeed, text) end
 
     if not hotAuto and not hotGuess then return end
 
@@ -1216,11 +1249,18 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
         end
     elseif fireOnly then
         L.OursT0, L.OursTiming, L.OursCode = t0, timing, code
+        -- Delayed with the rest of the presentation. This is a string.format and a
+        -- label write, and rawFire runs on the deferred queue -- the same queue a
+        -- second announcement's handler is resumed from.
         if status then
-            status.set(("sent  ·  %s  ·  %.3fms detect->send%s"):format(
-                code, L.FloorUs and (L.FloorUs / 1000) or L.LastGapMs or 0,
-                (L.DetectMode == "remote" and L.RemoteDetectOn) and "  ·  remote"
-                    or (L.NotifyHooked and "  ·  notify" or "  ·  label")), T.MUTED)
+            local floorMs = L.FloorUs and (L.FloorUs / 1000) or L.LastGapMs or 0
+            local surface = (L.DetectMode == "remote" and L.RemoteDetectOn)
+                and "  ·  remote"
+                or (L.NotifyHooked and "  ·  notify" or "  ·  label")
+            task.delay(L.PostDelay, function()
+                status.set(("sent  ·  %s  ·  %.3fms detect->send%s")
+                    :format(code, floorMs, surface), T.MUTED)
+            end)
         end
         task.delay(L.OURS_WINDOW, function()
             if L.OursPending == code then
@@ -1525,8 +1565,14 @@ do
         if a == nil then
             L.OursPending, L.OursAt = code, t0 ~= 0 and t0 or clock()
         end
-        if L.Note then L.Note(L.NotifyRemoteName or "remote", code, t0) end
-        if L.NotifyRedeem then killFeed(text) end
+        -- Delayed. Note only feeds the race report, and t0 is passed in, so the timing
+        -- it records is identical whether it runs now or in 30ms -- but running it now
+        -- puts a table insert and an O(n) shift in the deferred queue, where it can sit
+        -- in front of the next code's handler.
+        if L.Note then
+            task.delay(L.PostDelay, L.Note, L.NotifyRemoteName or "remote", code, t0)
+        end
+        if L.NotifyRedeem then task.delay(L.PostDelay, killFeed, text) end
         rawFire(t0, tCall, tDone, text, raw, pok, a, b, fastIsEvent or a == nil)
     end
 
@@ -1934,7 +1980,11 @@ end
 
 do
     local upper, find = string.upper, string.find
+    -- raceSeen is keyed by code and was never cleared: one table per code, held for the
+    -- life of the session. Slow, but this script is meant to sit in a game for hours.
+    -- The janitor clears it on the same 30s sweep as the other windows.
     local surfaces, raceSeen = {}, {}
+    L.RaceSeen = raceSeen
     local sentCodes = L.SentCodes
 
     L.Surfaces = surfaces
@@ -2273,6 +2323,9 @@ do
         return ok and L.ImmediateSignals == (on and true or false), now
     end
 
+    -- One best-effort attempt, then read it back and move on. SignalBehavior belongs to
+    -- the place, not to us -- a client cannot decide it, and retrying is just noise. It
+    -- stays here only so L.SignalMode reports what the place actually chose.
     L.SetImmediateSignals(true)
 end
 
@@ -2432,9 +2485,9 @@ L.BoostApplied = {}
 L.Boost = function(blind)
     local got = {}
 
-    local okSig = L.SetImmediateSignals(true)
-    got["immediate signals"] = (L.SignalMode == "Immediate") and "on"
-        or ("refused, still " .. tostring(L.SignalMode))
+    -- Reported, not relied on: the place owns this, we only read what it chose.
+    L.SetImmediateSignals(true)
+    got["signal mode"] = ("%s (set by the place)"):format(tostring(L.SignalMode))
 
     got["fps cap"] = L.SetFpsCap(999) and "999" or "no setfpscap"
 
@@ -2455,20 +2508,20 @@ L.Boost = function(blind)
         got["3d rendering"] = "left on -- LUCK.Blind(true) to blank it"
     end
 
-    if L.SignalMode == "Immediate" then
-        local mine, total = L.ConnIndex()
-        if mine and total and mine > 1 then
-            local ok, n = L.TakePole()
-            got["pole position"] = ok
-                and ("taken from %d handler(s)"):format(n)
-                or ("not taken: " .. tostring(n))
-        elseif mine == 1 then
-            got["pole position"] = "already first"
-        else
-            got["pole position"] = "connection list unreadable"
-        end
+    -- Pole is taken whatever the signal mode. The old code skipped it under Deferred
+    -- with "not needed while signals are deferred", and that reasoning is wrong:
+    -- Deferred does not merge the handlers, it queues them and resumes them in
+    -- connection order at the same resumption point. A handler ahead of ours that
+    -- spends 3ms building its notification GUI still delays our invoke by 3ms, and
+    -- 3ms is several frames' worth of send windows. Order matters in both modes.
+    local mine, total = L.ConnIndex()
+    if mine == 1 then
+        got["pole position"] = "already first"
     else
-        got["pole position"] = "not needed while signals are deferred"
+        local ok, n = L.TakePole()
+        got["pole position"] = ok
+            and ("taken from %d handler(s) of %s"):format(n, tostring(total))
+            or ("not taken: " .. tostring(n))
     end
 
     L.BoostApplied = got
