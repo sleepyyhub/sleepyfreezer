@@ -196,8 +196,9 @@ L.SaveSettings = function()
 end
 
 L.Modded = (game.PlaceId ~= 109983668079237)
--- Positional lookup is known good on the real place, so it wins there. On anything
--- else the indices mean nothing and the verified lookup should decide.
+-- Positional lookup runs on the real place as a first guess and is reported by Diag,
+-- but the verified lookup overrules it the moment it lands: the verified one is the
+-- same walk the test sender does, and matching that is what makes announcements arrive.
 L.TrustIndex = not L.Modded
 L.SR = 146/255; L.SG = 255/255; L.SB = 103/255
 
@@ -245,11 +246,11 @@ do
         return nil
     end
 
-    -- The remote list used to be a fresh RepS:GetDescendants() walk on every discovery
-    -- tick: thousands of instances, four times a second, for up to a minute. Walk it
-    -- once, then let DescendantAdded keep it current. Index order for the initial set
-    -- is identical to what the first walk produced, which matters -- the redeem and
-    -- notify fallbacks address remotes by position (70 and 146).
+    -- A lazily built index of every remote in ReplicatedStorage, exposed as
+    -- L.RemoteIndex for poking around from the console. Nothing on the resolve path
+    -- touches it any more: positional lookup needs a fresh ordered walk (see
+    -- ResolveIndexedRemotes below) and the notify lookup only walks Packages.Net, so
+    -- this stays unbuilt -- and its tree walk unpaid -- unless something asks for it.
     local remoteIndex, remoteIndexBuilt = {}, false
     local function indexRemote(d)
         if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
@@ -265,41 +266,55 @@ do
     end
     L.RemoteIndex = enumerateRemotes
 
+    -- The notify remote is resolved exactly the way the test sender resolves it, because
+    -- the two have to land on the same instance or the sender fires at a remote we are
+    -- not listening on. That means: _G.PhiNotifyRemote if something already published it,
+    -- otherwise a fresh Packages.Net:GetDescendants() walk in tree order, taking the
+    -- first RemoteEvent that carries a connection whose function came from
+    -- NotificationController. No whole-tree fallback -- the previous version scanned the
+    -- cached index of all of ReplicatedStorage in a different order, and either the wrong
+    -- order or the wider net can land on a remote that only sees some announcements.
+    -- _G is a plain table under Roblox but some executors hand out a readonly or proxied
+    -- one, and an unguarded write there throws inside the discovery pass -- which is
+    -- pcall'd, so the pass silently aborts before it ever connects the handler. Both
+    -- directions go through pcall for that reason.
+    local function publishedNotify()
+        local ok, v = pcall(function() return _G.PhiNotifyRemote end)
+        return ok and v or nil
+    end
+    local function publishNotify(remote)
+        pcall(function() _G.PhiNotifyRemote = remote end)
+    end
+
     local function verifiedNotify()
+        local pub = publishedNotify()
+        if typeof(pub) == "Instance" and pub:IsA("RemoteEvent") then return pub end
+
         if typeof(getconnections) ~= "function" then return nil end
         local getinfo = debug and (debug.getinfo or debug.info)
         if not getinfo then return nil end
-        local list = enumerateRemotes()
 
-        local function owned(d)
-            local ok, cs = pcall(getconnections, d.OnClientEvent)
-            if not ok or type(cs) ~= "table" then return false end
-            for _, c in ipairs(cs) do
-                local okf, fn = pcall(function() return c.Function end)
-                if okf and type(fn) == "function" then
-                    local oki, info = pcall(getinfo, fn)
-                    local src = oki and tostring(info.short_src or info.source or "") or ""
-                    if src:find("NotificationController", 1, true) then return true end
+        local packages = RepS:FindFirstChild("Packages")
+        local net = packages and packages:FindFirstChild("Net")
+        if not net then return nil end
+
+        local okList, list = pcall(function() return net:GetDescendants() end)
+        if not okList or type(list) ~= "table" then return nil end
+
+        for _, d in ipairs(list) do
+            if d:IsA("RemoteEvent") then
+                local ok, cs = pcall(getconnections, d.OnClientEvent)
+                if ok and type(cs) == "table" then
+                    for _, c in ipairs(cs) do
+                        local okf, fn = pcall(function() return c.Function end)
+                        if okf and type(fn) == "function" then
+                            local oki, info = pcall(getinfo, fn)
+                            local src = oki and tostring(info.short_src or info.source or "") or ""
+                            if src:find("NotificationController", 1, true) then return d end
+                        end
+                    end
                 end
             end
-            return false
-        end
-
-        -- Packages.Net first when that folder exists: the real one lives there, and
-        -- finding it there skips getconnections on every other remote in the place.
-        local net = RepS:FindFirstChild("Packages")
-        net = net and net:FindFirstChild("Net")
-        if net then
-            for i = 1, #list do
-                local d = list[i]
-                if d:IsA("RemoteEvent") and d:IsDescendantOf(net) and owned(d) then
-                    return d
-                end
-            end
-        end
-        for i = 1, #list do
-            local d = list[i]
-            if d:IsA("RemoteEvent") and owned(d) then return d end
         end
         return nil
     end
@@ -591,15 +606,15 @@ do
             local vn = verifiedNotify()
             if vn then
                 notifyVerified = true
-                -- On the real place the positional lookup is known good, so verified
-                -- only fills a gap -- it does not get to overrule it. It used to
-                -- overrule unconditionally, and a place with more than one remote
-                -- carrying a NotificationController connection could pull us onto a
-                -- remote that only sees some of the announcements.
-                if L.TrustIndex and L.NotifyByIndex and L.NotifyRemote == L.NotifyByIndex
-                    and vn ~= L.NotifyByIndex then
-                    L.NotifyVerifiedDiffers = vn
-                elseif L.NotifyRemote ~= vn then
+                -- Verified wins outright now. It is the same lookup the test sender
+                -- performs, so agreeing with it is the whole point: whatever it names is
+                -- the remote announcements actually arrive on. The index is still read
+                -- and still reported, so a disagreement shows up in Diag instead of
+                -- silently deciding which announcements we see.
+                if L.NotifyByIndex and vn ~= L.NotifyByIndex then
+                    L.NotifyVerifiedDiffers = L.NotifyByIndex
+                end
+                if L.NotifyRemote ~= vn then
                     L.NotifyRemoteSource = L.NotifyRemote
                         and "verified (index was off)" or "verified"
                     L.NotifyRemote = vn
@@ -608,7 +623,12 @@ do
                     -- the old loop set L.NotifyRemote here and then hit the early
                     -- return in ConnectNotifyRemote, so the correction never landed.
                     L.RemoteDetectOn = false
+                else
+                    L.NotifyRemoteSource = L.NotifyRemoteSource or "verified"
                 end
+                -- Publish it so the test sender's _G lookup lands on this exact
+                -- instance instead of repeating the walk and possibly picking another.
+                publishNotify(vn)
             end
         end
 
@@ -3096,15 +3116,14 @@ L.Diag = function()
         L.NotifyRemote and L.NotifyRemote.Name or "none",
         tostring(L.NotifyRemoteSource), yn(L.RemoteDetectOn),
         tostring(L.NotifyRemoteName)))
-    print(("[LUCK] index %d of %s = %s   using it: %s   trust index %s"):format(
+    print(("[LUCK] index %d of %s = %s   agrees: %s"):format(
         L.NotifyIndex or 146, tostring(L.RemoteCount),
         L.NotifyByIndex and L.NotifyByIndex.Name or "none",
-        yn(L.NotifyByIndex ~= nil and L.NotifyRemote == L.NotifyByIndex),
-        yn(L.TrustIndex)))
+        yn(L.NotifyByIndex ~= nil and L.NotifyRemote == L.NotifyByIndex)))
     if L.NotifyVerifiedDiffers then
-        print(("[LUCK] NOTE: the verified lookup wanted %s instead -- two remotes on"):
-            format(L.NotifyVerifiedDiffers.Name))
-        print("[LUCK] this place carry a NotificationController connection")
+        print(("[LUCK] NOTE: index %d was %s -- the verified lookup overruled it"):
+            format(L.NotifyIndex or 146, L.NotifyVerifiedDiffers.Name))
+        print("[LUCK] the verified one is what the test sender fires at, so it wins")
     end
     local mine, total
     if L.ConnIndex then mine, total = L.ConnIndex() end

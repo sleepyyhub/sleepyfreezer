@@ -18,6 +18,9 @@ NumberSequenceKeypoint= H.NumberSequenceKeypoint
 TweenInfo             = H.TweenInfo
 typeof   = H.typeof
 warn     = function(...) end
+-- The standalone Luau CLI hands out a readonly _G. Roblox's is writable, so shadow it
+-- with a real table or every _G write in the script under test is a false failure.
+_G = {}
 
 -- The real debug table is readonly, so shadow the global with our own.
 local realDebug = debug
@@ -60,27 +63,52 @@ local Pkgs   = new("Folder", "Packages");  Pkgs.Parent = RepS
 local Net    = new("Folder", "Net");       Net.Parent  = Pkgs
 
 local notifyRemote = new("RemoteEvent", "RE/NotificationService/Notify")
-notifyRemote.Parent = Net
 local redeemRemote = new("RemoteFunction", "RF/RequestRedemption")
-redeemRemote.Parent = Net
 
--- Filler so the tree is not trivially small, like a real place.
-for i = 1, 180 do
-    local r = new(i % 3 == 0 and "RemoteFunction" or "RemoteEvent", "Filler" .. i)
-    r.Parent = Net
+-- Filler so the tree is not trivially small, like a real place -- and parented in an
+-- order that puts the redeem remote at remote-index 70 and the notify remote at 146,
+-- which is where they sit in his place. Without that the positional lookup lands on a
+-- filler and the real-place code path in LUCK is never actually exercised here.
+local filled = 0
+local function fill(n)
+    for _ = 1, n do
+        filled += 1
+        local r = new(filled % 3 == 0 and "RemoteFunction" or "RemoteEvent", "Filler" .. filled)
+        r.Parent = Net
+    end
 end
+fill(69)
+redeemRemote.Parent = Net       -- remote index 70
+fill(75)
+notifyRemote.Parent = Net       -- remote index 146
+fill(36)
 
 -- The game's own notification handler. Loaded under a chunkname containing
 -- "NotificationController" so LUCK's verified lookup identifies this remote the same
 -- way it does in the real place. It also does what the real one does: a bit of work.
-local gameHandler = loadstring([[
-    return function(msg, dur, sound, position)
-        local acc = 0
-        for i = 1, 400 do acc += i % 7 end
-        return acc
+-- The counter is passed INTO the chunk rather than wrapped around it. A wrapper closure
+-- is defined in this file, so debug.getinfo on it reports this file -- which made the
+-- verified lookup miss every time and quietly left the whole resolver untested.
+local makeHandler = loadstring([[
+    return function(bump)
+        return function(msg, dur, sound, position)
+            bump()
+            local acc = 0
+            for i = 1, 400 do acc += i % 7 end
+            return acc
+        end
     end
 ]], "@ReplicatedStorage.Controllers.NotificationController")()
-notifyRemote.OnClientEvent:Connect(function(...) gameCalls += 1 return gameHandler(...) end)
+local gameHandler = makeHandler(function() gameCalls += 1 end)
+notifyRemote.OnClientEvent:Connect(gameHandler)
+
+-- A second remote in Net that also carries a NotificationController connection, parented
+-- AFTER the real one so it comes later in tree order. The resolver has to keep taking the
+-- first match, because that is what the test sender takes -- if the two disagree, the
+-- sender fires at a remote nobody is listening on.
+local decoyNotify = new("RemoteEvent", "RE/NotificationService/Decoy")
+decoyNotify.Parent = Net
+decoyNotify.OnClientEvent:Connect(makeHandler(function() end))
 
 
 -- The game's NotificationController, as a module LUCK can require and hook.
@@ -220,6 +248,7 @@ RIG = {
     sentLog = function() return sendLog end,
     setInvokeBehaviour = function(fn) local old = invokeBehaviour; invokeBehaviour = fn; return old end,
     gameHandlerCalls = function() return gameCalls end, notifyRemote = notifyRemote, redeemRemote = redeemRemote,
+    decoyNotify = decoyNotify,
     RepS = RepS, genvTable = genvTable,
     fpsCap = function() return fpsCapSet end,
     invokeCount = function() return invokeCount end,
