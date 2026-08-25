@@ -17,9 +17,10 @@ if [ ! -x "$DIR/luau" ]; then
   chmod +x "$DIR"/luau*
 fi
 
-sed -n '670,697p' "$SRC" > "$DIR/_payloadtext.luau"   # L.PayloadText
-sed -n '699,747p' "$SRC" > "$DIR/_codefrom.luau"      # L.CodeFrom
-sed -n '1435,1826p' "$SRC" > "$DIR/_hotpath.luau"     # solo / guarded / idle / L.Bench
+# located by content, not line number -- the moment the script is edited the
+# numbers move, and silently benchmarking the wrong region is worse than not
+# benchmarking at all. extract.py fails loudly instead.
+python3 "$DIR/extract.py" "$SRC" "$DIR"
 
 cat "$DIR/prelude.luau" "$DIR/_payloadtext.luau" "$DIR/_codefrom.luau" \
     "$DIR/glue.luau" "$DIR/_hotpath.luau" "$DIR/driver.luau" > "$DIR/bench.luau"

@@ -1,0 +1,105 @@
+
+================================================================
+  LUCK in a simulated client
+================================================================
+  script            /home/user/sleepyfreezer/LUCK_fast.txt  (124038 bytes)
+  load              ok
+  boot cpu          12.79 ms real
+  arm               redeem=net  notify=net
+  remote detect     true
+  remote tested     true   (false/INVALID)
+  handler           soloRaw   fastReady=true
+  speed mode        Lucky   rawFire=true   auto=true
+  signal mode       Immediate   (script asked for Immediate)
+
+  announce -> the server has your redeem
+  (real script execution, simulated wire and frame clock)
+
+  by ping, at 60 fps   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  ping 10 ms                     10.42   11.67   18.34   25.01   26.67   n=40
+  ping 25 ms                     25.00   26.26   32.92   39.59   41.25   n=40
+  ping 40 ms                     40.01   41.26   47.92   54.59   56.27   n=40
+  ping 80 ms                     80.42   81.68   88.34   95.01   96.68   n=40
+  ping 150 ms                   150.43  151.67  158.34  165.01  166.68   n=40
+
+  by frame rate, at 40 ms ping   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  30 fps                         40.01   42.51   55.84   69.18   72.51   n=40
+  60 fps                         40.00   41.25   47.92   54.59   56.25   n=40
+  120 fps                        40.00   40.63   43.97   47.30   48.13   n=40
+  240 fps                        40.01   40.32   41.98   43.65   44.08   n=40
+
+  by signal behaviour, 40 ms ping / 60 fps   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  Deferred                       40.01   41.26   47.92   54.59   56.25   n=40
+  Immediate                      40.01   41.25   47.92   54.59   56.26   n=40
+
+  by script setting, 40 ms ping / 60 fps   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  RawFire on (default)           40.01   41.26   47.92   54.59   56.26   n=40
+  RawFire off (parses text)      40.00   41.26   47.93   54.59   56.26   n=40
+  Instrument on                  40.01   41.26   47.92   54.59   56.27   n=40
+  guarded handler                40.01   41.26   47.92   54.59   56.26   n=40
+  Auto off (detect only)         no redeem reached the server
+
+  LUCK vs the theoretical floor, 40 ms ping / 60 fps / Immediate   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  LUCK (solo, raw)               40.00   41.25   47.92   54.59   56.25   n=40
+  bare forwarding handler        40.43   41.68   48.34   55.01   56.68   n=40
+
+  gap at the median  -0.418 ms
+  gap at the minimum -0.421 ms
+  anything under a millisecond here is frame phase, not code.
+
+  lever 1: frame rate, and where in the pipe it pays   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+  fps              inbound      script  flush wait       total
+  --------------------------------------------------------------
+  30 fps         16.250 ms   0.0038 ms   0.0027 ms    55.84 ms
+  60 fps          8.126 ms   0.0060 ms   0.0038 ms    47.93 ms
+  120 fps         4.063 ms   0.0035 ms   0.0030 ms    43.97 ms
+  240 fps         2.031 ms   0.0040 ms   0.0031 ms    41.98 ms
+  480 fps         1.016 ms   0.0047 ms   0.0028 ms    40.99 ms
+  inbound = waiting for the client's replication step to hand the
+  announcement up. it is the ONLY client-side cost left, and frame
+  rate is the only thing that moves it.
+
+  lever 2: does connection order matter? (pole position)   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  LUCK alone on the signal       40.01   41.25   47.92   54.59   56.27   n=40
+  a heavy listener ahead of it   40.22   41.43   48.09   54.78   56.42   n=40
+
+  lever 3: firing the redeem more than once   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  one fire (normal)              40.00   41.25   47.92   54.60   56.26   n=40
+  five fires                     40.01   41.26   47.94   54.59   56.30   n=40
+  all copies ride the same replication step, so the first one lands
+  at the same instant. spamming buys nothing and costs bandwidth.
+
+  where the milliseconds actually go, measured stage by stage   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+
+  1. announcement over the wire        28.1252 ms   58.43%
+                                     server -> your client, includes waiting for the client's replication step
+  2. LUCK's handler                     0.0032 ms    0.01%
+                                     signal fires -> the redeem is handed to the engine
+  3. waiting for the outgoing flush     0.0027 ms    0.01%
+                                     the engine holds your packet until the next replication step
+  4. redeem over the wire              20.0000 ms   41.55%
+                                     your client -> server
+  ----------------------------------------------------------------------
+  sum of stages                        48.1311 ms   (median total 47.92 ms)
+
+  the script is 0.00671% of it. the other 99.99% is wire and frame clock.
+
+  simulated time elapsed 205.98 s   real cpu burned 0.19 s   frames 15569
+  packets: 1278 out, 2432 in   server receipts: 1278
+

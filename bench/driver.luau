@@ -18,7 +18,14 @@ end
 
 local fastRemote = L.RedeemRemote
 local fastInvoke = fastRemote.InvokeServer
-local fastTime, fastRaw = false, true
+-- These flags MUST be assigned through a function. Declared as a plain
+-- `local fastTime, fastRaw = false, true`, the compiler folds the flag test
+-- in solo_presend away and the pre-send figure lands ~12 ns too low -- which
+-- is exactly how an earlier version of this driver came to report that solo
+-- "adds nothing measurable before the send". It does. It adds the test.
+local fastTime, fastRaw
+local function setFlags(t, raw) fastTime, fastRaw = t, raw end
+setFlags(false, true)
 local find = string.find
 
 -- 1. harness floor: empty body, same signature, same call shape
@@ -34,6 +41,13 @@ end
 local function solo_presend(msg, _, _, position)
 	if position ~= "Top" then return end
 	if fastTime or not fastRaw then return end
+	local a, b = fastInvoke(fastRemote, msg)
+	return a, b
+end
+
+-- 3b. the same, flag test removed: what soloRaw does
+local function soloRaw_presend(msg, _, _, position)
+	if position ~= "Top" then return end
 	local a, b = fastInvoke(fastRemote, msg)
 	return a, b
 end
@@ -91,6 +105,10 @@ local rFloor = add(best("empty fn (harness floor)", empty, codes, PASSES, TRIALS
 local rRef   = add(best("send call alone (reference)", sendref, codes, PASSES, TRIALS))
 local rPre   = add(best("solo   entry -> send", solo_presend, codes, PASSES, TRIALS))
 local rSolo  = add(best("solo   full handler", handlers.solo, codes, PASSES, TRIALS))
+local rRawPre = add(best("soloRaw entry -> send", soloRaw_presend, codes, PASSES, TRIALS))
+local rRaw = handlers.soloRaw
+	and add(best("soloRaw full handler", handlers.soloRaw, codes, PASSES, TRIALS))
+	or nil
 local rGPre  = add(best("guard  entry -> send", guarded_presend, codes, PASSES, TRIALS))
 local rGuard = add(best("guard  full handler", handlers.guarded, codes, PASSES, TRIALS))
 
@@ -127,6 +145,16 @@ print(string.format("    solo,  work after the send       %8.2f ns   (packet alr
 print(string.format("    guard, work before the send      %8.2f ns   <- delays the packet", rGPre.min - rRef.min))
 print(string.format("    guard, work after the send       %8.2f ns", rGuard.min - rGPre.min))
 print(string.format("    codeFrom() on a full sentence    %8.2f ns   <- delays the packet", rParse.min - rSolo.min))
+print("")
+print(string.format("    the flag test inside solo         %8.2f ns   <- pre-send, removable",
+	rPre.min - rRawPre.min))
+print(string.format("    soloRaw entry -> send, above bare %8.2f ns   <- what is left",
+	rRawPre.min - rRef.min))
+if rRaw then
+	print(string.format("    soloRaw vs solo, whole handler    %8.2f ns", rRaw.min - rSolo.min))
+else
+	print("    soloRaw: this build does not have it")
+end
 print("")
 print(string.format("    solo  handler end to end         %8.2f ns  = %.6f ms", rSolo.min - floor_, (rSolo.min - floor_) / 1e6))
 print(string.format("    guard handler end to end         %8.2f ns  = %.6f ms", rGuard.min - floor_, (rGuard.min - floor_) / 1e6))
