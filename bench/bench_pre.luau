@@ -44,6 +44,7 @@ end
 ----------------------------------------------------------------- the place
 local new = H.newInstance
 
+local gameCalls = 0
 local RepS   = new("Folder", "ReplicatedStorage")
 local Pkgs   = new("Folder", "Packages");  Pkgs.Parent = RepS
 local Net    = new("Folder", "Net");       Net.Parent  = Pkgs
@@ -69,7 +70,7 @@ local gameHandler = loadstring([[
         return acc
     end
 ]], "@ReplicatedStorage.Controllers.NotificationController")()
-notifyRemote.OnClientEvent:Connect(gameHandler)
+notifyRemote.OnClientEvent:Connect(function(...) gameCalls += 1 return gameHandler(...) end)
 
 
 -- The game's NotificationController, as a module LUCK can require and hook.
@@ -165,7 +166,13 @@ end
 local invokeStamp, invokeCount = nil, 0
 local sendLog = {}
 
+local invokeBehaviour = nil
 H.onInvokeServer = function(remote, code)
+    if invokeBehaviour then
+        invokeStamp = os.clock(); invokeCount += 1
+        sendLog[#sendLog + 1] = code
+        return invokeBehaviour(remote, code)
+    end
     -- Stamped the instant the send call is entered. This is "send" for our purposes:
     -- everything before it is the client's own work.
     invokeStamp = os.clock()
@@ -179,7 +186,10 @@ H.onFireServer = function() end
 
 PlayerGuiRef = PlayerGui
 RIG = {
-    H = H, notifyRemote = notifyRemote, redeemRemote = redeemRemote,
+    H = H,
+    sentLog = function() return sendLog end,
+    setInvokeBehaviour = function(fn) local old = invokeBehaviour; invokeBehaviour = fn; return old end,
+    gameHandlerCalls = function() return gameCalls end, notifyRemote = notifyRemote, redeemRemote = redeemRemote,
     RepS = RepS, genvTable = genvTable,
     fpsCap = function() return fpsCapSet end,
     invokeCount = function() return invokeCount end,

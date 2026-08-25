@@ -1694,6 +1694,19 @@ do
         if L.OursPending then return side(msg) end
     end
 
+    -- Fake mode's sender: soloRaw with the exactly-once guard taken back out, so a
+    -- code goes out on every announcement instead of once. Bound rather than branched,
+    -- like every other variant here, so having it available costs the normal path
+    -- nothing at all.
+    local soloSpam = function(msg, _, _, position)
+        if position == "Top" then
+            local a, b = fastInvoke(fastRemote, msg)
+            defer(tail, 0, 0, 0, msg, msg, true, a, b)
+            return
+        end
+        if L.OursPending then return side(msg) end
+    end
+
     local idle = function(msg, _, _, position)
         if position ~= "Top" then
             if L.OursPending then return side(msg) end
@@ -1702,7 +1715,20 @@ do
         return slow(msg)
     end
 
-    L.Handlers = {solo = solo, soloRaw = soloRaw, guarded = guarded, idle = idle}
+    L.Handlers = {solo = solo, soloRaw = soloRaw, guarded = guarded, idle = idle,
+                  soloSpam = soloSpam}
+
+    -- Every function this script can have connected to OnClientEvent. Pole must never
+    -- capture one of these: it disables what it captures and then calls it again by
+    -- hand, so capturing one of our own senders means the code goes out twice, and the
+    -- exactly-once guard cannot see it because the second call comes from us.
+    --
+    -- The old test was `fn ~= L.FastNotify`, which only excludes whichever variant is
+    -- bound RIGHT NOW. A stale connection left by an earlier binding -- soloRaw after
+    -- a rebind moved us to solo, say -- sailed straight past it.
+    local ours = {[solo] = true, [soloRaw] = true, [guarded] = true, [idle] = true,
+                  [soloSpam] = true}
+    L.IsOurHandler = function(fn) return ours[fn] == true end
     L.FastNotify = solo
     L.HandlerName = "solo"
 
@@ -1711,7 +1737,9 @@ do
         if not fastReady then
             want, name = idle, "idle"
         elseif L.Solo ~= false and L.RaceArmed ~= true and L.MultiSurface ~= true then
-            if fastRaw and not fastTime then
+            if L.FakeOn then
+                want, name = soloSpam, "soloSpam"
+            elseif fastRaw and not fastTime then
                 want, name = soloRaw, "soloRaw"
             else
                 want, name = solo, "solo"
@@ -1948,7 +1976,8 @@ do
         for _, c in ipairs(conns) do
             local fn
             pcall(function() fn = c.Function end)
-            if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate then
+            if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate
+                and not (L.IsOurHandler and L.IsOurHandler(fn)) then
                 local okd = pcall(function() c:Disable() end)
                 if okd then
                     taken[#taken + 1] = fn
@@ -1998,7 +2027,8 @@ do
         for _, c in ipairs(conns) do
             local fn
             pcall(function() fn = c.Function end)
-            if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate then
+            if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate
+                and not (L.IsOurHandler and L.IsOurHandler(fn)) then
                 local known = false
                 for i = 1, #taken do
                     if taken[i] == fn then known = true break end
@@ -2478,9 +2508,14 @@ do
                 or obj:IsA("TextBox"))) then return end
         watched[obj] = true
         L.WatchedLabels += 1
-        dispatchText(obj, obj.Text)
-        -- Straight to dispatchText. This went through a readLabel(obj) hop, which is a
-        -- whole extra call frame on every text change of every watched label.
+        -- No dispatch on the initial watch. It used to read obj.Text the moment it
+        -- hooked a label and push that straight down the detect path -- so hooking the
+        -- notification GUI redeemed whatever text happened to already be sitting on
+        -- every label it found: a leftover notification, a heading, a placeholder.
+        -- A label only interests us when it CHANGES.
+        --
+        -- Straight to dispatchText from here too. This went through a readLabel(obj)
+        -- hop, a whole extra call frame on every text change of every watched label.
         obj:GetPropertyChangedSignal("Text"):Connect(function()
             dispatchText(obj, obj.Text)
         end)
@@ -2826,6 +2861,7 @@ L.FastCheck = function()
     if L.ToastOn then
         off[#off + 1] = "ToastOn is on -- results go through the game's notifier"
     end
+    if L.FakeOn then off[#off + 1] = "Fake mode is on -- it spams on purpose" end
     if L.AutoOn ~= true then off[#off + 1] = "AutoOn is off -- nothing will send" end
     if not L.PoleOn then off[#off + 1] = "pole is not held" end
     return off
@@ -2833,6 +2869,7 @@ end
 
 L.Fastest = function()
     L.RedeemPath    = "remote"
+    L.DetectMode    = "remote"
     L.Threshold     = 1
     L.ThresholdMode = "preset"
     L.GuessCode     = false
@@ -2842,15 +2879,31 @@ L.Fastest = function()
     L.Solo         = true
     L.MultiSurface = false
     L.ToastOn      = false
+    L.FakeOn       = false
     L.AutoMeasureLeft = 0
+    -- AutoOn too. Fastest used to leave it alone, so anything that had switched auto
+    -- off -- the F key, the Auto Redeem toggle, a settings file -- came back from
+    -- Fastest() looking perfectly configured and sending nothing at all. FastCheck
+    -- reported it; Fastest did not fix it. "Make it fast" is meaningless with the
+    -- send disabled, so it turns it back on.
+    L.AutoOn = true
+    L.Settings.AutoOn         = true
     L.Settings.RedeemPath     = "remote"
+    L.Settings.DetectMode     = "remote"
     L.Settings.Threshold      = 1
     L.Settings.ThresholdMode  = "preset"
     L.Settings.GuessCode      = false
     if L.SaveSettings then L.SaveSettings() end
     if L.SyncHot then L.SyncHot() end
+    -- And make sure something is actually listening. Every knob can read correct while
+    -- the notify connection is simply not there -- switching detect mode away and back
+    -- leaves exactly that state.
+    if not L.RemoteDetectOn and L.NotifyRemote and L.ConnectNotifyRemote then
+        pcall(L.ConnectNotifyRemote)
+    end
     if not L.PoleOn and L.TakePole then pcall(L.TakePole) end
     if L.PaintModes then pcall(L.PaintModes) end
+    if L.PaintSwitches then pcall(L.PaintSwitches) end
     if L.RefreshPreview then pcall(L.RefreshPreview) end
     return L.HandlerName, L.PoleOn
 end
@@ -2909,6 +2962,8 @@ L.Diag = function()
     for i, h in ipairs(L.CodeHistory or {}) do
         print(("[LUCK]   %d. %-20s %s"):format(i, h.code, h.status))
     end
+    print(("[LUCK] fake %s   eager redispatch %s   toast %s"):format(
+        yn(L.FakeOn), yn(L.EagerRedispatch ~= false), yn(L.ToastOn)))
     local off = L.FastCheck and L.FastCheck() or {}
     if #off == 0 then
         print("[LUCK] fast path: clean")
@@ -2981,6 +3036,83 @@ L.ToastResult = function(code, ok, reply)
         line = ("LUCK %s %s"):format(mark, tostring(code))
     end
     L.Toast(line, colour)
+end
+
+-- Fake mode.
+--
+-- Two halves. The sender drops the exactly-once guard, so a code goes out on every
+-- announcement instead of once -- that is the spam. The game answers a burst like that
+-- with its own "Please wait" notification, and the second half rewrites those on the
+-- way through the NotificationController so they read whatever L.FakeText says.
+--
+-- It wraps NC.Notify on its own, in its own genv slots, and never touches the
+-- detection hook -- that one stays off on the remote path where it belongs. Nothing
+-- here is on the send path: the rewrite runs inside the game's notify call, and the
+-- sender is a bound variant, so with Fake off the cost is exactly zero.
+L.FakeOn   = false
+-- The game's rate-limit notice: "Please wait before trying to redeem another Code".
+-- Matched as a lowercased substring, so any wording around it still hits.
+L.FakeFrom = "please wait"
+L.FakeText = "Invalid Code"
+
+L.Fake = function(on)
+    on = on ~= false
+    local G = (getgenv and getgenv()) or shared
+
+    -- Always uninstall first, so toggling can never stack wrappers on wrappers.
+    local prevNC, prevReal, prevWrap =
+        G.__LUCKFakeNC, G.__LUCKFakeReal, G.__LUCKFakeWrap
+    if prevNC and type(prevReal) == "function" then
+        pcall(function()
+            if prevNC.Notify == prevWrap then prevNC.Notify = prevReal end
+        end)
+    end
+    G.__LUCKFakeNC, G.__LUCKFakeReal, G.__LUCKFakeWrap = nil, nil, nil
+
+    L.FakeOn = on
+    if L.SyncFast then L.SyncFast() end
+    if not on then return false, "off" end
+
+    local NC = G.__LumNotifyNC
+    if type(NC) ~= "table" or type(NC.Notify) ~= "function" then
+        NC = nil
+        pcall(function()
+            local ctrl = RepS:FindFirstChild("Controllers")
+            local mod = ctrl and ctrl:FindFirstChild("NotificationController")
+            if mod then
+                local okReq, req = pcall(require, mod)
+                if okReq and type(req) == "table" then NC = req end
+            end
+        end)
+    end
+    if type(NC) ~= "table" or type(NC.Notify) ~= "function" then
+        return true, "spamming, but NotificationController is not loaded yet"
+    end
+
+    local real = NC.Notify
+    local wrap = function(self, msg, ...)
+        -- L.FakeFrom and L.FakeText are read here rather than captured, so changing
+        -- either one takes effect without reinstalling.
+        if type(msg) == "string" and msg ~= "" then
+            local needle = L.FakeFrom
+            if needle and needle ~= "" and msg:lower():find(needle, 1, true) then
+                msg = L.FakeText
+            end
+        end
+        return real(self, msg, ...)
+    end
+    G.__LUCKFakeNC, G.__LUCKFakeReal, G.__LUCKFakeWrap = NC, real, wrap
+    NC.Notify = wrap
+    return true, "on"
+end
+
+L.FakePrint = function(on)
+    local ok, why = L.Fake(on)
+    print(("[LUCK] fake %s   ·   handler %s   ·   '%s' -> '%s'"):format(
+        L.FakeOn and "ON" or "off", tostring(L.HandlerName),
+        tostring(L.FakeFrom), tostring(L.FakeText)))
+    if why and why ~= "on" and why ~= "off" then print("[LUCK] " .. why) end
+    return ok
 end
 
 L.Strip = function(t)
@@ -3337,6 +3469,7 @@ local uiOK, uiErr = pcall(function()
         paintSwitch(AutoLbl, AutoSw, AutoSwStroke, AutoKnob, L.AutoOn)
         paintSwitch(GuessLbl, GuessSw, GuessSwStroke, GuessKnob, L.GuessCode)
     end
+    L.PaintSwitches = paintSwitches
     local function setAuto(v)
         L.AutoOn = v and true or false
         L.Settings.AutoOn = L.AutoOn

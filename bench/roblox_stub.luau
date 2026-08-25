@@ -113,11 +113,22 @@ function Signal:Fire(...)
     end
 end
 -- Fire the first enabled handler synchronously on THIS thread, so a measurement can
--- time detect -> send without the scheduler in between.
+-- time detect -> send without the scheduler in between. Timing only: it models WHO
+-- RUNS FIRST, not what a real client does.
 function Signal:FireDirect(...)
     for i = 1, #self.conns do
         local c = self.conns[i]
         if c._enabled then return c.Function(...) end
+    end
+end
+
+-- What a real client actually does: every enabled handler runs. Correctness tests use
+-- this; using FireDirect for them measures connection order, not behaviour.
+function Signal:FireAll(...)
+    local snapshot = table.clone(self.conns)
+    for i = 1, #snapshot do
+        local c = snapshot[i]
+        if c._enabled then pcall(c.Function, ...) end
     end
 end
 H.newSignal = newSignal
