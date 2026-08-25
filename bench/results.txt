@@ -1,0 +1,69 @@
+
+  LUCK hot path, measured on real Luau (-O2), Xeon @ 2.80 GHz
+  ----------------------------------------------------------------------
+  path                                  min ns    mean ns     cycles
+  ----------------------------------------------------------------------
+  empty fn (harness floor)               26.03      26.72         73
+  send call alone (reference)            58.92      60.44        165
+  solo   entry -> send                   56.54      59.18        158
+  solo   full handler                   143.48     151.68        402
+  guard  entry -> send                  127.70     134.95        358
+  guard  full handler                   238.26     248.04        667
+  solo   Instrument on (soloSlow)       336.57     350.27        942
+  non-raw  codeFrom() parse first      9381.23    9746.48      26269
+  ----------------------------------------------------------------------
+
+  net of the harness floor:
+    the send call itself                32.89 ns
+    solo,  work before the send         -2.38 ns   <- delays the packet
+    solo,  work after the send          86.95 ns   (packet already gone)
+    guard, work before the send         68.78 ns   <- delays the packet
+    guard, work after the send         110.56 ns
+    codeFrom() on a full sentence     9237.74 ns   <- delays the packet
+
+    solo  handler end to end           117.45 ns  = 0.000117 ms
+    guard handler end to end           212.23 ns  = 0.000212 ms
+
+  the script's own L.Bench():  handler 240.3 ns   send 39.4 ns
+
+  end-to-end budget, script cost plugged in as measured:
+
+[LUCK] budget at 12 ms ping and 60 fps
+[LUCK]   announcement over the wire      6.000 ms   29.51%
+[LUCK]   deferred queue (immediate)      0.000 ms    0.00%
+[LUCK]   this script                     0.000 ms    0.00%
+[LUCK]   network step wait               8.333 ms   40.98%
+[LUCK]   redeem over the wire            6.000 ms   29.51%
+[LUCK]   total announce to server       20.333 ms
+[LUCK] floor if the frame clock vanished: 12.000 ms
+[LUCK] the frame clock is worth 8.333 ms here; the script is worth 0.000117 ms
+
+[LUCK] budget at 12 ms ping and 240 fps
+[LUCK]   announcement over the wire      6.000 ms   42.60%
+[LUCK]   deferred queue (immediate)      0.000 ms    0.00%
+[LUCK]   this script                     0.000 ms    0.00%
+[LUCK]   network step wait               2.083 ms   14.79%
+[LUCK]   redeem over the wire            6.000 ms   42.60%
+[LUCK]   total announce to server       14.083 ms
+[LUCK] floor if the frame clock vanished: 12.000 ms
+[LUCK] the frame clock is worth 2.083 ms here; the script is worth 0.000117 ms
+
+[LUCK] budget at 45 ms ping and 60 fps
+[LUCK]   announcement over the wire     22.500 ms   42.19%
+[LUCK]   deferred queue (immediate)      0.000 ms    0.00%
+[LUCK]   this script                     0.000 ms    0.00%
+[LUCK]   network step wait               8.333 ms   15.62%
+[LUCK]   redeem over the wire           22.500 ms   42.19%
+[LUCK]   total announce to server       53.333 ms
+[LUCK] floor if the frame clock vanished: 45.000 ms
+[LUCK] the frame clock is worth 8.333 ms here; the script is worth 0.000117 ms
+
+[LUCK] budget at 90 ms ping and 30 fps
+[LUCK]   announcement over the wire     45.000 ms   42.19%
+[LUCK]   deferred queue (immediate)      0.000 ms    0.00%
+[LUCK]   this script                     0.000 ms    0.00%
+[LUCK]   network step wait              16.667 ms   15.62%
+[LUCK]   redeem over the wire           45.000 ms   42.19%
+[LUCK]   total announce to server      106.667 ms
+[LUCK] floor if the frame clock vanished: 90.000 ms
+[LUCK] the frame clock is worth 16.667 ms here; the script is worth 0.000117 ms
