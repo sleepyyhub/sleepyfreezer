@@ -1806,6 +1806,7 @@ do
 
     L.Budget = function(pingMs, fps)
         pingMs = tonumber(pingMs) or L.Ping() or 10
+        if not tonumber(fps) and L.SampleFps then pcall(L.SampleFps) end
         fps = tonumber(fps) or (L.Fps and L.Fps > 1 and L.Fps) or 60
 
         local frame = 1000 / fps
@@ -2187,24 +2188,26 @@ end
 
 L.Fps = 0
 do
-    -- The per-frame callback is now a single increment. It used to also read os.clock()
-    -- twice and do the divide test every frame -- at an uncapped frame rate that is a
-    -- thousand of those a second, on the same thread the redeem goes out on. The
-    -- arithmetic moved to a once-a-second task loop, which is where it belonged.
-    local frames = 0
-    RunS.Heartbeat:Connect(function()
-        frames += 1
-    end)
-    task.spawn(function()
-        local since = os.clock()
-        while true do
-            task.wait(1)
-            local now = os.clock()
-            local span = now - since
-            if span > 0 then L.Fps = frames / span end
-            frames, since = 0, now
-        end
-    end)
+    -- No standing per-frame callback at all. A permanent Heartbeat connection is a Lua
+    -- invocation on every single frame, on the same thread the redeem goes out on, and
+    -- at an uncapped frame rate that is a thousand a second -- to maintain a number
+    -- that nothing reads unless you ask for it. Sampled on demand instead: connect,
+    -- count for a third of a second, disconnect. Steady state is now zero per-frame
+    -- work from this script.
+    local sampling = false
+    L.SampleFps = function(seconds)
+        if sampling then return L.Fps end
+        sampling = true
+        local frames = 0
+        local conn = RunS.Heartbeat:Connect(function() frames += 1 end)
+        local started = os.clock()
+        task.wait(tonumber(seconds) or 0.35)
+        pcall(function() conn:Disconnect() end)
+        local span = os.clock() - started
+        if span > 0 then L.Fps = frames / span end
+        sampling = false
+        return L.Fps
+    end
 end
 
 L.TurboOn = false
@@ -2293,6 +2296,7 @@ do
     end
 
     L.TurboReport = function()
+        if L.SampleFps then pcall(L.SampleFps) end
         print(("[LUCK] turbo %s   fps %.0f   cap %s   signals %s"):format(
             L.TurboOn and "on" or "off", L.Fps or 0,
             tostring(L.FpsCap), tostring(L.SignalMode)))
@@ -2605,6 +2609,7 @@ L.Split = function()
     end
     local scriptMs = tonumber(t.client) or 0
     local wireMs   = tonumber(t.server) or 0
+    if L.SampleFps then pcall(L.SampleFps) end
     local fps      = (L.Fps and L.Fps > 1) and L.Fps or nil
     local ping     = L.Ping()
 
@@ -2647,6 +2652,7 @@ if L.AutoMeasure and L.AutoMeasureLeft > 0 then
 end
 
 L.Diag = function()
+    if L.SampleFps then pcall(L.SampleFps) end
     local function yn(v) return v and "yes" or "no" end
     print("[LUCK] ---- diagnostics ----")
     print(("[LUCK] place %s   modded %s   platform %s"):format(
@@ -2837,22 +2843,37 @@ local uiOK, uiErr = pcall(function()
         L.SaveSettings()
     end
 
-    -- One InputChanged handler for every panel, not one per panel. createPanel used to
-    -- connect its own, so six panels meant six global handlers waking on every mouse
-    -- move and every touch move -- main-thread work, six times over, for a drag that is
-    -- almost never happening.
-    local dragActive = nil
-    UIS.InputChanged:Connect(function(input)
-        local d = dragActive
-        if not d then return end
-        local kind = input.UserInputType
-        if kind ~= Enum.UserInputType.MouseMovement
-            and kind ~= Enum.UserInputType.Touch then return end
-        local delta = input.Position - d.start
-        local o = d.origin
-        d.frame.Position = UDim2.new(o.X.Scale, o.X.Offset + delta.X,
-                                     o.Y.Scale, o.Y.Offset + delta.Y)
-    end)
+    -- createPanel used to connect its own InputChanged, so six panels meant six global
+    -- handlers waking on every mouse move and every touch move. Now there is one, and
+    -- it only exists while a drag is actually in progress: connected on the header
+    -- press, disconnected on release. Between drags -- which is all of the time -- this
+    -- script has no input handler running at all.
+    local dragActive, dragConn = nil, nil
+
+    local function endDrag(drag)
+        if drag and dragActive ~= drag then return end
+        dragActive = nil
+        if dragConn then
+            pcall(function() dragConn:Disconnect() end)
+            dragConn = nil
+        end
+    end
+
+    local function beginDrag(drag)
+        dragActive = drag
+        if dragConn then return end
+        dragConn = UIS.InputChanged:Connect(function(input)
+            local d = dragActive
+            if not d then return end
+            local kind = input.UserInputType
+            if kind ~= Enum.UserInputType.MouseMovement
+                and kind ~= Enum.UserInputType.Touch then return end
+            local delta = input.Position - d.start
+            local o = d.origin
+            d.frame.Position = UDim2.new(o.X.Scale, o.X.Offset + delta.X,
+                                         o.Y.Scale, o.Y.Offset + delta.Y)
+        end)
+    end
 
     local function createPanel(name, w, h, pos, display)
         local saved = L.Settings.PanelWindows[name]
@@ -2944,10 +2965,10 @@ local uiOK, uiErr = pcall(function()
                 or input.UserInputType == Enum.UserInputType.Touch then
                 local drag = {frame = frame, start = input.Position,
                               origin = frame.Position}
-                dragActive = drag
+                beginDrag(drag)
                 input.Changed:Connect(function()
                     if input.UserInputState == Enum.UserInputState.End then
-                        if dragActive == drag then dragActive = nil end
+                        endDrag(drag)
                         savePanel(name)
                     end
                 end)
