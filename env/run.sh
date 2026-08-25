@@ -39,5 +39,23 @@ fi
   printf ']%s],\n}\n' "$LEVEL"
 } > "$DIR/_source.luau"
 
+# the diagnostic gets materialised the same way, for scenario "diag"
+DIAG="$DIR/../LUCK_racediag.lua"
+if [ -f "$DIAG" ]; then
+  DLEVEL=""
+  for n in "" = == === ==== =====; do
+    if ! grep -qF "]$n]" "$DIAG"; then DLEVEL="$n"; break; fi
+  done
+  {
+    printf 'return {\n\tsource = [%s[\n' "$DLEVEL"
+    cat "$DIAG"
+    printf ']%s],\n}\n' "$DLEVEL"
+  } > "$DIR/_diag.luau"
+fi
+
 cd "$DIR"
+case "$SCENARIO" in
+  race) exec ./luau race.luau ;;
+  diag) exec ./luau diagtest.luau ;;
+esac
 exec ./luau run.luau

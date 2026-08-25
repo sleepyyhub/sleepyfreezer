@@ -247,6 +247,7 @@ Env.serverHandlers[redeemRemote] = function(kind, payload, arrivedAt, wire)
 		-- when the script handed the packet to the engine, and when the
 		-- engine's outgoing replication step actually put it on the wire
 		queuedAt = wire and wire.queuedAt, flushAt = wire and wire.flushAt,
+		cid = wire and wire.cid or 1,
 	}
 	return accepted, msg
 end

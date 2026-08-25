@@ -39,6 +39,22 @@ local workspace = setmetatable({}, {
 		if k == "GetDescendants" then return function() return {} end end
 		if k == "FindFirstChild" then return function() return nil end end
 		if k == "WaitForChild" then return function() return nil end end
+		if k == "GetFullName" then return function() return "Workspace" end end
+		if k == "IsA" then return function(_, c) return c == "Workspace" or c == "Instance" end end
+		if k == "Name" then return "Workspace" end
+		if k == "AttributeChanged" then
+			if not workspaceProps.__attrSig then
+				workspaceProps.__attrSig = Env.newSignal("AttributeChanged")
+			end
+			return workspaceProps.__attrSig
+		end
+		if k == "DescendantAdded" then
+			if not workspaceProps.__descSig then
+				workspaceProps.__descSig = Env.newSignal("DescendantAdded")
+			end
+			return workspaceProps.__descSig
+		end
+		if k == "GetAttribute" then return function() return nil end end
 		return workspaceProps[k]
 	end,
 	__newindex = function(_, k, v)

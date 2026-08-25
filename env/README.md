@@ -167,6 +167,65 @@ Ping is 40 of the 48 ms and no client-side code touches it. Frame rate is worth
 up to ~7 ms from 60 fps. The script's own code is 0.005 ms and is already at the
 floor. There is no fourth lever hiding in the source.
 
+## Why you can lose a race with a handler that has no room in it
+
+Two clients, one stock, first packet on the server wins. Client 1 is the real
+LUCK; client 2 is a rival on its **own frame grid**, because two Roblox clients
+on one machine do not share a frame clock.
+
+Nothing here knows what the real rival script does. Each block prices a
+different hypothesis so the pattern can be matched against what happens in game.
+Run it with `./run.sh /path/to/LUCK.txt race`.
+
+### Hypothesis 1 — the rival's code is no faster, only its frame phase differs
+
+| rival's frames land … before yours | win | tie | lose |
+|---|---:|---:|---:|
+| 0 ms | 0 | 40 | 0 |
+| 1 ms | 3 | 0 | 37 |
+| 2 ms | 5 | 0 | 35 |
+| 4 ms | 9 | 0 | 31 |
+| 8 ms | 20 | 0 | 20 |
+| 12 ms | 29 | 0 | 11 |
+| 16 ms | 39 | 0 | 1 |
+
+The win rate is just the offset over the frame time. At 2 ms of a 16.67 ms
+frame you lose 87% of races **with identical code**. The offset does not drift
+while both clients stay up, so this loses the same race all evening.
+
+### Hypothesis 2 — the rival reads a source that carries the code earlier
+
+| head start | win | tie | lose |
+|---|---:|---:|---:|
+| 1 ms | 0 | 37 | 3 |
+| 5 ms | 0 | 28 | 12 |
+| 17 ms | 0 | 0 | 40 |
+| 50 ms | 0 | 0 | 40 |
+
+Note the shape: a head start **under one frame mostly ties**, because both
+packets still catch the same replication step. Over one frame it loses every
+single time. Detection advantage is quantised to frames.
+
+### Hypothesis 3 — the rival pre-fires instead of reacting
+
+Loses 20 of 20, median 27.5 ms behind. Reaction time is irrelevant against
+something that never waits.
+
+### Reading it
+
+These are signatures, not a diagnosis:
+
+- losing a **fixed fraction** of races, winning sometimes → frame phase
+- losing **every** race by more than a frame → earlier source, or pre-firing
+- mostly **ties** with occasional losses → sub-frame difference, near enough
+
+`LUCK_racediag.lua` in the repo root tells you which one you actually have: it
+timestamps every inbound remote, replicated value and attribute on your live
+client, then `RACEDIAG.report("THECODE")` prints where that code appeared first.
+It is validated by running it inside this simulator against a planted early
+source (`./run.sh /path/to/LUCK.txt diag`) — it correctly names the source and
+prices the head start.
+
 ## What this does not model, stated plainly
 
 - **Rendering, physics, input.** Absent. On a real client they are what makes
@@ -182,5 +241,6 @@ floor. There is no fourth lever hiding in the source.
   as worth something this harness cannot see.
 - **Server behaviour** is a table lookup plus a fixed think time. Real games
   queue, rate-limit, and validate.
-- **One client, no rivals.** Whether you beat another sniper depends on their
-  ping and frame rate against yours, and this measures only your side.
+- **The rival is a model, not the real script.** The race harness prices
+  hypotheses about how a rival could win; it does not know what any real one
+  does. Use `LUCK_racediag.lua` on the live client to find that out.

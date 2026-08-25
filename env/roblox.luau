@@ -587,8 +587,16 @@ Env.typeofFn = typeofFn
 --------------------------------------------------------------------------------
 -- replication: frame-aligned in both directions, configurable wire delay
 --------------------------------------------------------------------------------
-local outbox = {}   -- client -> server, flushed at the network step
-local inbox = {}    -- server -> client, delivered at the receive step
+-- One queue pair PER CLIENT. A code race is two clients on their own frame
+-- grids, so they cannot share an inbox or the phase difference vanishes.
+local nets = {}
+local function netOf(cid)
+	cid = cid or 1
+	local n = nets[cid]
+	if not n then n = { out = {}, inn = {} }; nets[cid] = n end
+	return n
+end
+Env.netOf = netOf
 
 Env.stats = {
 	packetsOut = 0, packetsIn = 0,
@@ -598,25 +606,28 @@ Env.stats = {
 local serverHandlers = setmetatable({}, { __mode = "k" })
 Env.serverHandlers = serverHandlers
 
-Env.queueToServer = function(remote, kind, payload, replyTo)
-	outbox[#outbox + 1] = {
+Env.queueToServer = function(remote, kind, payload, replyTo, cid)
+	local out = netOf(cid).out
+	out[#out + 1] = {
 		remote = remote, kind = kind, payload = payload,
-		replyTo = replyTo, queuedAt = now(),
+		replyTo = replyTo, queuedAt = now(), cid = cid or 1,
 	}
 end
 
-Env.queueToClient = function(signal, args, sentAt)
-	inbox[#inbox + 1] = {
+Env.queueToClient = function(signal, args, sentAt, cid, extraDelay)
+	local inn = netOf(cid).inn
+	inn[#inn + 1] = {
 		signal = signal, args = args,
-		arriveAt = (sentAt or now()) + oneWay() + jitter(),
+		arriveAt = (sentAt or now()) + oneWay() + jitter() + (extraDelay or 0),
 	}
 end
 
-local function networkStep()
+local function networkStep(cid)
+	local net = netOf(cid)
 	-- outgoing: everything queued this frame goes on the wire now
-	if #outbox > 0 then
-		local batch = outbox
-		outbox = {}
+	if #net.out > 0 then
+		local batch = net.out
+		net.out = {}
 		local flushAt = now()
 		for _, pkt in ipairs(batch) do
 			Env.stats.packetsOut += 1
@@ -627,7 +638,7 @@ local function networkStep()
 				local reply
 				if handler then
 					reply = table.pack(handler(pkt.kind, pkt.payload, arriveAt, {
-						queuedAt = pkt.queuedAt, flushAt = flushAt,
+						queuedAt = pkt.queuedAt, flushAt = flushAt, cid = pkt.cid,
 					}))
 				end
 				if pkt.replyTo then
@@ -641,11 +652,12 @@ local function networkStep()
 	end
 end
 
-local function receiveStep()
-	if #inbox == 0 then return end
+local function receiveStep(cid)
+	local net = netOf(cid)
+	if #net.inn == 0 then return end
 	local t = now()
 	local keep = {}
-	for _, pkt in ipairs(inbox) do
+	for _, pkt in ipairs(net.inn) do
 		if pkt.arriveAt <= t then
 			Env.stats.packetsIn += 1
 			if type(pkt.signal) == "function" then
@@ -657,7 +669,7 @@ local function receiveStep()
 			keep[#keep + 1] = pkt
 		end
 	end
-	inbox = keep
+	net.inn = keep
 end
 
 --------------------------------------------------------------------------------
@@ -672,7 +684,7 @@ Env.nextFrameAt = function() return nextFrame end
 
 local function runFrame()
 	frameCount += 1
-	receiveStep()          -- replication in
+	receiveStep(1)         -- replication in
 	flushDefer()           -- deferred signal queue drains
 	RunService.RenderStepped:FireSync(1 / CFG.fps)
 	flushDefer()
@@ -680,9 +692,42 @@ local function runFrame()
 	flushDefer()
 	RunService.Heartbeat:FireSync(1 / CFG.fps)
 	flushDefer()
-	networkStep()          -- replication out
+	networkStep(1)         -- replication out
 	runReady()
 	flushDefer()
+end
+
+--------------------------------------------------------------------------------
+-- A second client, on its OWN frame grid.
+--
+-- Two Roblox clients on one machine do not share a frame clock. Their frame
+-- boundaries sit at some fixed offset from each other, and that offset does not
+-- drift while both stay up. It is the single biggest thing separating two
+-- otherwise identical racers, so it gets modelled explicitly rather than
+-- assumed away.
+--------------------------------------------------------------------------------
+local rival = nil
+Env.setRival = function(cfg)
+	if not cfg then rival = nil; return end
+	rival = {
+		fps = cfg.fps or CFG.fps,
+		phase = cfg.phase or 0,        -- seconds its grid leads ours by
+		handler = cfg.handler,          -- function(deliveredAt) -- runs on its frame
+		onFrame = cfg.onFrame,          -- function(t) -- runs every rival frame
+		nextAt = nil,
+		frames = 0,
+	}
+	nets[2] = { out = {}, inn = {} }
+	return rival
+end
+Env.rival = function() return rival end
+
+local function runRivalFrame()
+	if not rival then return end
+	rival.frames += 1
+	receiveStep(2)
+	if rival.onFrame then rival.onFrame(now()) end
+	networkStep(2)
 end
 
 -- nextFrame (declared above) is the persistent frame grid. Re-anchoring it per
@@ -691,15 +736,21 @@ end
 -- run the world until `duration` of simulated+real time has passed
 Env.run = function(duration)
 	local stop = now() + duration
-	local frameDt = 1 / CFG.fps
 	if not nextFrame then nextFrame = now() end
+	if rival and not rival.nextAt then
+		rival.nextAt = nextFrame + rival.phase
+	end
 	local guard = 0
 	while now() < stop do
 		guard += 1
 		if guard > 2000000 then break end
 
+		local frameDt = 1 / CFG.fps
+		local rivalDt = rival and (1 / rival.fps) or nil
+
 		local deadline = nextDeadline()
 		local target = nextFrame
+		if rival and rival.nextAt < target then target = rival.nextAt end
 		if deadline and deadline < target then target = deadline end
 		if target > stop then target = stop end
 
@@ -707,6 +758,14 @@ Env.run = function(duration)
 		if need > 0 then vt += need end
 
 		runReady()
+
+		-- whichever grid is due fires; ties go to us, which is the pessimistic
+		-- reading and keeps the result from flattering the script under test
+		if rival and now() >= rival.nextAt - 1e-9 then
+			runRivalFrame()
+			rival.nextAt += rivalDt
+			if rival.nextAt < now() then rival.nextAt = now() + rivalDt end
+		end
 		if now() >= nextFrame - 1e-9 then
 			runFrame()
 			nextFrame += frameDt
