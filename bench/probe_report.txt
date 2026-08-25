@@ -1,0 +1,24 @@
+COOLDOWN PROBE -- validated against both server shapes before use
+
+================ ATOMIC server ================
+[probe] firing 50 invokes in one frame at RF/RequestRedemption
+[probe] ---- what came back ----
+[probe]     1 x  false / Invalid Code
+[probe]    49 x  false / Please wait before trying to redeem another Code
+[probe] cooldown 49   past the cooldown 1   accepted 0   errored 0   no reply 0
+[probe] reply time: fastest 0 ms, slowest 0 ms, whole burst 0 ms
+[probe] ---- verdict ----
+[probe] exactly one got through -- that is just the first invoke, which was
+[probe] always going to be allowed. No race. Not worth building.
+
+================ YIELDING server ================
+[probe] firing 50 invokes in one frame at RF/RequestRedemption
+[probe] ---- what came back ----
+[probe]    50 x  false / Invalid Code
+[probe] cooldown 0   past the cooldown 50   accepted 0   errored 0   no reply 0
+[probe] reply time: fastest 0 ms, slowest 0 ms, whole burst 0 ms
+[probe] ---- verdict ----
+[probe] THE GAP IS REAL: 50 of 50 got past the cooldown check.
+[probe] the handler yields between reading and writing the cooldown, so a
+[probe] burst can slip through. Worth building.
+
