@@ -192,10 +192,10 @@ for _, off in ipairs({ 0, 1, 2, 4, 8, 12, 16 }) do
 end
 
 print("")
-print("  hypothesis 2: the rival reads a source that carries the code")
-print("  earlier than the announcement does. Same fps, ping and frame offset;")
-print("  it simply learns the code sooner. This is what \"is text detection")
-print("  the fastest?\" actually turns on.")
+print("  hypothesis 2: some OTHER channel carries the code before the notify")
+print("  remote fires, and the rival reads that one. LUCK is already on the")
+print("  notify remote's OnClientEvent, which is as early as that remote can")
+print("  be observed -- so this is about WHICH channel, not how it is read.")
 print("")
 print(string.format("  %-38s  %s", "how much earlier", "result"))
 print("  " .. string.rep("-", 76))

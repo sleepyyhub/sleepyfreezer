@@ -17,10 +17,15 @@
       2. lose a race
       3. RACEDIAG.report("THECODE")     -- the code you lost
 
+    LUCK already reads straight off the notify RemoteEvent's OnClientEvent --
+    that is the earliest anything can observe THAT remote, and it is not the
+    question. The question is whether some OTHER channel carries the code
+    before that remote fires.
+
     You get a timeline: every place that code appeared on your client, in
     order, with the gap from the first sighting. If something sits above the
-    notification, text detection is not your fastest path and no amount of
-    handler tuning will close it.
+    notify remote, that channel is the earlier one and no handler tuning
+    closes the gap.
 
       RACEDIAG.channels()   -- what is talking, ranked by traffic
       RACEDIAG.last(40)     -- the last 40 events, whatever they were
@@ -286,11 +291,12 @@ function D.report(code)
         print("[RACEDIAG] a script reading that source starts that much ahead of you,")
         print("[RACEDIAG] and no handler tuning closes it.")
     elseif firstAny then
-        print(string.format("[RACEDIAG] first sighting was %s — nothing on this client",
+        print(string.format("[RACEDIAG] first sighting was %s — no other channel",
             firstAny.source))
-        print("[RACEDIAG] carried the code earlier, so text detection is as early as")
-        print("[RACEDIAG] your client can possibly know. If you still lose, the cause")
-        print("[RACEDIAG] is frame phase, ping, or the rival pre-firing — not detection.")
+        print("[RACEDIAG] on this client carried the code earlier, so you are already")
+        print("[RACEDIAG] reading the earliest thing that exists. If you still lose,")
+        print("[RACEDIAG] the cause is frame phase, ping, or the rival pre-firing —")
+        print("[RACEDIAG] not detection.")
     end
 
     if luckAt and firstAny then
