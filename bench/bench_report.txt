@@ -1,0 +1,86 @@
+LUCK detect -> send, measured
+harness: real Luau interpreter, fake Roblox client, 184 instances in
+ReplicatedStorage, the game's own NotificationController handler connected
+ahead of ours. Linux container CPU, not an M3 Air.
+
+=============================== OPTIMISED ===============================
+environment    place 1   instances in ReplicatedStorage 184
+resolved       notify RE/NotificationService/Notify (direct name)   redeem RF/RequestRedemption (direct name)   tested true
+binding        handler pole   pole held true   detect live true   fps cap 999
+
+three announcements, one at a time, cold
+---------------------------------------------------------------
+  #1  LUCKYDROP1   detect -> send       3610 ns   (0.003610 ms)
+  #2  LUCKYDROP2   detect -> send       2560 ns   (0.002560 ms)
+  #3  LUCKYDROP3   detect -> send       2341 ns   (0.002341 ms)
+[LUCK] measuring done -- back on soloRaw, nothing ahead of the send
+
+auto-measure spent; inner handler is now soloRaw (wrapper: pole)
+
+detect -> send, amortised over 6000 announcements
+---------------------------------------------------------------
+  pole held  (wrapper -> soloRaw -> send)      179.8 ns
+  pole off   (soloRaw -> send)                 130.0 ns
+  what the pole wrapper costs                  49.8 ns
+
+the game's own notification handler, per announcement    2469.0 ns
+  without pole that runs BEFORE our invoke, so it is added to detect -> send
+  pole trades 50 ns of wrapper for 2469 ns of someone else's work
+
+LUCK's own bench (stubs its post-send work, so this is the handler alone)
+---------------------------------------------------------------
+[LUCK] handler, end to end          162.7 ns
+[LUCK] the send call alone           34.0 ns
+[LUCK] everything after the send    128.7 ns   does not delay the packet
+[LUCK] amortised over the run; one redeem cannot resolve this
+
+errors during the whole run: 0
+
+=============================== ORIGINAL ================================
+environment    place 1   instances in ReplicatedStorage 184
+resolved       notify RE/NotificationService/Notify (direct name)   redeem RF/RequestRedemption (direct name)   tested true
+binding        handler pole   pole held true   detect live true   fps cap 999
+
+three announcements, one at a time, cold
+---------------------------------------------------------------
+  #1  LUCKYDROP1   detect -> send       2561 ns   (0.002561 ms)
+  #2  LUCKYDROP2   detect -> send       2100 ns   (0.002100 ms)
+  #3  LUCKYDROP3   detect -> send       1663 ns   (0.001663 ms)
+
+auto-measure spent; inner handler is now soloRaw (wrapper: pole)
+
+detect -> send, amortised over 6000 announcements
+---------------------------------------------------------------
+  pole held  (wrapper -> soloRaw -> send)      196.4 ns
+  pole off   (soloRaw -> send)                   0.0 ns
+  what the pole wrapper costs                 196.4 ns
+
+the game's own notification handler, per announcement    3325.7 ns
+  without pole that runs BEFORE our invoke, so it is added to detect -> send
+  pole trades 196 ns of wrapper for 3326 ns of someone else's work
+
+LUCK's own bench (stubs its post-send work, so this is the handler alone)
+---------------------------------------------------------------
+[LUCK] handler, end to end          205.5 ns
+[LUCK] the send call alone           44.8 ns
+[LUCK] everything after the send    160.7 ns   does not delay the packet
+[LUCK] amortised over the run; one redeem cannot resolve this
+
+errors during the whole run: 0
+
+=============================== 4 TRIALS ================================
+detect -> send, amortised, pole held:
+  optimised   176.1   170.7   161.8   166.8   ns     mean ~169
+  original    180.6   198.9   193.3   196.4   ns     mean ~192
+
+CAVEATS, so the numbers are not read as more than they are:
+  - This is a container CPU, not the M3 Air. Absolute values will differ;
+    the ratio between the two versions is the part that carries over.
+  - InvokeServer here is a Lua stub (~35-45 ns). The real one is a C call
+    that serialises and queues the packet, so it costs more. It costs the
+    same in both versions, so the delta stands.
+  - The game's own handler is a synthetic 400-iteration loop (~3.3 us).
+    The real NotificationController builds GUI and plays a sound, so the
+    thing pole saves is far larger in the actual game than shown here.
+  - Everything above is Lua work only. It says nothing about the wire or
+    about the network send step the packet waits for after the invoke.
