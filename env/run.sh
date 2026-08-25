@@ -61,5 +61,6 @@ case "$SCENARIO" in
   notify) exec ./luau notifytest.luau ;;
   burst) exec ./luau bursttest.luau ;;
   arm) exec ./luau armtest.luau ;;
+  duelrun|duelcold) exec ./luau duelrun.luau ;;
 esac
 exec ./luau run.luau

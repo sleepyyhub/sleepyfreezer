@@ -1,0 +1,151 @@
+
+  Fast                     handler=soloRaw armed=not waited fps=240 ping=20 mode=cold
+  Current                  handler=soloRaw armed=not waited fps=240 ping=20 mode=cold
+
+Round 1
+
+Fast / Current
+
+0 - 1
+    Fast never sent
+
+Round 2
+
+Fast / Current
+
+0 - 2
+    Fast never sent
+
+Round 3
+
+Fast / Current
+
+0 - 3
+    Fast never sent
+
+Round 4
+
+Fast / Current
+
+0 - 4
+    Fast never sent
+
+Round 5
+
+Fast / Current
+
+0 - 5
+    Fast never sent
+
+Round 6
+
+Fast / Current
+
+0 - 6
+    Fast never sent
+
+Round 7
+
+Fast / Current
+
+0 - 6
+    tie  (23.759 vs 23.757 ms, 2 ns apart)
+
+Round 8
+
+Fast / Current
+
+0 - 6
+    tie  (23.968 vs 23.966 ms, 2 ns apart)
+
+Round 9
+
+Fast / Current
+
+0 - 7
+    Current by 4.169 ms  (24.185 vs 20.016 ms)
+
+Round 10
+
+Fast / Current
+
+0 - 7
+    tie  (20.259 vs 20.222 ms, 37 ns apart)
+
+Round 11
+
+Fast / Current
+
+0 - 7
+    tie  (20.431 vs 20.424 ms, 6 ns apart)
+
+Round 12
+
+Fast / Current
+
+0 - 7
+    tie  (20.653 vs 20.632 ms, 21 ns apart)
+
+Round 13
+
+Fast / Current
+
+0 - 7
+    tie  (20.846 vs 20.852 ms, 6 ns apart)
+
+Round 14
+
+Fast / Current
+
+0 - 7
+    tie  (21.053 vs 21.060 ms, 6 ns apart)
+
+Round 15
+
+Fast / Current
+
+0 - 7
+    tie  (21.258 vs 21.257 ms, 1 ns apart)
+
+Round 16
+
+Fast / Current
+
+0 - 7
+    tie  (21.471 vs 21.466 ms, 6 ns apart)
+
+Round 17
+
+Fast / Current
+
+0 - 7
+    tie  (21.684 vs 21.681 ms, 3 ns apart)
+
+Round 18
+
+Fast / Current
+
+0 - 7
+    tie  (21.889 vs 21.913 ms, 24 ns apart)
+
+Round 19
+
+Fast / Current
+
+0 - 7
+    tie  (22.103 vs 22.092 ms, 11 ns apart)
+
+Round 20
+
+Fast / Current
+
+0 - 7
+    tie  (22.298 vs 22.302 ms, 3 ns apart)
+
+==============================================
+FINAL   Fast 0 - 7 Current    (13 tied)
+==============================================
+  median Fast: 21.684 ms
+  median Current: 22.092 ms
+  difference: -0.408 ms
+
