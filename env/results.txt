@@ -1,0 +1,77 @@
+
+================================================================
+  LUCK in a simulated client
+================================================================
+  script            /tmp/luck_verify.txt  (123119 bytes)
+  load              ok
+  boot cpu          14.40 ms real
+  arm               redeem=net  notify=net
+  remote detect     true
+  remote tested     true   (false/INVALID)
+  handler           solo   fastReady=true
+  speed mode        Lucky   rawFire=true   auto=true
+  signal mode       Immediate   (script asked for Immediate)
+
+  announce -> the server has your redeem
+  (real script execution, simulated wire and frame clock)
+
+  by ping, at 60 fps   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  ping 10 ms                     10.00   11.26   17.93   24.59   26.26   n=40
+  ping 25 ms                     25.01   26.26   32.93   39.59   41.26   n=40
+  ping 40 ms                     40.01   41.26   47.92   54.60   56.26   n=40
+  ping 80 ms                     80.01   81.27   87.92   94.59   96.26   n=40
+  ping 150 ms                   150.01  151.26  157.93  164.60  166.26   n=40
+
+  by frame rate, at 40 ms ping   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  30 fps                         40.01   42.50   55.85   69.18   72.51   n=40
+  60 fps                         40.01   41.26   47.93   54.59   56.26   n=40
+  120 fps                        40.01   40.63   44.00   47.30   48.13   n=40
+  240 fps                        40.00   40.32   41.98   43.65   44.07   n=40
+
+  by signal behaviour, 40 ms ping / 60 fps   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  Deferred                       40.01   41.26   47.94   54.59   56.26   n=40
+  Immediate                      40.01   41.25   47.93   54.59   56.26   n=40
+
+  by script setting, 40 ms ping / 60 fps   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  RawFire on (default)           40.01   41.25   47.92   54.59   56.26   n=40
+  RawFire off (parses text)      40.01   41.26   47.93   54.59   56.26   n=40
+  Instrument on                  40.01   41.26   47.93   54.59   56.26   n=40
+  guarded handler                40.01   41.26   47.93   54.59   56.26   n=40
+  Auto off (detect only)         no redeem reached the server
+
+  LUCK vs the theoretical floor, 40 ms ping / 60 fps / Immediate   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+                                   min     p10     med     p90     max
+  LUCK (solo, raw)               40.01   41.26   47.92   54.59   56.26   n=40
+  bare forwarding handler        40.01   41.26   47.92   54.59   56.26   n=40
+
+  gap at the median  +0.001 ms
+  gap at the minimum +0.001 ms
+  anything under a millisecond here is frame phase, not code.
+
+  where the milliseconds go, 40 ms ping / 60 fps / Immediate   (ms, announce -> server receipt)
+  ----------------------------------------------------------------------
+  announcement over the wire            20.000 ms
+  waiting for the client frame           7.922 ms
+  LUCK's own code                     0.000329 ms
+  redeem over the wire                  20.000 ms
+  --------------------------------------------------------------
+  TOTAL                                 47.923 ms  (median measured)
+
+  LUCK's share            0.000329 ms  =  0.00069 %
+  network's share            40.000 ms  =  83.47 %
+  frame clock's share         7.922 ms  =  16.53 %
+
+  one frame at 60 fps is 16.67 ms — 50649x the entire script
+
+  simulated time elapsed 163.32 s   real cpu burned 0.42 s   frames 10609
+  packets: 745 out, 1530 in   server receipts: 745
+
