@@ -71,6 +71,25 @@ local gameHandler = loadstring([[
 ]], "@ReplicatedStorage.Controllers.NotificationController")()
 notifyRemote.OnClientEvent:Connect(gameHandler)
 
+
+-- The game's NotificationController, as a module LUCK can require and hook.
+local Controllers = new("Folder", "Controllers"); Controllers.Parent = RepS
+local NCModule = new("Folder", "NotificationController"); NCModule.Parent = Controllers
+NCModule._module = {
+    Notify = loadstring([[
+        return function(self, msg, dur, sound, position)
+            local acc = 0
+            for i = 1, 400 do acc += i % 7 end
+            return acc
+        end
+    ]], "@ReplicatedStorage.Controllers.NotificationController")(),
+}
+local realRequire = require
+require = function(target)
+    if type(target) == "table" and target._module then return target._module end
+    return realRequire(target)
+end
+
 local PlayerGui = new("Folder", "PlayerGui")
 local CoreGui   = new("Folder", "CoreGui")
 
@@ -158,6 +177,7 @@ end
 H.onFireServer = function() end
 
 
+PlayerGuiRef = PlayerGui
 RIG = {
     H = H, notifyRemote = notifyRemote, redeemRemote = redeemRemote,
     RepS = RepS, genvTable = genvTable,

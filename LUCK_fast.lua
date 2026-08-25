@@ -2056,18 +2056,35 @@ do
     end
     L.Shaped = shaped
 
+    -- Note used to run before the invoke. It does a surface lookup, a counter bump, a
+    -- table.insert at index 1 of the race log -- an O(n) shift plus an allocation --
+    -- and a table.remove. That is detection bookkeeping in front of the redeem.
+    --
+    -- Now the gates are cheap table lookups, the send goes out, and Note is deferred.
+    -- It still records the same instant, because `at` is passed in rather than read
+    -- inside it. Double-sending is held off by sentCodes, which is written
+    -- synchronously before the invoke, not by raceSeen, which Note writes late.
     L.Sight = function(name, code, at)
         at = at or clock()
-        local won = L.Note(name, code, at)
-        if not won then return false end
-        if not surfaces[name].live then return false end
-        if sentCodes[code] then return false end
+        local s = surfaces[name]
         local inv, rem = L.FastInvoke, L.FastRemote
-        if not inv or L.AutoOn ~= true then return false end
+        local fire = raceSeen[code] == nil
+            and s ~= nil and s.live
+            and not sentCodes[code]
+            and inv ~= nil
+            and L.AutoOn == true
+
+        if not fire then
+            defer(L.Note, name, code, at)
+            return false
+        end
+
         sentCodes[code] = true
         L.OursPending, L.OursAt = code, at
         local pok, a, b = protected(inv, rem, code)
         local tDone = clock()
+
+        defer(L.Note, name, code, at)
         defer(rawFire, at, at, tDone, code, code, pok, a, b, a == nil)
         return true
     end
@@ -2359,24 +2376,47 @@ L.WatchedLabels = 0
 
 do
     local watched = setmetatable({}, {__mode = "k"})
+    local sfind = string.find
 
+    -- Label detection used to be much slower than the remote it stands in for: a clock
+    -- read, then L.Dispatch, which finds a free worker coroutine and resumes it, and
+    -- only inside that worker does anything head for the send. That is a coroutine
+    -- resume and half a dozen call frames of detection sitting in front of the redeem.
+    --
+    -- A fresh announcement now goes straight into the bound handler, the same function
+    -- the notify remote's connection calls, so this surface detects at the same cost as
+    -- that one. The result-claim branch keeps the old route, because it has to classify
+    -- the label colour and must not be treated as a new code.
     local function dispatchText(obj, t)
         if t == "" then return end
         if L.DetectMode == "remote" and L.RemoteDetectOn then return end
         if L.NotifyHooked then return end
-        L.TextAt = os.clock()
 
-        if L.OursPending then
+        -- A bare alphanumeric token is a code, not a result sentence. That is the same
+        -- shape L.Shaped uses to recognise codes everywhere else in this script, and
+        -- testing it costs one length compare and one pattern scan. Anything matching
+        -- it skips the claim attempt completely and goes straight at the send.
+        if L.OursPending and not (#t <= 30 and not sfind(t, "[^%w]")) then
+            -- Something we sent is still waiting on its answer and this does not look
+            -- like a code, so it may be that answer: classify the colour and claim it.
+            --
+            -- The old code stopped at L.Dispatch for the whole time anything was
+            -- pending. OursPending lives for OURS_WINDOW, six seconds, so for six
+            -- seconds after every redeem a genuinely new code was detected through a
+            -- worker coroutine instead of the fast handler -- detection fell off a
+            -- cliff exactly when a second code was most likely to land. A failed claim
+            -- now falls through to the fast route instead of ending there.
+            L.TextAt = os.clock()
             L.LastLabelColor = L.ClassifyColor(obj.TextColor3, t)
-            L.Dispatch(t)
+            local claimed = L.ClaimOurs and L.ClaimOurs(t)
             L.LastLabelColor = nil
-        else
-            L.Dispatch(t)
+            if claimed then return end
         end
-    end
 
-    local function readLabel(obj)
-        dispatchText(obj, obj.Text)
+        local fast = L.FastNotify
+        if fast then return fast(t, nil, nil, "Top") end
+        L.TextAt = os.clock()
+        L.Dispatch(t)
     end
 
     local function watchLabel(obj)
@@ -2385,8 +2425,12 @@ do
                 or obj:IsA("TextBox"))) then return end
         watched[obj] = true
         L.WatchedLabels += 1
-        readLabel(obj)
-        obj:GetPropertyChangedSignal("Text"):Connect(function() readLabel(obj) end)
+        dispatchText(obj, obj.Text)
+        -- Straight to dispatchText. This went through a readLabel(obj) hop, which is a
+        -- whole extra call frame on every text change of every watched label.
+        obj:GetPropertyChangedSignal("Text"):Connect(function()
+            dispatchText(obj, obj.Text)
+        end)
     end
     L.WatchLabel = watchLabel
 
@@ -2428,9 +2472,16 @@ do
                 local uiActive = L.DetectMode ~= "remote" or not L.RemoteDetectOn
                 if position == "Top" then
                     if uiActive then
-                        local fast = L.FastPath
+                        -- Straight into the bound handler. This used to go through
+                        -- L.FastPath, an extra call frame, and pass it clock() as a
+                        -- second argument -- FastPath takes one parameter, so that
+                        -- clock read was evaluated and thrown away, ahead of the send,
+                        -- on every announcement. The pcall stays: we are running inside
+                        -- the game's own Notify, and an error of ours must not break
+                        -- their notification.
+                        local fast = L.FastNotify
                         if fast then
-                            protected(fast, msg, clock())
+                            protected(fast, msg, nil, nil, "Top")
                         else
                             L.TextAt = os.clock()
                             protected(L.Dispatch, msg)

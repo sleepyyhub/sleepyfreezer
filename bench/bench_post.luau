@@ -110,6 +110,82 @@ if gameFn then
 end
 
 print("")
+
+-- ------------------------------------------------------------------ surfaces
+-- Same measurement, three different detection surfaces, so they can be compared
+-- against each other rather than only against the wire.
+local function timeSurface(n, fire, tag)
+    local codes = table.create(n)
+    for i = 1, n do codes[i] = tag .. i end
+    for i = 1, math.min(n, 300) do fire(codes[i]) end
+    H.pump(40000)
+    local acc, hits = 0, 0
+    for i = 1, n do
+        R.clearStamp()
+        local t0 = os.clock()
+        fire(codes[i])
+        local t1 = R.invokeStamp()
+        if t1 then acc += (t1 - t0); hits += 1 end
+        if i % 500 == 0 then H.pump(20000) end
+    end
+    H.pump(60000)
+    if hits == 0 then return nil, 0 end
+    return acc / hits * 1e9 - CLOCK_NS, hits
+end
+
+print("")
+print("detection surfaces, each timed to the same point (entry -> send entered)")
+print("---------------------------------------------------------------")
+
+local M = 4000
+
+local remoteNs, remoteHits = timeSurface(M, function(code)
+    notifyRemote.OnClientEvent:FireDirect(code, 5.5, nil, "Top")
+end, "SURFA")
+print(("  notify remote  OnClientEvent      %8.1f ns   (%d/%d sent)")
+    :format(remoteNs or 0, remoteHits, M))
+
+L.DetectMode = "ui"
+L.RemoteDetectOn = false
+pcall(L.HookNotify)
+local NC = genvTable.__LumNotifyNC
+if NC and NC.Notify then
+    local hookNs, hookHits = timeSurface(M, function(code)
+        NC:Notify(code, 5.5, nil, "Top")
+    end, "SURFB")
+    print(("  NotificationController hook       %8.1f ns   (%d/%d sent)")
+        :format(hookNs or 0, hookHits, M))
+else
+    print("  NotificationController hook       not installed in this rig")
+end
+
+L.NotifyHooked = false
+local top = H.newInstance("Folder", "TopNotification")
+top.Parent = PlayerGuiRef
+local inner = H.newInstance("TextLabel", "TopNotification")
+inner.Parent = top
+if pcall(L.HookGui) and L.GuiHooked then
+    local freshNs, freshHits = timeSurface(M, function(code)
+        L.OursPending = nil          -- fresh announcement, nothing awaiting an answer
+        inner._props.Text = code
+        inner._sig("prop:Text"):FireDirect()
+    end, "SURFC")
+    print(("  GUI label, fresh code             %8.1f ns   (%d/%d sent)")
+        :format(freshNs or 0, freshHits, M))
+    local pendNs, pendHits = timeSurface(M, function(code)
+        L.OursPending = "PENDINGCODE" -- a redeem is still awaiting its answer
+        L.OursAt = os.clock()
+        inner._props.Text = code
+        inner._sig("prop:Text"):FireDirect()
+    end, "SURFD")
+    L.OursPending = nil
+    print(("  GUI label, redeem still pending   %8.1f ns   (%d/%d sent)")
+        :format(pendNs or 0, pendHits, M))
+else
+    print("  GUI label watch                   not installed in this rig")
+end
+
+print("")
 print("LUCK's own bench (stubs its post-send work, so this is the handler alone)")
 print("---------------------------------------------------------------")
 pcall(L.BenchPrint, 20000)
