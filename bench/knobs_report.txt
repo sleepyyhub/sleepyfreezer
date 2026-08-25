@@ -1,0 +1,50 @@
+LUCK -- which of the script's own settings make it fast, measured
+
+harness: standalone Luau, fake Roblox client, 186 instances in
+ReplicatedStorage, the game's own NotificationController connected ahead of
+ours. Every row is detect -> send: announcement entry to the send call being
+entered, amortised over 3000 announcements, averaged over 3 runs.
+
+  setting                          handler    detect->send  vs default   sent
+  ------------------------------------------------------------------------------
+  defaults                         pole             163 ns        1.0x   3000/3000
+  MultiSurface = true              pole             244 ns        1.5x   3000/3000
+  Solo = false                     pole             257 ns        1.6x   3000/3000
+  Instrument = true                pole             301 ns        1.8x   3000/3000
+  RaceArmed = true  (RaceOn)       pole             322 ns        2.0x   3000/3000
+  RawFire = false                  pole             349 ns        2.1x   3000/3000
+  Threshold = 2                    pole            1515 ns        9.3x   1350/3000
+  RedeemPath = 'both'              pole            1690 ns       10.4x   2700/3000
+  GuessCode = true                 pole        NEVER SENDS          --      0/3000
+  RedeemPath = 'ui'                pole        NEVER SENDS          --      0/3000
+  pole dropped (DropPole)          soloRaw          159 ns        1.0x   3000/3000
+
+WHAT THIS SAYS
+
+  The defaults are the fastest configuration. That is now measured rather
+  than assumed, and LUCK.Fastest() restores it in one call.
+
+  Threshold = 2 and RedeemPath = 'both' are the two real traps. Both are one
+  click away in the UI (the PARTS PER CODE row, and the Redeem route pills),
+  both cost roughly 10x on detect -> send, and both DROP SENDS -- 1350 of
+  3000 and 2700 of 3000. They fall off the fast binding entirely and go
+  through a worker coroutine.
+
+  GuessCode sent nothing at all under a rapid burst. The accumulate buffer
+  passes 50 characters, gets truncated to the same prefix every time, and
+  firedSeen then treats every one as a duplicate. Real codes arrive seconds
+  apart so this is a burst behaviour rather than proof it never fires -- but
+  it is a long way off the fast path either way.
+
+  RedeemPath = 'ui' sent nothing because the rig has no real Codes GUI for
+  the UI path to drive. That row is untested, not broken.
+
+  Pole costs about 4 ns of wrapper. Without it the invoke goes out behind
+  the game's own notification handler, measured at 3204 ns in this rig and
+  larger in the real game, where it builds GUI and plays a sound.
+
+CAVEATS
+  Container CPU, not the M3 Air -- the ratios carry, the absolutes do not.
+  InvokeServer here is a Lua stub; the real one is a C call that serialises
+  and queues a packet. Lua work only: says nothing about the wire or the
+  network send step.

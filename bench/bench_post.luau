@@ -186,6 +186,105 @@ else
 end
 
 print("")
+
+-- ------------------------------------------------------------------- knobs
+-- Every configuration reachable through the methods the script already exposes,
+-- measured the same way: announcement entry -> the send call being entered.
+local function restoreDefaults()
+    L.RedeemPath   = "remote"
+    L.DetectMode   = "remote"
+    L.RawFire      = true
+    L.Instrument   = false
+    L.RaceArmed    = false
+    L.MultiSurface = false
+    L.Solo         = true
+    L.AutoOn       = true
+    L.GuessCode    = false
+    L.Threshold    = 1
+    L.RemoteDetectOn = true
+    L.SyncHot()
+end
+
+local function sweep(label, apply, tag)
+    restoreDefaults()
+    apply()
+    L.SyncHot()
+    local handler, pole = tostring(L.HandlerName), L.PoleOn and "yes" or "no"
+
+    local n = 3000
+    local codes = table.create(n)
+    for i = 1, n do codes[i] = tag .. i end
+    for i = 1, 300 do
+        notifyRemote.OnClientEvent:FireDirect(codes[i], 5.5, nil, "Top")
+    end
+    H.pump(40000)
+
+    local acc, hits = 0, 0
+    for i = 1, n do
+        R.clearStamp()
+        L.OursPending = nil
+        local t0 = os.clock()
+        notifyRemote.OnClientEvent:FireDirect(codes[i], 5.5, nil, "Top")
+        local t1 = R.invokeStamp()
+        if t1 then acc += (t1 - t0); hits += 1 end
+        if i % 400 == 0 then H.pump(20000) end
+    end
+    H.pump(60000)
+    local ns = hits > 0 and (acc / hits * 1e9 - CLOCK_NS) or nil
+    print(("  %-34s %-9s %-5s %9s   %d/%d"):format(
+        label, handler, pole,
+        ns and ("%.0f ns"):format(ns) or "no send", hits, n))
+    return ns
+end
+
+print("")
+print("every setting the script already exposes, measured")
+print("  setting                            handler   pole      detect->send   sent")
+print("  ---------------------------------------------------------------------------")
+
+local base = sweep("defaults", function() end, "K01")
+sweep("Instrument = true", function() L.Instrument = true end, "K02")
+sweep("RawFire = false", function() L.RawFire = false end, "K03")
+sweep("Solo = false", function() L.Solo = false end, "K04")
+sweep("MultiSurface = true", function() L.MultiSurface = true end, "K05")
+sweep("RaceArmed = true  (RaceOn)", function() L.RaceArmed = true end, "K06")
+sweep("Threshold = 2", function() L.Threshold = 2 end, "K07")
+sweep("GuessCode = true", function() L.GuessCode = true end, "K08")
+sweep("RedeemPath = 'both'", function() L.RedeemPath = "both" end, "K09")
+sweep("RedeemPath = 'ui'", function() L.RedeemPath = "ui" end, "K10")
+
+restoreDefaults()
+L.DropPole()
+H.pump(20000)
+do
+    local n = 3000
+    local codes = table.create(n)
+    for i = 1, n do codes[i] = "K11x" .. i end
+    for i = 1, 300 do notifyRemote.OnClientEvent:FireDirect(codes[i], 5.5, nil, "Top") end
+    H.pump(40000)
+    local acc, hits = 0, 0
+    for i = 1, n do
+        R.clearStamp()
+        L.OursPending = nil
+        local t0 = os.clock()
+        notifyRemote.OnClientEvent:FireDirect(codes[i], 5.5, nil, "Top")
+        local t1 = R.invokeStamp()
+        if t1 then acc += (t1 - t0); hits += 1 end
+        if i % 400 == 0 then H.pump(20000) end
+    end
+    H.pump(60000)
+    print(("  %-34s %-9s %-5s %9s   %d/%d"):format(
+        "pole dropped (DropPole)", tostring(L.HandlerName), L.PoleOn and "yes" or "no",
+        hits > 0 and ("%.0f ns"):format(acc / hits * 1e9 - CLOCK_NS) or "no send",
+        hits, n))
+end
+restoreDefaults()
+pcall(L.TakePole)
+H.pump(20000)
+print("")
+print(("  baseline (defaults) = %s ns"):format(base and ("%.0f"):format(base) or "?"))
+
+print("")
 print("LUCK's own bench (stubs its post-send work, so this is the handler alone)")
 print("---------------------------------------------------------------")
 pcall(L.BenchPrint, 20000)

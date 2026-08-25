@@ -2579,6 +2579,15 @@ L.Boost = function(blind)
             or ("not taken: " .. tostring(n))
     end
 
+    -- Boost is the "make it fast" entry point, so it should also make sure the knobs
+    -- are on the configuration that measured fastest, not just the fps cap.
+    if L.Fastest then
+        local wasOff = L.FastCheck and #L.FastCheck() or 0
+        pcall(L.Fastest)
+        got["fast path"] = wasOff == 0 and "already clean"
+            or ("corrected %d setting(s)"):format(wasOff)
+    end
+
     L.BoostApplied = got
     return got
 end
@@ -2608,21 +2617,24 @@ end
 L.Measure = function(on)
     on = on ~= false
     L.Instrument = on
+    L.AutoMeasureLeft = on and 3 or 0
     L.SyncFast()
     print(("[LUCK] instrumentation %s   ·   handler now '%s'")
         :format(on and "on" or "off", tostring(L.HandlerName)))
+    if on then
+        print("[LUCK] the next 3 redeems report their split, then this disarms itself")
+        print("[LUCK] note: measuring costs about 2x on detect -> send while it is on")
+    end
     return L.HandlerName
 end
 
--- Self-measuring, because you should not have to type anything to find out where the
--- time is going. The first few redeems run instrumented and report their own split on
--- screen and in the console; after that instrumentation switches itself off and the
--- binding drops back to soloRaw, which does not read the clock at all.
---
--- The cost while armed is two clock reads before the invoke, so tens of nanoseconds,
--- on the first three redeems only. Set LUCK.AutoMeasure = false to skip it entirely.
-L.AutoMeasure = true
-L.AutoMeasureLeft = 3
+-- Off by default, and it was not always. Measured: arming it moves the binding from
+-- soloRaw to solo, and solo costs 337 ns against soloRaw's 169 ns -- it doubles
+-- detect -> send. That penalty landed on the first three redeems after injection,
+-- which are the ones most likely to matter. Measuring is opt-in now: LUCK.Measure()
+-- arms it, the next three redeems report their split, then it disarms itself.
+L.AutoMeasure = false
+L.AutoMeasureLeft = 0
 
 L.AutoReport = function()
     local left = L.AutoMeasureLeft
@@ -2702,6 +2714,91 @@ if L.AutoMeasure and L.AutoMeasureLeft > 0 then
     if L.SyncFast then L.SyncFast() end
 end
 
+-- The fastest configuration reachable through the knobs this script already has,
+-- measured rather than assumed. Numbers are detect -> send, amortised over 3000
+-- announcements each, same rig, same run:
+--
+--   defaults (soloRaw, pole held)      163 ns   1.0x  <- what Fastest() restores
+--   MultiSurface = true                244 ns   1.5x   forces the guarded handler
+--   Solo = false                       257 ns   1.6x   guarded: dedupe before the send
+--   Instrument = true                  301 ns   1.8x   moves the binding to solo
+--   RaceArmed = true (RaceOn)          322 ns   2.0x   forces guarded, and puts a
+--                                                      callback on every remote
+--   RawFire = false                    349 ns   2.1x   codeFrom runs before the send
+--   Threshold = 2                     1515 ns   9.3x   AND only 1350 of 3000 sent
+--   RedeemPath = "both"               1690 ns  10.4x   AND only 2700 of 3000 sent
+--   GuessCode = true                  0 of 3000 sent   under a rapid burst; the
+--                                                      accumulate buffer passes 50
+--                                                      chars, gets truncated to the
+--                                                      same prefix every time, and
+--                                                      firedSeen then treats each one
+--                                                      as a duplicate. Real codes
+--                                                      arrive seconds apart, so this
+--                                                      is a burst behaviour, not proof
+--                                                      it never fires -- but it is a
+--                                                      long way off the fast path.
+--
+-- Pole is a separate axis: the wrapper costs about 4 ns here, and without it our
+-- invoke goes out behind the game's own notification handler, measured at 3204 ns.
+--
+-- RedeemPath = "ui" sent nothing in the rig, but that is the rig's fault -- it has no
+-- real Codes GUI for the UI path to drive. Treat that row as untested, not as broken.
+L.FastCheck = function()
+    local off = {}
+    if L.RedeemPath ~= "remote" then
+        off[#off + 1] = ("RedeemPath is '%s', not 'remote'"):format(tostring(L.RedeemPath))
+    end
+    if (L.Threshold or 1) > 1 then
+        off[#off + 1] = ("Threshold is %s, not 1"):format(tostring(L.Threshold))
+    end
+    if L.GuessCode then off[#off + 1] = "GuessCode is on" end
+    if L.RawFire == false then off[#off + 1] = "RawFire is off" end
+    if L.Instrument then off[#off + 1] = "Instrument is on (measuring)" end
+    if L.RaceArmed then off[#off + 1] = "RaceArmed is on (RaceOn)" end
+    if L.Solo == false then off[#off + 1] = "Solo is off" end
+    if L.MultiSurface then off[#off + 1] = "MultiSurface is on" end
+    if L.AutoOn ~= true then off[#off + 1] = "AutoOn is off -- nothing will send" end
+    if not L.PoleOn then off[#off + 1] = "pole is not held" end
+    return off
+end
+
+L.Fastest = function()
+    L.RedeemPath    = "remote"
+    L.Threshold     = 1
+    L.ThresholdMode = "preset"
+    L.GuessCode     = false
+    L.RawFire      = true
+    L.Instrument   = false
+    L.RaceArmed    = false
+    L.Solo         = true
+    L.MultiSurface = false
+    L.AutoMeasureLeft = 0
+    L.Settings.RedeemPath     = "remote"
+    L.Settings.Threshold      = 1
+    L.Settings.ThresholdMode  = "preset"
+    L.Settings.GuessCode      = false
+    if L.SaveSettings then L.SaveSettings() end
+    if L.SyncHot then L.SyncHot() end
+    if not L.PoleOn and L.TakePole then pcall(L.TakePole) end
+    if L.PaintModes then pcall(L.PaintModes) end
+    if L.RefreshPreview then pcall(L.RefreshPreview) end
+    return L.HandlerName, L.PoleOn
+end
+
+L.FastestPrint = function()
+    local before = L.FastCheck()
+    local handler, pole = L.Fastest()
+    if #before == 0 then
+        print("[LUCK] already on the fast path")
+    else
+        print("[LUCK] moved onto the fast path, was:")
+        for _, line in ipairs(before) do print("[LUCK]   " .. line) end
+    end
+    print(("[LUCK] handler %s   pole %s   expect about 163 ns detect -> send")
+        :format(tostring(handler), pole and "held" or "not held"))
+    return handler
+end
+
 L.Diag = function()
     if L.SampleFps then pcall(L.SampleFps) end
     local function yn(v) return v and "yes" or "no" end
@@ -2741,6 +2838,14 @@ L.Diag = function()
         n, #(L.CodeHistory or {}), yn(L.RaceArmed)))
     for i, h in ipairs(L.CodeHistory or {}) do
         print(("[LUCK]   %d. %-20s %s"):format(i, h.code, h.status))
+    end
+    local off = L.FastCheck and L.FastCheck() or {}
+    if #off == 0 then
+        print("[LUCK] fast path: clean")
+    else
+        print("[LUCK] fast path: OFF -- each of these was measured, see L.Fastest")
+        for _, line in ipairs(off) do print("[LUCK]   ! " .. line) end
+        print("[LUCK] LUCK.FastestPrint() puts it back")
     end
     return true
 end
