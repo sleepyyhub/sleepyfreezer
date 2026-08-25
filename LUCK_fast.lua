@@ -1981,12 +1981,35 @@ do
         return mine, #conns
     end
 
+    -- Re-entrancy guard, and it is not optional.
+    --
+    -- Pole disables the game's notification handlers and calls them by hand. Those
+    -- handlers put a notification on screen, and putting a notification on screen can
+    -- make the game emit another one -- which we are connected to, so our handler runs,
+    -- queues another redispatch, which calls the game's handler again. Roblox counts
+    -- that as re-entrancy and kills it at depth 80:
+    --
+    --   Maximum re-entrancy depth (80) exceeded calling task.defer
+    --   Script 'ReplicatedStorage.Controllers.NotificationController', Line 198
+    --
+    -- Once task.defer starts refusing, `tail` never runs, results never post, and
+    -- detection looks like it stopped working -- intermittently, because it depends on
+    -- whether a notification happens to cascade.
+    --
+    -- Two locks. `inRedispatch` stops the inline recursion; `drainQueued` stops more
+    -- than one drain being on the deferred queue at a time, which is what let the
+    -- depth build across scheduler hops rather than within one call.
+    local inRedispatch, drainQueued = false, false
+
     local function redispatch(msg, dur, sound, position)
+        if inRedispatch then return end
         local taken = L.PoleTaken
         if not taken then return end
+        inRedispatch = true
         for i = 1, #taken do
             protected(taken[i], msg, dur, sound, position)
         end
+        inRedispatch = false
     end
 
     -- Handing the game's handlers to the scheduler, as cheaply as it can be done.
@@ -2001,12 +2024,20 @@ do
     -- That is cosmetic, it is the game's own UI, and codes do not arrive in pairs.
     local rdMsg, rdDur, rdSound, rdPos
     local function drainRedispatch()
+        drainQueued = false
         redispatch(rdMsg, rdDur, rdSound, rdPos)
+    end
+
+    local function queueRedispatch(msg, dur, sound, position)
+        if drainQueued or inRedispatch then return end
+        drainQueued = true
+        rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
+        defer(drainRedispatch)
     end
 
     local pole = function(msg, dur, sound, position)
         if position ~= "Top" then
-            defer(redispatch, msg, dur, sound, position)
+            queueRedispatch(msg, dur, sound, position)
             if L.OursPending then return side(msg) end
             return
         end
@@ -2017,8 +2048,7 @@ do
         -- that round trip finished -- so the game's "new code" popup appeared ~150ms
         -- late, every time. Pole was making the game look laggy, and that is most of
         -- what "it doesn't feel instant" was. It never affected the redeem itself.
-        rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
-        defer(drainRedispatch)
+        queueRedispatch(msg, dur, sound, position)
         poleInner(msg, dur, sound, position)
     end
 
@@ -2029,13 +2059,12 @@ do
     -- L.EagerRedispatch picks between them.
     local poleLate = function(msg, dur, sound, position)
         if position ~= "Top" then
-            defer(redispatch, msg, dur, sound, position)
+            queueRedispatch(msg, dur, sound, position)
             if L.OursPending then return side(msg) end
             return
         end
         poleInner(msg, dur, sound, position)
-        rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
-        defer(drainRedispatch)
+        queueRedispatch(msg, dur, sound, position)
     end
     -- The whole default path in one function.
     --
@@ -2053,11 +2082,10 @@ do
             local a, b = fastInvoke(fastRemote, msg)
             sent[msg] = true
             defer(tail, 0, 0, 0, msg, msg, true, a, b)
-            rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
-            defer(drainRedispatch)
+            queueRedispatch(msg, dur, sound, position)
             return
         end
-        defer(redispatch, msg, dur, sound, position)
+        queueRedispatch(msg, dur, sound, position)
         if L.OursPending then return side(msg) end
     end
 

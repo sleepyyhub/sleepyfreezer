@@ -1,0 +1,17 @@
+REDISPATCH RE-ENTRANCY -- one announcement into a cascading game handler
+
+FIXED:
+one announcement into a cascading game handler
+  nesting depth reached   1   (Roblox aborts at 80)
+  redeems sent            2
+  scheduler errors        0
+
+PREVIOUS COMMIT:
+one announcement into a cascading game handler
+  nesting depth reached   1   (Roblox aborts at 80)
+  redeems sent            401
+  scheduler errors        0
+
+The rig flattens deferred calls instead of nesting them the way Roblox
+does, so it does not reproduce the depth-80 abort itself -- what it does
+reproduce is the runaway amplification behind it.
