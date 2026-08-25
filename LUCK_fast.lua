@@ -949,6 +949,7 @@ L.PostRedeem = function(t0, src, code, ok, reply, timing)
     if L.RefreshAuto then L.RefreshAuto() end
     if L.ReportRedeem then L.ReportRedeem(ok, reply, timing) end
     if L.RefreshPreview then L.RefreshPreview() end
+    if L.AutoReport then pcall(L.AutoReport) end
     task.delay(1.25, function()
         if L.RefreshPreview then L.RefreshPreview() end
     end)
@@ -2502,10 +2503,45 @@ L.Measure = function(on)
     L.SyncFast()
     print(("[LUCK] instrumentation %s   ·   handler now '%s'")
         :format(on and "on" or "off", tostring(L.HandlerName)))
-    if on then
-        print("[LUCK] catch one code, then run LUCK.Split()")
-    end
     return L.HandlerName
+end
+
+-- Self-measuring, because you should not have to type anything to find out where the
+-- time is going. The first few redeems run instrumented and report their own split on
+-- screen and in the console; after that instrumentation switches itself off and the
+-- binding drops back to soloRaw, which does not read the clock at all.
+--
+-- The cost while armed is two clock reads before the invoke, so tens of nanoseconds,
+-- on the first three redeems only. Set LUCK.AutoMeasure = false to skip it entirely.
+L.AutoMeasure = true
+L.AutoMeasureLeft = 3
+
+L.AutoReport = function()
+    local left = L.AutoMeasureLeft
+    if not left or left <= 0 then return end
+    local t = L.LastTiming
+    if not t then return end
+    L.AutoMeasureLeft = left - 1
+
+    local scriptMs = tonumber(t.client) or 0
+    local wireMs   = tonumber(t.server) or 0
+    pcall(L.Split)
+
+    if L.Notify then
+        local share = (scriptMs + wireMs) > 0
+            and (scriptMs / (scriptMs + wireMs) * 100) or 0
+        L.Notify(("script %.3fms  ·  wire %.0fms  ·  script is %.2f%% of it")
+            :format(scriptMs, wireMs, share), T.HIGH)
+    end
+
+    if L.AutoMeasureLeft <= 0 then
+        L.Instrument = false
+        if L.SyncFast then L.SyncFast() end
+        print("[LUCK] measuring done -- back on soloRaw, nothing ahead of the send")
+        if L.Notify then
+            L.Notify("measuring done · back on soloRaw", T.MUTED)
+        end
+    end
 end
 
 L.Split = function()
@@ -2549,6 +2585,12 @@ L.Split = function()
         print("[LUCK] own controller to every redeem. LUCK.Diag() shows why.")
     end
     return scriptMs, wireMs
+end
+
+-- Arm it. This runs after SyncFast exists, so the binding actually moves.
+if L.AutoMeasure and L.AutoMeasureLeft > 0 then
+    L.Instrument = true
+    if L.SyncFast then L.SyncFast() end
 end
 
 L.Diag = function()
