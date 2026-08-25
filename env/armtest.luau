@@ -66,4 +66,8 @@ print(string.format("    fastReady (can send)     %s",
 print(string.format("    handler                  %s", tostring(L and L.HandlerName)))
 print(string.format("    real cpu to get there    %7.3f s", Env.realBurned()))
 for _, line in ipairs(probe) do print("    " .. line) end
+if L then
+	print(string.format("    discoverPass errors      %s", tostring(L.DiscoverErrs or 0)))
+	if L.DiscoverErr then print("    last error: " .. tostring(L.DiscoverErr)) end
+end
 print("")

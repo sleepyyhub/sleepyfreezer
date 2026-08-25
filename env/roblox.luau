@@ -454,6 +454,35 @@ function instanceMethods:FindFirstChildWhichIsA(cls, recursive)
 	end
 	return nil
 end
+function instanceMethods:IsDescendantOf(other)
+	local p = rawget(self, "__props").Parent
+	while p do
+		if p == other then return true end
+		p = rawget(p, "__props").Parent
+	end
+	return false
+end
+function instanceMethods:IsAncestorOf(other)
+	if not isInstance(other) then return false end
+	return instanceMethods.IsDescendantOf(other, self)
+end
+function instanceMethods:FindFirstAncestorOfClass(cls)
+	local p = rawget(self, "__props").Parent
+	while p do
+		if rawget(p, "__class") == cls then return p end
+		p = rawget(p, "__props").Parent
+	end
+	return nil
+end
+function instanceMethods:FindFirstAncestorWhichIsA(cls)
+	local p = rawget(self, "__props").Parent
+	while p do
+		if isA(p, cls) then return p end
+		p = rawget(p, "__props").Parent
+	end
+	return nil
+end
+
 function instanceMethods:FindFirstAncestor(name)
 	local p = rawget(self, "__props").Parent
 	while p do
@@ -520,6 +549,13 @@ function instanceMethods:GetFullName()
 	end
 	return table.concat(parts, ".")
 end
+-- Present so a pcall'd path fails for a real reason rather than on a missing
+-- method. A silently swallowed "attempt to call missing method" is how this
+-- harness once made a build look like it took 10 s to arm.
+function instanceMethods:CaptureFocus() end
+function instanceMethods:ReleaseFocus() end
+function instanceMethods:Disable() end
+function instanceMethods:Enable() end
 function instanceMethods:AddTag() end
 function instanceMethods:GetTags() return {} end
 function instanceMethods:TweenSize() end
@@ -798,6 +834,7 @@ instanceMethods.IsClient = function() return true end
 instanceMethods.IsServer = function() return false end
 instanceMethods.IsStudio = function() return false end
 instanceMethods.BindToRenderStep = function() end
+instanceMethods.Set3dRenderingEnabled = function() return true end
 instanceMethods.UnbindFromRenderStep = function() end
 Env.RunService = RunService
 

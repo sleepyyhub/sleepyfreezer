@@ -282,3 +282,52 @@ prices the head start.
 - **The rival is a model, not the real script.** The race harness prices
   hypotheses about how a rival could win; it does not know what any real one
   does. Use `LUCK_racediag.lua` on the live client to find that out.
+
+---
+
+## Correction: the 10.3 s arming delay was this harness, not the script
+
+An earlier run of `env/armtest.luau` reported that one build took **10.323 s**
+before notify detect went live, against 0.023 s for the other, and the cold
+duel scored it 0 - 7 on rounds it "never sent".
+
+That was wrong, and the cause was here, not in the script.
+
+`discoverPass` is called through `pcall`. It was throwing:
+
+```
+LUCK:292: attempt to call missing method 'IsDescendantOf' of table
+```
+
+`IsDescendantOf` was simply absent from the Instance mock in `roblox.luau`.
+The throw abandoned the rest of the pass — including the
+`if L.NotifyRemote then L.ConnectNotifyRemote() end` at its bottom — so the
+connect never ran. The build's own backoff then retried, and detection only
+came up on pass 10, when `notifyTries` hit `VERIFY_TRIES` and the verified
+lookup stopped being attempted. 10.323 s is exactly pass 10 of a 0.1 × 1.6
+schedule capped at 2 s, which is what made the number look so deliberate.
+
+The tell was there and I read it the wrong way round: calling
+`ConnectNotifyRemote()` by hand at 0.05 s succeeded immediately. A function
+that works when called directly but not from its own loop means the caller is
+broken, not the callee — and the caller was my mock.
+
+With `IsDescendantOf`, `IsAncestorOf`, `FindFirstAncestorOfClass`,
+`FindFirstAncestorWhichIsA`, `Set3dRenderingEnabled`, `CaptureFocus`,
+`ReleaseFocus`, `Disable` and `Enable` added:
+
+| | before | after |
+|---|---:|---:|
+| uploaded build, detect live | 10.323 s | **0.173 s** |
+| this build, detect live | 0.023 s | **0.173 s** |
+| discoverPass errors | 2+ | **0** |
+
+Both arm identically. The cold duel is now **0 - 1 with 19 ties**, and the one
+decided round went by 4.160 ms — one frame at 240 fps, so a frame-boundary
+crossing, not a script difference. Warm is **0 - 0, all 20 tied**.
+
+The general lesson for this harness: a missing method inside a `pcall`ed path
+does not announce itself. It looks exactly like the script deciding not to do
+something. `armtest.luau` now records `discoverPass` errors for that reason,
+and the mock answers the methods a real Instance would rather than letting
+them fail silently.

@@ -1,151 +1,151 @@
 
-  Fast                     handler=soloRaw armed=10.321 fps=240 ping=20
-  Current                  handler=soloRaw armed=0.020 fps=240 ping=20
+  Fast                     handler=soloRaw armed=0.020 fps=240 ping=20 mode=warm
+  Current                  handler=soloRaw armed=0.020 fps=240 ping=20 mode=warm
 
 Round 1
 
 Fast / Current
 
 0 - 0
-    tie  (22.511 vs 22.515 ms, 4 ns apart)
+    tie  (22.509 vs 22.516 ms, 7 ns apart)
 
 Round 2
 
 Fast / Current
 
 0 - 0
-    tie  (22.719 vs 22.734 ms, 15 ns apart)
+    tie  (22.728 vs 22.720 ms, 8 ns apart)
 
 Round 3
 
 Fast / Current
 
 0 - 0
-    tie  (22.933 vs 22.929 ms, 4 ns apart)
+    tie  (22.926 vs 22.939 ms, 13 ns apart)
 
 Round 4
 
 Fast / Current
 
 0 - 0
-    tie  (23.139 vs 23.152 ms, 14 ns apart)
+    tie  (23.138 vs 23.132 ms, 5 ns apart)
 
 Round 5
 
 Fast / Current
 
 0 - 0
-    tie  (23.343 vs 23.340 ms, 3 ns apart)
+    tie  (23.354 vs 23.340 ms, 14 ns apart)
 
 Round 6
 
 Fast / Current
 
 0 - 0
-    tie  (23.553 vs 23.555 ms, 2 ns apart)
+    tie  (23.557 vs 23.550 ms, 8 ns apart)
 
 Round 7
 
 Fast / Current
 
 0 - 0
-    tie  (23.759 vs 23.758 ms, 2 ns apart)
+    tie  (23.761 vs 23.758 ms, 2 ns apart)
 
 Round 8
 
 Fast / Current
 
 0 - 0
-    tie  (23.972 vs 23.966 ms, 6 ns apart)
+    tie  (23.965 vs 23.965 ms, 1 ns apart)
 
 Round 9
 
 Fast / Current
 
 0 - 0
-    tie  (20.011 vs 20.013 ms, 2 ns apart)
+    tie  (20.007 vs 20.006 ms, 1 ns apart)
 
 Round 10
 
 Fast / Current
 
 0 - 0
-    tie  (20.231 vs 20.216 ms, 15 ns apart)
+    tie  (20.216 vs 20.216 ms, 0 ns apart)
 
 Round 11
 
 Fast / Current
 
 0 - 0
-    tie  (20.428 vs 20.425 ms, 3 ns apart)
+    tie  (20.430 vs 20.424 ms, 6 ns apart)
 
 Round 12
 
 Fast / Current
 
 0 - 0
-    tie  (20.633 vs 20.632 ms, 1 ns apart)
+    tie  (20.633 vs 20.634 ms, 2 ns apart)
 
 Round 13
 
 Fast / Current
 
 0 - 0
-    tie  (20.840 vs 20.841 ms, 0 ns apart)
+    tie  (20.840 vs 20.843 ms, 3 ns apart)
 
 Round 14
 
 Fast / Current
 
 0 - 0
-    tie  (21.054 vs 21.051 ms, 3 ns apart)
+    tie  (21.050 vs 21.080 ms, 31 ns apart)
 
 Round 15
 
 Fast / Current
 
 0 - 0
-    tie  (21.258 vs 21.268 ms, 10 ns apart)
+    tie  (21.257 vs 21.276 ms, 19 ns apart)
 
 Round 16
 
 Fast / Current
 
 0 - 0
-    tie  (21.466 vs 21.474 ms, 8 ns apart)
+    tie  (21.465 vs 21.476 ms, 11 ns apart)
 
 Round 17
 
 Fast / Current
 
 0 - 0
-    tie  (21.674 vs 21.689 ms, 14 ns apart)
+    tie  (21.683 vs 21.693 ms, 11 ns apart)
 
 Round 18
 
 Fast / Current
 
 0 - 0
-    tie  (21.888 vs 21.892 ms, 4 ns apart)
+    tie  (21.890 vs 21.897 ms, 7 ns apart)
 
 Round 19
 
 Fast / Current
 
 0 - 0
-    tie  (22.092 vs 22.110 ms, 18 ns apart)
+    tie  (22.096 vs 22.104 ms, 8 ns apart)
 
 Round 20
 
 Fast / Current
 
 0 - 0
-    tie  (22.301 vs 22.317 ms, 15 ns apart)
+    tie  (22.313 vs 22.348 ms, 35 ns apart)
 
 ==============================================
 FINAL   Fast 0 - 0 Current    (20 tied)
 ==============================================
-  median Fast: 22.092 ms
-  median Current: 22.110 ms
-  difference: -0.018 ms
+  median Fast: 22.096 ms
+  median Current: 22.104 ms
+  difference: -0.008 ms
 
