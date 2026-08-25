@@ -201,6 +201,7 @@ local function restoreDefaults()
     L.AutoOn       = true
     L.GuessCode    = false
     L.Threshold    = 1
+    L.EagerRedispatch = false        -- the shipped default
     L.RemoteDetectOn = true
     L.SyncHot()
 end
@@ -243,6 +244,7 @@ print("  setting                            handler   pole      detect->send   s
 print("  ---------------------------------------------------------------------------")
 
 local base = sweep("defaults", function() end, "K01")
+sweep("EagerRedispatch = true", function() L.EagerRedispatch = true end, "K12")
 sweep("Instrument = true", function() L.Instrument = true end, "K02")
 sweep("RawFire = false", function() L.RawFire = false end, "K03")
 sweep("Solo = false", function() L.Solo = false end, "K04")
@@ -283,6 +285,61 @@ pcall(L.TakePole)
 H.pump(20000)
 print("")
 print(("  baseline (defaults) = %s ns"):format(base and ("%.0f"):format(base) or "?"))
+
+print("")
+
+-- ------------------------------------------------------- exactly-once test
+-- The same code, seen by every surface that can see it, plus a repeat of the
+-- announcement itself. It must reach the server exactly once.
+print("")
+print("exactly-once: one code, every surface, how many redeems reach the server")
+print("---------------------------------------------------------------")
+do
+    restoreDefaults()
+    pcall(L.TakePole)
+    H.pump(20000)
+
+    local function countFor(label, code, fire)
+        local before = R.invokeCount()
+        fire(code)
+        H.pump(40000)
+        local n = R.invokeCount() - before
+        print(("  %-44s %d redeem%s"):format(label, n, n == 1 and "" or "s"))
+        return n
+    end
+
+    countFor("announcement fired once", "ONCE01", function(code)
+        notifyRemote.OnClientEvent:FireDirect(code, 5.5, nil, "Top")
+    end)
+
+    countFor("same announcement fired 5 times", "ONCE02", function(code)
+        for _ = 1, 5 do
+            notifyRemote.OnClientEvent:FireDirect(code, 5.5, nil, "Top")
+        end
+    end)
+
+    countFor("remote + 4 label dispatches, same code", "ONCE03", function(code)
+        notifyRemote.OnClientEvent:FireDirect(code, 5.5, nil, "Top")
+        if L.WatchLabel then
+            for _ = 1, 4 do
+                if L.FastNotify then pcall(L.FastNotify, code, nil, nil, "Top") end
+            end
+        end
+    end)
+
+    countFor("announcement while its own reply is pending", "ONCE04", function(code)
+        notifyRemote.OnClientEvent:FireDirect(code, 5.5, nil, "Top")
+        L.OursPending = code
+        notifyRemote.OnClientEvent:FireDirect(code, 5.5, nil, "Top")
+        L.OursPending = nil
+    end)
+
+    print("")
+    print(("  NotificationController hooked while on the remote path: %s")
+        :format(L.NotifyHooked and "YES (wrong)" or "no"))
+    print(("  our results routed through the game's notifier: %s")
+        :format(L.ToastOn and "YES (wrong)" or "no"))
+end
 
 print("")
 print("LUCK's own bench (stubs its post-send work, so this is the handler alone)")

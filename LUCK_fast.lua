@@ -981,6 +981,8 @@ local function postRedeemBody(t0, src, code, ok, reply, timing)
     if L.ReportRedeem then L.ReportRedeem(ok, reply, timing) end
     if L.RefreshPreview then L.RefreshPreview() end
     if L.AutoReport then pcall(L.AutoReport) end
+    -- A code actually landed, so the visual spam has served its purpose.
+    if ok == true and L.SpamOn and L.SpamRedeem then pcall(L.SpamRedeem, false) end
     task.delay(1.25, function()
         if L.RefreshPreview then L.RefreshPreview() end
     end)
@@ -1977,7 +1979,11 @@ do
         rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
         defer(drainRedispatch)
     end
-    L.EagerRedispatch = true
+    -- Default off: the send stays at its floor. Turning it on hands the game's own
+    -- handlers to the scheduler before our invoke so their popup is not held back by
+    -- our round trip -- it costs about 360 ns on the send to save ~150 ms of visible
+    -- lag on the GAME's popup. Cosmetic either way; L.EagerRedispatch picks.
+    L.EagerRedispatch = false
 
     L.TakePole = function()
         if L.PoleOn then return true, #L.PoleTaken end
@@ -3158,66 +3164,56 @@ end
 --
 -- It stops the moment a redeem comes back successful, and puts the notifier back.
 L.SpamOn       = false
-L.SpamInterval = 0.12          -- gap between attempts, on top of the round trip
-L.SpamCode     = nil
-L.SpamAttempts = 0
-L.SpamMax      = 0             -- 0 = until it lands or you stop it
+L.SpamInterval = 0.35          -- gap between lines
+L.SpamShown    = 0
+L.SpamMax      = 0             -- 0 = until a real code lands or you stop it
 L.SpamRedText  = '<font color="#ff5f6d">Invalid Code</font>'
 
-L.SpamRedeem = function(on, code)
+-- Purely visual. It does not call the redeem remote, does not touch the server, and
+-- cannot be rate limited -- there is nothing to rate limit. All it does is draw the
+-- game's own red invalid-code line on a loop, and swallow the real "Please wait before
+-- trying to redeem another Code" notices while it runs.
+--
+-- It stops on its own when a redeem actually succeeds, which is the normal detect path
+-- doing its job in the background, not anything this loop did.
+L.SpamRedeem = function(on)
     on = on ~= false
 
     if not on then
         if not L.SpamOn then return false, "already off" end
         L.SpamOn = false
-        pcall(L.Fake, false)   -- restores NC.Notify and the normal sender
+        pcall(L.Fake, false)
         if L.OnSpamChanged then pcall(L.OnSpamChanged, false) end
         return false, "stopped"
     end
+    if L.SpamOn then return true, "already running" end
 
-    code = code or L.SpamCode
-    if type(code) == "string" then
-        code = (code:gsub("[^%w]", "")):upper():sub(1, 50)
-    end
-    if type(code) ~= "string" or code == "" then
-        if L.Notify then L.Notify("spam: no code to send", T.RED) end
-        return false, "no code"
-    end
-    if L.SpamOn then L.SpamCode = code return true, "already running" end
+    L.SpamOn, L.SpamShown = true, 0
 
-    L.SpamCode, L.SpamAttempts, L.SpamOn = code, 0, true
-
-    -- Fake's rewrite is exactly the mechanism wanted here, pointed at the red line.
-    -- FakeBurst is left alone: the loop below is what does the spamming, one clean
-    -- attempt at a time, so each reply can be checked.
+    -- Fake's wrapper is the mechanism, pointed at the red line: the rate-limit notice
+    -- gets rewritten rather than shown. FakeOn stays false so the burst SENDER is not
+    -- involved -- nothing here goes near the remote.
     local restoreText = L.FakeText
     L.FakeText = L.SpamRedText
     pcall(L.Fake, true)
-    L.FakeOn = false           -- rewrite only; the burst sender stays out of it
+    L.FakeOn = false
     if L.SyncFast then L.SyncFast() end
 
     if L.OnSpamChanged then pcall(L.OnSpamChanged, true) end
 
     task.spawn(function()
+        local G = (getgenv and getgenv()) or shared
         while L.SpamOn do
-            L.SpamAttempts += 1
-            local ok, reply, timing = L.RedeemViaRemote(L.SpamCode)
-            if ok == true then
-                L.SpamOn = false
-                L.FakeText = restoreText
-                pcall(L.Fake, false)
-                if L.PostRedeem then
-                    pcall(L.PostRedeem, os.clock(), "spam", L.SpamCode, ok, reply, timing)
-                end
-                if L.Notify then
-                    L.Notify(("redeemed %s after %d tries")
-                        :format(tostring(L.SpamCode), L.SpamAttempts), T.GREEN)
-                end
-                if L.OnSpamChanged then pcall(L.OnSpamChanged, false) end
-                return
+            local NC, real = G.__LUCKFakeNC, G.__LUCKFakeReal
+            if NC and type(real) == "function" then
+                -- Drawn through the game's own notifier so it looks like the real
+                -- thing. Placement is nil, not "Top": a Top notification is what a code
+                -- announcement looks like, and our own detector would try to redeem it.
+                pcall(real, NC, L.SpamRedText, 4, nil, nil)
+                L.SpamShown += 1
             end
             local cap = tonumber(L.SpamMax) or 0
-            if cap > 0 and L.SpamAttempts >= cap then break end
+            if cap > 0 and L.SpamShown >= cap then break end
             task.wait(L.SpamInterval)
         end
         L.SpamOn = false
@@ -3575,19 +3571,11 @@ local uiOK, uiErr = pcall(function()
     SpamBtn.MouseButton1Click:Connect(function()
         if L.SpamOn then
             L.SpamRedeem(false)
-            L.Notify(("spam stopped after %d tries"):format(L.SpamAttempts or 0), T.MUTED)
+            L.Notify(("spam off  ·  %d lines shown"):format(L.SpamShown or 0), T.MUTED)
             return
         end
-        -- Whatever is in the box, else the last code we saw come past.
-        local typed = CodeBox.Text:gsub("[^%w]", ""):upper():sub(1, 50)
-        local code = (typed ~= "" and typed) or L.SpamCode or L.LastPreviewCode
-        local ok, why = L.SpamRedeem(true, code)
-        if ok then
-            CodeBox.Text = ""
-            L.Notify("spamming " .. tostring(L.SpamCode) .. " until it lands", T.RED)
-        elseif why == "no code" then
-            L.Notify("type a code first, or wait for one to drop", T.ORANGE)
-        end
+        L.SpamRedeem(true)
+        L.Notify("spam on  ·  visual only, nothing is being sent", T.RED)
     end)
     hover(SpamBtn, T.RAISED, SpamStroke)
 

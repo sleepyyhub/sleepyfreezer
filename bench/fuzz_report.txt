@@ -1,14 +1,19 @@
-SPAM REDEEM
+SPAM REDEEM -- purely visual
 
-SpamRedeem: start -> spamming
-attempts made        5   (server accepts on try 5)
-still spamming       false
-notifications: 5 red 'Invalid Code', 0 raw 'Please wait'
-red markup used: <font color="#ff5f6d">Invalid Code</font>
+EagerRedispatch default: false
+REDEEMS SENT while spamming: 0   <- must be 0
+red lines drawn:             39123
+still spamming:              true
+'Please wait' leaked:        0   <- must be 0
+what it showed instead:      <font color="#ff5f6d">Invalid Code</font>
+after a real redeem landed:  spamming=false
 
-STRESS / FUZZ -- 29 checks
+note: 'red lines drawn' is inflated by the rig's virtual clock, which resolves
+task.wait instantly. In game it is one line per L.SpamInterval (0.35s).
+
+STRESS / FUZZ -- 30 checks
 
      conns on the notify remote: 2 total, 1 enabled
 
-checks: 29   failures: 0
+checks: 30   failures: 0
 runtime errors during the whole run: 0

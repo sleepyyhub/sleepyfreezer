@@ -328,7 +328,7 @@ do
 end
 
 
--- 13. Spam Redeem: hammers until it lands, red Invalid Code throughout, no rate-limit
+-- 13. Spam Redeem is purely visual: no remote traffic at all
 do
     pcall(L.Fastest); H.pump(20000)
     local NC = genvTable.__LumNotifyNC
@@ -342,36 +342,35 @@ do
     local heard = {}
     if NC then NC.Notify = function(self, msg) heard[#heard + 1] = tostring(msg) end end
 
-    local tries, acceptAt = 0, 5
-    local prevBehaviour = R.setInvokeBehaviour(function()
-        tries += 1
-        if NC then NC:Notify("Please wait before trying to redeem another Code", 5, nil, "Top") end
-        if tries >= acceptAt then return true, "Meowl spawned!" end
-        return false, "rate limited"
-    end)
-
-    L.SpamRedeem(true, "spamcode")
-    for _ = 1, 40 do H.pump(4000, H.virtualNow() + 0.2) end
-    H.pump(60000)
-
-    check("spam stops once the code lands", L.SpamOn == false,
-        "SpamOn=" .. tostring(L.SpamOn))
-    check("spam kept trying until it landed", L.SpamAttempts == acceptAt,
-        L.SpamAttempts .. " attempts")
-
-    local red, wait = 0, 0
-    for _, m in ipairs(heard) do
-        if m:find("Invalid Code", 1, true) then red += 1 end
-        if m:lower():find("please wait", 1, true) then wait += 1 end
-    end
-    check("rate-limit notices are hidden", wait == 0, wait .. " leaked through")
-    check("red Invalid Code shown instead", red >= 1, red .. " shown")
-
-    R.setInvokeBehaviour(prevBehaviour)
-    if NC and restoreNC then NC.Notify = restoreNC end
+    local before = R.invokeCount()
+    L.SpamRedeem(true)
+    for _ = 1, 12 do H.pump(4000, H.virtualNow() + 0.4) end
     H.pump(20000)
 
-    -- and the notifier is handed back intact when spam ends
+    check("spam sends nothing to the server", R.invokeCount() - before == 0,
+        (R.invokeCount() - before) .. " redeems")
+    check("spam draws the red line", (L.SpamShown or 0) > 0,
+        tostring(L.SpamShown) .. " lines")
+
+    heard = {}
+    if NC then NC:Notify("Please wait before trying to redeem another Code", 5, nil, "Top") end
+    local leaked, red = 0, 0
+    for _, m in ipairs(heard) do
+        if m:lower():find("please wait", 1, true) then leaked += 1 end
+        if m:find("Invalid Code", 1, true) then red += 1 end
+    end
+    check("rate-limit notice never reaches the screen", leaked == 0, leaked .. " leaked")
+    check("it is replaced by the red line", red >= 1, red .. " red lines")
+
+    -- a real code landing switches it off by itself
+    notifyRemote.OnClientEvent:FireAll("SPAMSTOPCODE", 5.5, nil, "Top")
+    for _ = 1, 10 do H.pump(4000, H.virtualNow() + 0.2) end
+    H.pump(40000)
+    check("a real redeem turns spam off", L.SpamOn == false,
+        "SpamOn=" .. tostring(L.SpamOn))
+
+    pcall(L.SpamRedeem, false); H.pump(20000)
+    if NC and restoreNC then NC.Notify = restoreNC end
     check("notifier restored after spam", L.FakeOn == false and L.SpamOn == false,
         ("FakeOn=%s SpamOn=%s"):format(tostring(L.FakeOn), tostring(L.SpamOn)))
 end
