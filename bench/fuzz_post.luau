@@ -328,53 +328,6 @@ do
 end
 
 
--- 13. Spam Redeem is purely visual: no remote traffic at all
-do
-    pcall(L.Fastest); H.pump(20000)
-    local NC = genvTable.__LumNotifyNC
-    if type(NC) ~= "table" then
-        local ctrl = RepS:FindFirstChild("Controllers")
-        local mod = ctrl and ctrl:FindFirstChild("NotificationController")
-        NC = mod and require(mod) or nil
-        genvTable.__LumNotifyNC = NC
-    end
-    local restoreNC = NC and NC.Notify
-    local heard = {}
-    if NC then NC.Notify = function(self, msg) heard[#heard + 1] = tostring(msg) end end
-
-    local before = R.invokeCount()
-    L.SpamRedeem(true)
-    for _ = 1, 12 do H.pump(4000, H.virtualNow() + 0.4) end
-    H.pump(20000)
-
-    check("spam sends nothing to the server", R.invokeCount() - before == 0,
-        (R.invokeCount() - before) .. " redeems")
-    check("spam draws the red line", (L.SpamShown or 0) > 0,
-        tostring(L.SpamShown) .. " lines")
-
-    heard = {}
-    if NC then NC:Notify("Please wait before trying to redeem another Code", 5, nil, "Top") end
-    local leaked, red = 0, 0
-    for _, m in ipairs(heard) do
-        if m:lower():find("please wait", 1, true) then leaked += 1 end
-        if m:find("Invalid Code", 1, true) then red += 1 end
-    end
-    check("rate-limit notice never reaches the screen", leaked == 0, leaked .. " leaked")
-    check("it is replaced by the red line", red >= 1, red .. " red lines")
-
-    -- a real code landing switches it off by itself
-    notifyRemote.OnClientEvent:FireAll("SPAMSTOPCODE", 5.5, nil, "Top")
-    for _ = 1, 10 do H.pump(4000, H.virtualNow() + 0.2) end
-    H.pump(40000)
-    check("a real redeem turns spam off", L.SpamOn == false,
-        "SpamOn=" .. tostring(L.SpamOn))
-
-    pcall(L.SpamRedeem, false); H.pump(20000)
-    if NC and restoreNC then NC.Notify = restoreNC end
-    check("notifier restored after spam", L.FakeOn == false and L.SpamOn == false,
-        ("FakeOn=%s SpamOn=%s"):format(tostring(L.FakeOn), tostring(L.SpamOn)))
-end
-
 print("")
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end

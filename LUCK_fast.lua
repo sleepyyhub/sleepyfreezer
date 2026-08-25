@@ -981,8 +981,6 @@ local function postRedeemBody(t0, src, code, ok, reply, timing)
     if L.ReportRedeem then L.ReportRedeem(ok, reply, timing) end
     if L.RefreshPreview then L.RefreshPreview() end
     if L.AutoReport then pcall(L.AutoReport) end
-    -- A code actually landed, so the visual spam has served its purpose.
-    if ok == true and L.SpamOn and L.SpamRedeem then pcall(L.SpamRedeem, false) end
     task.delay(1.25, function()
         if L.RefreshPreview then L.RefreshPreview() end
     end)
@@ -3154,76 +3152,6 @@ L.Fake = function(on)
     return true, "on"
 end
 
--- Spam Redeem.
---
--- Hammers one code until the server takes it, and while that is happening the game's
--- "Please wait before trying to redeem another Code" notices are rewritten into the
--- game's own red invalid-code line. One rewrite does both halves of the job: the rate
--- limit chatter disappears, and what you see instead is red "Invalid Code" over and
--- over, drawn by the game's own notifier so it looks exactly like the real thing.
---
--- It stops the moment a redeem comes back successful, and puts the notifier back.
-L.SpamOn       = false
-L.SpamInterval = 0.35          -- gap between lines
-L.SpamShown    = 0
-L.SpamMax      = 0             -- 0 = until a real code lands or you stop it
-L.SpamRedText  = '<font color="#ff5f6d">Invalid Code</font>'
-
--- Purely visual. It does not call the redeem remote, does not touch the server, and
--- cannot be rate limited -- there is nothing to rate limit. All it does is draw the
--- game's own red invalid-code line on a loop, and swallow the real "Please wait before
--- trying to redeem another Code" notices while it runs.
---
--- It stops on its own when a redeem actually succeeds, which is the normal detect path
--- doing its job in the background, not anything this loop did.
-L.SpamRedeem = function(on)
-    on = on ~= false
-
-    if not on then
-        if not L.SpamOn then return false, "already off" end
-        L.SpamOn = false
-        pcall(L.Fake, false)
-        if L.OnSpamChanged then pcall(L.OnSpamChanged, false) end
-        return false, "stopped"
-    end
-    if L.SpamOn then return true, "already running" end
-
-    L.SpamOn, L.SpamShown = true, 0
-
-    -- Fake's wrapper is the mechanism, pointed at the red line: the rate-limit notice
-    -- gets rewritten rather than shown. FakeOn stays false so the burst SENDER is not
-    -- involved -- nothing here goes near the remote.
-    local restoreText = L.FakeText
-    L.FakeText = L.SpamRedText
-    pcall(L.Fake, true)
-    L.FakeOn = false
-    if L.SyncFast then L.SyncFast() end
-
-    if L.OnSpamChanged then pcall(L.OnSpamChanged, true) end
-
-    task.spawn(function()
-        local G = (getgenv and getgenv()) or shared
-        while L.SpamOn do
-            local NC, real = G.__LUCKFakeNC, G.__LUCKFakeReal
-            if NC and type(real) == "function" then
-                -- Drawn through the game's own notifier so it looks like the real
-                -- thing. Placement is nil, not "Top": a Top notification is what a code
-                -- announcement looks like, and our own detector would try to redeem it.
-                pcall(real, NC, L.SpamRedText, 4, nil, nil)
-                L.SpamShown += 1
-            end
-            local cap = tonumber(L.SpamMax) or 0
-            if cap > 0 and L.SpamShown >= cap then break end
-            task.wait(L.SpamInterval)
-        end
-        L.SpamOn = false
-        L.FakeText = restoreText
-        pcall(L.Fake, false)
-        if L.OnSpamChanged then pcall(L.OnSpamChanged, false) end
-    end)
-    return true, "spamming"
-end
-
 L.FakePrint = function(on)
     local ok, why = L.Fake(on)
     print(("[LUCK] fake %s   ·   handler %s   ·   %s redeems per announcement")
@@ -3534,7 +3462,7 @@ local uiOK, uiErr = pcall(function()
     rev(CodeBox, "BackgroundTransparency", 0)
     rev(CodeBox, "TextTransparency", 0)
     rev(CodeStroke, "Transparency", 0.5)
-    local RedeemBtn = New("TextButton", {Size = UDim2.new(1, -166, 0, 30),
+    local RedeemBtn = New("TextButton", {Size = UDim2.new(1, -96, 0, 30),
         Position = UDim2.new(0, 10, 0, 40), BackgroundColor3 = T.ACCENT,
         BackgroundTransparency = 1, Text = "REDEEM", TextColor3 = T.VOID,
         Font = Enum.Font.GothamBold, TextSize = 12, TextTransparency = 1,
@@ -3547,37 +3475,6 @@ local uiOK, uiErr = pcall(function()
         Rotation = 90, Parent = RedeemBtn})
     rev(RedeemBtn, "BackgroundTransparency", 0)
     rev(RedeemBtn, "TextTransparency", 0)
-
-    local SpamBtn = New("TextButton", {Size = UDim2.new(0, 64, 0, 30),
-        Position = UDim2.new(1, -146, 0, 40), BackgroundColor3 = T.RAISED,
-        BackgroundTransparency = 1, Text = "SPAM", TextColor3 = T.RED,
-        Font = Enum.Font.GothamBold, TextSize = 11, TextTransparency = 1,
-        AutoButtonColor = false, Parent = C_Main})
-    Corner(SpamBtn, 9)
-    local SpamStroke = Stroke(SpamBtn, T.RED, 1)
-    rev(SpamBtn, "BackgroundTransparency", 0)
-    rev(SpamBtn, "TextTransparency", 0)
-    rev(SpamStroke, "Transparency", 0.45)
-
-    local function paintSpam(on)
-        SpamBtn.Text = on and "STOP" or "SPAM"
-        tw(SpamBtn, 0.15, {BackgroundColor3 = on and T.RED or T.RAISED,
-                           TextColor3 = on and T.VOID or T.RED})
-        tw(SpamStroke, 0.15, {Color = on and T.RED or T.RED,
-                              Transparency = on and 0.15 or 0.45})
-    end
-    L.OnSpamChanged = function(on) pcall(paintSpam, on) end
-
-    SpamBtn.MouseButton1Click:Connect(function()
-        if L.SpamOn then
-            L.SpamRedeem(false)
-            L.Notify(("spam off  ·  %d lines shown"):format(L.SpamShown or 0), T.MUTED)
-            return
-        end
-        L.SpamRedeem(true)
-        L.Notify("spam on  ·  visual only, nothing is being sent", T.RED)
-    end)
-    hover(SpamBtn, T.RAISED, SpamStroke)
 
     local WarmBtn = New("TextButton", {Size = UDim2.new(0, 66, 0, 30),
         Position = UDim2.new(1, -76, 0, 40), BackgroundColor3 = T.RAISED,
