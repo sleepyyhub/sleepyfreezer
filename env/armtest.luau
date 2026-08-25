@@ -4,9 +4,11 @@ local Env = require("./roblox")
 local Place = require("./place")
 local Sandbox = require("./sandbox")
 local Input = require("./_source")
+local LOCK_DEFERRED = (Input.scenario == "armdeferred")
 
 local errors = {}
 Env.onError = function(e) errors[#errors + 1] = tostring(e) end
+if LOCK_DEFERRED then Env.CFG.lockDeferred = true; Env.CFG.signalBehavior = "Deferred" end
 local G, genv = Sandbox.build()
 local chunk = loadstring(Input.source, "@LUCK")
 setfenv(chunk, G)
@@ -31,7 +33,7 @@ for i = 1, 3 do
 end
 
 local armedAt, detectAt, readyAt, notifyAt
-local detectSrc, notifySrc
+local detectSrc, notifySrc, poleAt
 for _ = 1, 4000 do
 	Env.run(0.02)
 	local L = genv.LUCK
@@ -40,6 +42,7 @@ for _ = 1, 4000 do
 			detectAt = Env.now()
 			detectSrc = L.NotifyRemoteSource
 		end
+		if not poleAt and L.PoleOn then poleAt = Env.now() end
 		if not notifyAt and L.NotifyRemote then
 			notifyAt = Env.now()
 			notifySrc = L.NotifyRemoteSource
@@ -68,6 +71,11 @@ print(string.format("    real cpu to get there    %7.3f s", Env.realBurned()))
 for _, line in ipairs(probe) do print("    " .. line) end
 if L then
 	print(string.format("    discoverPass errors      %s", tostring(L.DiscoverErrs or 0)))
+	local mine, total
+	if L.ConnIndex then mine, total = L.ConnIndex() end
+	print(string.format("    pole held                %s   (slot %s of %s)  at %s",
+		tostring(L.PoleOn), tostring(mine), tostring(total),
+		poleAt and string.format("%.3f s", poleAt - t0) or "never"))
 	if L.DiscoverErr then print("    last error: " .. tostring(L.DiscoverErr)) end
 end
 print("")

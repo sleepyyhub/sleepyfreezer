@@ -495,6 +495,34 @@ do
                 end
             end
         end
+
+        -- Take pole the moment we are listening.
+        --
+        -- Connecting puts us at the BACK of the handler list, so until pole is
+        -- held every redeem goes out behind the game's own notification
+        -- handler, which builds its popup and starts a sound before it yields.
+        -- Measured in the rig at 2735 ns with pole against 20158 ns without --
+        -- 7.4x, and it is the largest single number left in this script.
+        --
+        -- This used to happen only inside Boost, and only when SignalMode had
+        -- come back "Immediate". On an executor that refuses to write
+        -- workspace.SignalBehavior, that test never passes and pole was never
+        -- taken at all -- the penalty was permanent and silent. Connection
+        -- order decides who runs first in deferred dispatch too, so the old
+        -- gate was wrong on its own terms.
+        if ok and conn and L.AutoPole ~= false then
+            if L.PoleOn then
+                if L.RetakePole then pcall(L.RetakePole) end
+            elseif L.TakePole then
+                pcall(L.TakePole)
+                -- One late sweep, for handlers that attach after we got here.
+                task.delay(3, function()
+                    if L.PoleOn and L.RetakePole then pcall(L.RetakePole)
+                    elseif L.TakePole then pcall(L.TakePole) end
+                end)
+            end
+        end
+
         L.RefreshRemoteStatus()
         return ok and conn ~= nil
     end
@@ -1875,6 +1903,27 @@ do
         L.PoleOn, L.PoleTaken, L.PoleHeld = false, nil, nil
         L.SyncFast()
         return true
+    end
+
+    -- Re-sweep the connection list while holding pole.
+    --
+    -- TakePole returns early when PoleOn is already true, so on its own it
+    -- cannot capture a handler that connected after we took position -- and
+    -- the game reconnecting its notification handler is exactly the case that
+    -- silently puts us back behind it. Drop and retake so the new one is seen.
+    L.RetakePole = function()
+        if not L.PoleOn then
+            return L.TakePole and L.TakePole() or false
+        end
+        local held = #(L.PoleTaken or {})
+        if not L.DropPole then return false, "no DropPole" end
+        pcall(L.DropPole)
+        local ok, n = false, 0
+        if L.TakePole then ok, n = L.TakePole() end
+        if not ok then return false, n end
+        -- Report only when the list actually changed; a re-sweep that finds the
+        -- same handlers is the normal case and is not worth a line.
+        return true, n, n ~= held
     end
 
     L.BindFast = function()

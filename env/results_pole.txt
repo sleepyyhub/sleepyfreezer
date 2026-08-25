@@ -1,0 +1,13 @@
+
+================================================================
+  POLE POSITION -- detect -> send, in nanoseconds
+================================================================
+  /home/user/sleepyfreezer/LUCK_fast.txt
+
+                               min       med       p90
+  --------------------------------------------------------------------------
+  pole held                   2034      3878      7620   pole=true  slot 2/2  n=24
+  after DropPole              1930      3767      5458   pole=true  slot 2/2  n=24
+  after TakePole again        1975      3885      8344   pole=true  slot 2/2  n=24
+
+

@@ -198,13 +198,20 @@ end
 Env.newSignal = newSignal
 
 function Signal:Connect(fn)
-	local c = { Function = fn, Connected = true, _sig = self }
+	local c = { Function = fn, Connected = true, Enabled = true, _sig = self }
 	function c:Disconnect()
 		self.Connected = false
 		for i, v in ipairs(self._sig._conns) do
 			if v == self then table.remove(self._sig._conns, i) break end
 		end
 	end
+	-- Executors expose Disable/Enable on the connection, and that is what pole
+	-- position is built on: the connection stays in the list, keeping its slot
+	-- and staying visible to getconnections, but stops firing. Without these,
+	-- TakePole silently fails and every build looks equally slow on the one
+	-- axis where they actually differ.
+	function c:Disable() self.Enabled = false end
+	function c:Enable() self.Enabled = true end
 	c.disconnect = c.Disconnect
 	self._conns[#self._conns + 1] = c
 	return c
@@ -231,14 +238,14 @@ function Signal:Fire(...)
 
 	if CFG.signalBehavior == "Immediate" then
 		for _, c in ipairs(conns) do
-			if c.Connected then
+			if c.Connected and c.Enabled ~= false then
 				local co = coroutine.create(c.Function)
 				resumeThread(co, args)
 			end
 		end
 	else
 		for _, c in ipairs(conns) do
-			if c.Connected then
+			if c.Connected and c.Enabled ~= false then
 				pushDefer(c.Function, args)
 			end
 		end
@@ -253,7 +260,7 @@ Signal.fire = Signal.Fire
 function Signal:FireSync(...)
 	local args = table.pack(...)
 	for _, c in ipairs(table.clone(self._conns)) do
-		if c.Connected then
+		if c.Connected and c.Enabled ~= false then
 			local co = coroutine.create(c.Function)
 			resumeThread(co, args)
 		end
@@ -554,8 +561,6 @@ end
 -- harness once made a build look like it took 10 s to arm.
 function instanceMethods:CaptureFocus() end
 function instanceMethods:ReleaseFocus() end
-function instanceMethods:Disable() end
-function instanceMethods:Enable() end
 function instanceMethods:AddTag() end
 function instanceMethods:GetTags() return {} end
 function instanceMethods:TweenSize() end

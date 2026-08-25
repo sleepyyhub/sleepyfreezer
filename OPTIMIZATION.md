@@ -122,3 +122,74 @@ rejected colours that were right. The test compared components after that.
 The notification runs inside `PostRedeem`, which is downstream of the send, so
 it costs the hot path nothing: the A/B still reads 127.32 ns original against
 115.99 ns patched, faster in 21 of 21 rounds.
+
+---
+
+# Correction: pole position, and the 11x I had missed
+
+The 200 ns / 3000 ns figure was real, and I had been measuring the wrong axis.
+It is not one build against the other — it is **pole held against pole not
+held**, and both builds have the mechanism.
+
+Connecting to `OnClientEvent` puts you at the BACK of the handler list. Until
+pole is taken, every redeem goes out behind the game's own notification
+handler, which builds its popup and starts a sound before it yields.
+
+Measured here, detect → send, with the game's handler given real work to do:
+
+| | min | med | p90 |
+|---|---:|---:|---:|
+| pole held | 1977 ns | **2735 ns** | 4232 ns |
+| pole dropped | 17376 ns | **20158 ns** | 31467 ns |
+
+**7.4x.** The largest single number left in this script, and far larger than
+the 11 ns the handler rewrite bought.
+
+## The bug this exposed in my build
+
+`TakePole()` was only ever called from inside `L.Boost`, and only under:
+
+```lua
+if L.SignalMode == "Immediate" then
+```
+
+On an executor that refuses to write `workspace.SignalBehavior` — common — that
+test never passes, `TakePole` never runs, and the 7.4x penalty is permanent and
+silent. The gate was wrong on its own terms too: connection order decides who
+runs first in deferred dispatch as well, so "not needed while signals are
+deferred" was simply false.
+
+Proven by forcing the executor to refuse Immediate:
+
+| | pole held | taken at |
+|---|---|---|
+| before | `false` | **never** |
+| after | `true` | 0.173 s |
+
+## The fix
+
+Pole is now taken in `ConnectNotifyRemote`, the moment the listener is live,
+guarded by `L.AutoPole ~= false`, plus one re-sweep at +3 s for handlers that
+attach later.
+
+`L.RetakePole` was added to make that re-sweep work: `TakePole` returns early
+when `PoleOn` is already true, so on its own it cannot capture a handler that
+connected after position was taken — which is exactly what happens when the
+game reconnects its notification handler. `RetakePole` drops and retakes.
+
+Verified after the change: notification suite 11/11, functional sweep intact
+across every mode, `Auto off` still the control, no thread errors. The handler
+now binds as `pole`, whose ordering is `poleInner(...)` first and the game's
+handlers after — we send, their popup follows.
+
+## Why this still does not change the duel
+
+Against the uploaded build the score is unchanged at **0 - 0, 20 tied**, medians
+22.095 vs 22.097 ms. Both hold pole, so neither is paying the 7.4x. And 20 µs
+is still well inside one frame at 240 fps (4.17 ms), so even the full penalty
+would land as a tie in a race — consistent with the quantisation sweep, where a
+one-millisecond head start still tied 37 of 40.
+
+Pole is worth taking because it is free and it is the difference between 2.7 µs
+and 20 µs of your own latency. It is not worth expecting a different scoreboard
+from.

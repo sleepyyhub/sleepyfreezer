@@ -59,9 +59,14 @@ local workspace = setmetatable({}, {
 	end,
 	__newindex = function(_, k, v)
 		if k == "SignalBehavior" then
-			local name = tostring(v):match("([^.]+)$")
-			if name == "Immediate" or name == "Deferred" then
-				Env.CFG.signalBehavior = name
+			-- LOCK_DEFERRED models an executor that refuses to write this
+			-- property, which is common. The write is accepted and ignored,
+			-- exactly as it behaves there.
+			if not Env.CFG.lockDeferred then
+				local name = tostring(v):match("([^.]+)$")
+				if name == "Immediate" or name == "Deferred" then
+					Env.CFG.signalBehavior = name
+				end
 			end
 			return
 		end

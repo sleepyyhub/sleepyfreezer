@@ -60,7 +60,8 @@ case "$SCENARIO" in
   yourcase) exec ./luau yourcase.luau ;;
   notify) exec ./luau notifytest.luau ;;
   burst) exec ./luau bursttest.luau ;;
-  arm) exec ./luau armtest.luau ;;
+  arm|armdeferred) exec ./luau armtest.luau ;;
+  pole) exec ./luau poletest.luau ;;
   duelrun|duelcold) exec ./luau duelrun.luau ;;
 esac
 exec ./luau run.luau
