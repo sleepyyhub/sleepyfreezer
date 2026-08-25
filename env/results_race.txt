@@ -15,27 +15,49 @@
   rival's frames land  0 ms before yours  win   0  tie  40  lose   0   median gap   +0.01 ms
   rival's frames land  1 ms before yours  win   3  tie   0  lose  37   median gap   +1.01 ms
   rival's frames land  2 ms before yours  win   5  tie   0  lose  35   median gap   +2.00 ms
-  rival's frames land  4 ms before yours  win   9  tie   0  lose  31   median gap   +4.00 ms
-  rival's frames land  8 ms before yours  win  20  tie   0  lose  20   median gap   -8.65 ms
-  rival's frames land 12 ms before yours  win  29  tie   0  lose  11   median gap   -4.66 ms
-  rival's frames land 16 ms before yours  win  39  tie   0  lose   1   median gap   -0.66 ms
+  rival's frames land  4 ms before yours  win   9  tie   0  lose  31   median gap   +4.01 ms
+  rival's frames land  8 ms before yours  win  20  tie   0  lose  20   median gap   -8.59 ms
+  rival's frames land 12 ms before yours  win  29  tie   0  lose  11   median gap   -4.65 ms
+  rival's frames land 16 ms before yours  win  39  tie   0  lose   1   median gap   -0.65 ms
 
-  hypothesis 2: the rival reads a source that carries the code
-  earlier than the announcement does. Same fps, ping and frame offset;
-  it simply learns the code sooner. This is what "is text detection
-  the fastest?" actually turns on.
+  hypothesis 2: some OTHER channel carries the code before the notify
+  remote fires, and the rival reads that one. LUCK is already on the
+  notify remote's OnClientEvent, which is as early as that remote can
+  be observed -- so this is about WHICH channel, not how it is read.
 
   how much earlier                        result
   ----------------------------------------------------------------------------
-  rival's source is  1 ms ahead           win   0  tie  37  lose   3   median gap   +0.01 ms
+  rival's source is  1 ms ahead           win   0  tie  36  lose   4   median gap   +0.02 ms
   rival's source is  5 ms ahead           win   0  tie  28  lose  12   median gap   +0.01 ms
-  rival's source is 17 ms ahead           win   0  tie   0  lose  40   median gap  +16.67 ms
+  rival's source is 17 ms ahead           win   0  tie   0  lose  40   median gap  +16.68 ms
   rival's source is 50 ms ahead           win   0  tie   0  lose  40   median gap  +50.01 ms
+
+  the quantisation test: does a head start of X actually buy anything?
+  swept from one microsecond to well past a frame. if latency were
+  continuous this would be a slope. the outgoing replication step is a
+  rendezvous -- everything queued before it leaves at the same instant --
+  so it should be a staircase with exactly one step in it.
+
+  rival's head start                      result
+  ----------------------------------------------------------------------------
+      1000 ns ahead                       win   0  tie  40  lose   0   median gap   +0.01 ms
+     10000 ns ahead                       win   0  tie  39  lose   1   median gap   +0.01 ms
+    100000 ns ahead                       win   0  tie  38  lose   2   median gap   +0.02 ms
+    500000 ns ahead                       win   0  tie  36  lose   4   median gap   +0.01 ms
+         1 ms ahead                       win   0  tie  36  lose   4   median gap   +0.02 ms
+         2 ms ahead                       win   0  tie  35  lose   5   median gap   +0.01 ms
+         4 ms ahead                       win   0  tie  29  lose  11   median gap   +0.02 ms
+         8 ms ahead                       win   0  tie  21  lose  19   median gap   +0.02 ms
+        12 ms ahead                       win   0  tie  11  lose  29   median gap  +16.67 ms
+        16 ms ahead                       win   0  tie   1  lose  39   median gap  +16.67 ms
+        17 ms ahead                       win   0  tie   0  lose  40   median gap  +16.67 ms
+        20 ms ahead                       win   0  tie   0  lose  40   median gap  +16.68 ms
+        34 ms ahead                       win   0  tie   0  lose  40   median gap  +33.34 ms
 
   hypothesis 3: the rival does not react at all -- it pre-fires.
   Nothing about your reaction time matters against this.
 
-  rival pre-fires every frame             win   0  tie   0  lose  20   median gap  +27.50 ms
+  rival pre-fires every frame             win   0  tie   0  lose  20   median gap  +27.54 ms
 
   ----------------------------------------------------------------------------
   None of this identifies which case you are actually in. What it

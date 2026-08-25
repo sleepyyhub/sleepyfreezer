@@ -206,6 +206,44 @@ Note the shape: a head start **under one frame mostly ties**, because both
 packets still catch the same replication step. Over one frame it loses every
 single time. Detection advantage is quantised to frames.
 
+### The quantisation test — why none of this is in nanoseconds
+
+The script's own cost genuinely is nanoseconds: 117 ns. The question is whether
+those nanoseconds ever reach the wire. Swept head start from one microsecond to
+two frames, same everything else:
+
+| rival's head start | win | tie | lose | median gap |
+|---|---:|---:|---:|---:|
+| 1 000 ns | 0 | 40 | 0 | +0.01 ms |
+| 10 000 ns | 0 | 38 | 2 | +0.01 ms |
+| 100 000 ns | 0 | 38 | 2 | +0.01 ms |
+| 1 ms | 0 | 37 | 3 | +0.01 ms |
+| 2 ms | 0 | 35 | 5 | +0.01 ms |
+| 4 ms | 0 | 30 | 10 | +0.01 ms |
+| 8 ms | 0 | 20 | 20 | +0.02 ms |
+| 12 ms | 0 | 11 | 29 | +16.67 ms |
+| 16 ms | 0 | 1 | 39 | +16.67 ms |
+| 17 ms | 0 | 0 | 40 | +16.67 ms |
+| 34 ms | 0 | 0 | 40 | +33.34 ms |
+
+Read the gap column: **0.01, 16.67, or 33.34 ms. Nothing in between, ever.**
+
+The outgoing replication step is a rendezvous — everything queued before it
+leaves at the same instant. So a head start does not shorten your latency, it
+only changes the odds that it straddles a frame boundary. A 1 ms advantage wins
+3 races in 40, and when it wins it wins by a **full frame**, not by 1 ms.
+
+That is why the pipeline is measured in milliseconds while the script is
+measured in nanoseconds. The two numbers live on opposite sides of the flush:
+
+| | ns | vs the script |
+|---|---:|---:|
+| LUCK's handler | 117 | 1× |
+| one frame at 60 fps | 16 670 000 | 142 000× |
+| one-way wire at 40 ms ping | 20 000 000 | 171 000× |
+
+There is no arrangement of Luau that turns a 142 000× gap into an advantage.
+
 ### Hypothesis 3 — the rival pre-fires instead of reacting
 
 Loses 20 of 20, median 27.5 ms behind. Reaction time is irrelevant against

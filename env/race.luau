@@ -208,6 +208,28 @@ for _, lead in ipairs({ 1, 5, 17, 50 }) do
 end
 
 print("")
+print("  the quantisation test: does a head start of X actually buy anything?")
+print("  swept from one microsecond to well past a frame. if latency were")
+print("  continuous this would be a slope. the outgoing replication step is a")
+print("  rendezvous -- everything queued before it leaves at the same instant --")
+print("  so it should be a staircase with exactly one step in it.")
+print("")
+print(string.format("  %-38s  %s", "rival's head start", "result"))
+print("  " .. string.rep("-", 76))
+
+for _, lead in ipairs({ 0.001, 0.01, 0.1, 0.5, 1, 2, 4, 8, 12, 16, 17, 20, 34 }) do
+	Env.setRival({ fps = 60, phase = 0, handler = rivalReactive })
+	rivalPending = rivalReactive
+	local label
+	if lead < 1 then
+		label = string.format("%8.0f ns ahead", lead * 1e6)
+	else
+		label = string.format("%8.0f ms ahead", lead)
+	end
+	raceSet(label, { rivalLeadMs = lead }, 40)
+end
+
+print("")
 print("  hypothesis 3: the rival does not react at all -- it pre-fires.")
 print("  Nothing about your reaction time matters against this.")
 print("")
