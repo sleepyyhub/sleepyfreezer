@@ -271,6 +271,15 @@ do
             "got " .. tostring(heard))
     end
 
+    -- a rebind must not silently uninstall Fake's rewrite
+    if NC then
+        heard = nil
+        L.SyncFast(); pcall(L.BindFast); H.pump(20000)
+        NC:Notify("Please wait before trying to redeem another Code", 5, nil, "Top")
+        check("a rebind does not uninstall the rewrite", heard == L.FakeText,
+            "got " .. tostring(heard))
+    end
+
     pcall(L.Fake, false); H.pump(20000)
     if NC then
         heard = nil

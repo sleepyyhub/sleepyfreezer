@@ -1,55 +1,36 @@
-LUCK.txt (uploaded, 3101 lines)  vs  LUCK_fast.lua (current, 4082 lines)
+LUCK_fast_2.txt (uploaded)  vs  LUCK_fast.lua (current)
 
-Same rig, same method: the announcement is dispatched to EVERY connected
-handler in connection order, exactly as a real client does it, and timed
-from the start of that dispatch to our invoke. Anything that runs ahead of
-us is therefore counted -- which is the whole point.
+The uploaded file is BYTE-IDENTICAL to the original LUCK_fast.txt from the
+start of this session. Same 3434 lines, no diff at all.
 
-Both builds forced to the same starting config first: AutoOn true, remote
-route, threshold 1, no guess. The uploaded build ships AutoOn = FALSE
-(SETTINGS_DEFAULTS line 50), so out of the box it binds `idle` and never
-sends at all until Auto Redeem is switched on. That is a default, not a
-speed difference, and it was corrected before measuring.
+Measured the same way both times: the announcement is dispatched to every
+connected handler in connection order, exactly as a client does, and timed from
+the start of that dispatch to our invoke. Both builds forced to the same config
+first (auto on, remote route, threshold 1).
 
-detect -> send, amortised over 4000 announcements, 3 runs
---------------------------------------------------------------------
-  uploaded   4604    4542    4157   ns      mean ~4434
-  current     873     864     672   ns      mean ~ 803
+==========================================================================
+A. SignalBehavior WRITABLE  --  what my rig used to allow, and a live
+   client does NOT. Both builds end up holding pole here.
+==========================================================================
+   uploaded   324   306   260 ns
+   current    304   294   253 ns
+   -> a wash. ~4% apart, inside the noise of this machine.
 
-  current is roughly 5.5x faster
+==========================================================================
+B. SignalBehavior LOCKED  --  what a live client actually does. The place
+   owns that property; a client cannot write it, so it stays Deferred.
+==========================================================================
+   uploaded   3751 ns   (4000 of 4000 announcements produced a send)
+   current    265 ns   (4000 of 4000 announcements produced a send)
+   uploaded   3202 ns   (4000 of 4000 announcements produced a send)
+   current    246 ns   (4000 of 4000 announcements produced a send)
 
-WHERE THE GAP COMES FROM
-  The uploaded build has no pole: its handler is connected after the
-  game's own notification handler, so that handler runs first on every
-  announcement. Measured separately in this rig at ~3200 ns. Subtract it
-  from the uploaded figure and you land at ~1200 ns, which is the same
-  neighbourhood as the current build -- so the gap is almost entirely
-  "who runs first", not the handler body.
+   -> about 11x. The uploaded build reports 'pole n/a': it never takes pole.
+      Its Boost only takes pole when it reads SignalBehavior as Immediate,
+      and on a live client it never will. So the game's own notification
+      handler -- 3200 ns in this rig, more in the real game where it builds
+      GUI and plays a sound -- runs in FRONT of its invoke, every time.
 
-  The uploaded build also has no soloRaw split, so it binds `solo`, which
-  carries the fastTime/fastRaw test on every packet instead of answering
-  it once at bind time.
-
-CORRECTNESS, same run
---------------------------------------------------------------------
-  one code announced 20x        uploaded  20 redeems     current  1
-  30 distinct codes             uploaded  30 redeems     current  30
-  test sender, one action       uploaded  not exposed    current  1 redeem,
-                                                                  1 popup
-
-  The uploaded build writes sent[code] AFTER the invoke, and InvokeServer
-  yields until the server answers -- so the whole round trip has no record
-  that the code already went out. That is the repeat-redeeming, and it is
-  reproducible here at 20 out of 20.
-
-NOT REPORTED
-  A "current build, pole dropped" row was measured but is not trustworthy
-  in this rig: DropPole triggers a rebind, and the rebind re-takes pole
-  automatically, so the row does not measure what its label claims. Left
-  out rather than presented as a result.
-
-CAVEATS
-  Container CPU, not the M3 Air -- ratios carry, absolutes do not.
-  InvokeServer is a Lua stub here; the real one is a C call that
-  serialises and queues a packet. Identical in both builds.
-  Lua work only: says nothing about the wire or the network send step.
+==========================================================================
+C. Behaviour, locked run
+==========================================================================

@@ -165,8 +165,28 @@ game = {
     GetService = function(_, n) return SERVICES[n] or svc(n) end,
 }
 
-workspace = {CurrentCamera = {ViewportSize = {X = 1440, Y = 900}},
-             SignalBehavior = Enum.SignalBehavior.Deferred}
+-- SignalBehavior belongs to the place. A live client cannot write it, so the stub
+-- swallows the write and keeps reporting whatever the place chose. LOCK_SIGNALS picks
+-- which world we are testing.
+do
+    local realBehaviour = LOCK_SIGNALS and Enum.SignalBehavior.Deferred
+                                       or Enum.SignalBehavior.Deferred
+    local camera = {ViewportSize = {X = 1440, Y = 900}}
+    workspace = setmetatable({}, {
+        __index = function(_, k)
+            if k == "CurrentCamera" then return camera end
+            if k == "SignalBehavior" then return realBehaviour end
+            return nil
+        end,
+        __newindex = function(_, k, v)
+            if k == "SignalBehavior" then
+                if not LOCK_SIGNALS then realBehaviour = v end
+                return                       -- locked: silently ignored, like live
+            end
+            rawset(workspace, k, v)
+        end,
+    })
+end
 
 settings = function()
     return {Rendering = {QualityLevel = Enum.QualityLevel.Automatic}}

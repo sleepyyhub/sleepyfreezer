@@ -461,8 +461,16 @@ do
             if L.DetectMode == "remote" then
                 L.NotifyRemoteName = "remote"
                 local NC = G.__LumNotifyNC
-                if NC and type(G.__LumNotifyReal) == "function" then
+                -- Only unhook if what is installed is still OUR detection wrapper.
+                -- This used to assign the original back unconditionally, so any
+                -- rebind -- and a rebind happens whenever the bound handler changes,
+                -- including toggling Fake -- wiped out whatever else was wrapping
+                -- Notify at the time. Fake's rewrite was being uninstalled behind
+                -- its own back.
+                if NC and type(G.__LumNotifyReal) == "function"
+                    and NC.Notify == G.__LumNotifyWrap then
                     pcall(function() NC.Notify = G.__LumNotifyReal end)
+                    G.__LumNotifyWrap = nil
                     L.NotifyHooked = false
                 end
             end
@@ -1767,7 +1775,13 @@ do
         if L.PoleOn and L.Handlers and L.Handlers.pole then
             poleInner = want
             if L.EagerRedispatch == false and L.Handlers.poleLate then
-                want, name = L.Handlers.poleLate, "poleLate"
+                -- The fused single-frame version, when the configuration is exactly
+                -- the one it was written for. Otherwise the generic composition.
+                if want == soloRaw and L.Handlers.poleLateRaw then
+                    want, name = L.Handlers.poleLateRaw, "poleLateRaw"
+                else
+                    want, name = L.Handlers.poleLate, "poleLate"
+                end
             else
                 want, name = L.Handlers.pole, "pole"
             end
@@ -1977,6 +1991,30 @@ do
         rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
         defer(drainRedispatch)
     end
+    -- The whole default path in one function.
+    --
+    -- poleLate tested `position`, then called poleInner, which is soloRaw, which tested
+    -- `position` again -- a redundant compare and a whole extra Lua call frame in front
+    -- of every single send, for no reason other than that the two were written as
+    -- separate layers. Composing them at bind time instead of at call time removes
+    -- both: one branch, one frame, straight into the invoke.
+    --
+    -- This is only bound when the configuration is exactly the common one (pole held,
+    -- late redispatch, raw, untimed, not Fake). Anything else falls back to the generic
+    -- wrapper-over-inner composition, which still works and is still correct.
+    local poleLateRaw = function(msg, dur, sound, position)
+        if position == "Top" then
+            local a, b = fastInvoke(fastRemote, msg)
+            sent[msg] = true
+            defer(tail, 0, 0, 0, msg, msg, true, a, b)
+            rdMsg, rdDur, rdSound, rdPos = msg, dur, sound, position
+            defer(drainRedispatch)
+            return
+        end
+        defer(redispatch, msg, dur, sound, position)
+        if L.OursPending then return side(msg) end
+    end
+
     -- Default off: the send stays at its floor. Turning it on hands the game's own
     -- handlers to the scheduler before our invoke so their popup is not held back by
     -- our round trip -- it costs about 360 ns on the send to save ~150 ms of visible
@@ -1998,6 +2036,7 @@ do
             local fn
             pcall(function() fn = c.Function end)
             if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate
+                and fn ~= poleLateRaw
                 and not (L.IsOurHandler and L.IsOurHandler(fn)) then
                 local okd = pcall(function() c:Disable() end)
                 if okd then
@@ -2013,6 +2052,7 @@ do
         L.PoleOn = true
         L.Handlers.pole = pole
         L.Handlers.poleLate = poleLate
+        L.Handlers.poleLateRaw = poleLateRaw
         L.SyncFast()
         return true, #taken
     end
@@ -2049,6 +2089,7 @@ do
             local fn
             pcall(function() fn = c.Function end)
             if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate
+                and fn ~= poleLateRaw
                 and not (L.IsOurHandler and L.IsOurHandler(fn)) then
                 local known = false
                 for i = 1, #taken do
@@ -2632,6 +2673,10 @@ do
             end
             return real(self, msg, dur, sound, position, ...)
         end
+        -- Remember OUR wrapper specifically. Restoring by "put the real one back"
+        -- is not safe: something else may have wrapped Notify since, and blindly
+        -- assigning the original over the top silently uninstalls it.
+        G.__LumNotifyWrap = NC.Notify
         L.NotifyHooked, L.GuiHooked, L.PacketHooked = true, true, true
         L.NotifyRemoteName = "notify"
         return true
