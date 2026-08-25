@@ -58,5 +58,6 @@ case "$SCENARIO" in
   race) exec ./luau race.luau ;;
   diag) exec ./luau diagtest.luau ;;
   yourcase) exec ./luau yourcase.luau ;;
+  notify) exec ./luau notifytest.luau ;;
 esac
 exec ./luau run.luau

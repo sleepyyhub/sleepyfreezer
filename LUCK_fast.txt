@@ -876,7 +876,46 @@ L.PostFragment = function(t0, src, code)
     if L.RefreshAuto then L.RefreshAuto() end
 end
 
+-- The remote's own answer, surfaced as a notification.
+--
+-- A fire-and-forget remote learns its result from a follow-up announcement,
+-- and claimOurs already puts that on screen. A RemoteFunction hands the answer
+-- straight back from the invoke, and that reply previously only reached the
+-- compact status toast -- so "Meowl spawned!" never showed up in the feed.
+-- This closes that path. ResultShown stops the two from doubling up.
+L.ResultNotifyOn = true
+L.ResultShown = nil
+L.ResultNotify = function(code, ok, reply)
+    if not L.ResultNotifyOn then return false end
+    if L.ResultShown ~= nil and L.ResultShown == code then
+        L.ResultShown = nil
+        return false      -- claimOurs already showed this one
+    end
+
+    local text = reply
+    if type(text) ~= "string" then
+        text = L.PayloadText and L.PayloadText(reply, 0) or nil
+    end
+    text = text and (L.Strip and L.Strip(text) or tostring(text)) or ""
+    -- "sent" is the placeholder for a fire-and-forget, not an answer
+    if text == "" or text:lower() == "sent" then return false end
+
+    local colour = (ok == true and T.GREEN)
+        or (ok == false and T.RED)
+        or T.ORANGE
+
+    local line = text
+    local codeStr = tostring(code or "")
+    if codeStr ~= "" and not text:upper():find(codeStr:upper(), 1, true) then
+        line = ("%s   ·   %s"):format(text, codeStr)
+    end
+    if L.Notify then L.Notify(line, colour) end
+    L.LastResultText = text
+    return true
+end
+
 L.PostRedeem = function(t0, src, code, ok, reply, timing)
+    if L.ResultNotify then L.ResultNotify(code, ok, reply) end
     if L.ToastResult then L.ToastResult(code, ok, reply) end
     L.LogHeard(t0, src, code)
     L.LastPreviewCode = code
@@ -1115,6 +1154,7 @@ do
         end
 
         L.Notify(clean, won and T.GREEN or T.ORANGE)
+        L.ResultShown = code   -- PostRedeem must not repeat this line
 
         if L.PostOursResult then L.PostOursResult(code, clean, won) end
         return true, won
@@ -2440,9 +2480,14 @@ L.ToastResult = function(code, ok, reply)
     local mark = ok == true and "+" or (ok == false and "x" or "?")
     local colour = ok == true and "#92ff67" or (ok == false and "#ff829b" or "#ffbe78")
     local tail = L.Strip and L.Strip(reply or "") or tostring(reply or "")
-    if #tail > 60 then tail = tail:sub(1, 60) end
-    local line = ("LUCK %s %s"):format(mark, tostring(code))
-    if tail ~= "" and tail ~= "sent" then line = line .. "  -  " .. tail end
+    if #tail > 120 then tail = tail:sub(1, 120) end
+    -- the result reads first; the code is the footnote, not the headline
+    local line
+    if tail ~= "" and tail ~= "sent" then
+        line = ("%s %s   ·   %s"):format(mark, tail, tostring(code))
+    else
+        line = ("LUCK %s %s"):format(mark, tostring(code))
+    end
     L.Toast(line, colour)
 end
 

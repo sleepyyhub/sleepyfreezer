@@ -1,0 +1,22 @@
+
+================================================================
+  RESULT NOTIFICATION TEST
+================================================================
+  handler=soloRaw  remoteDetect=true
+
+  the server answers a good code with: Meowl spawned!
+
+  PASS  prize reaches the feed                         "Meowl spawned!   ·   MEOWLCODE"
+  PASS  shown exactly once                             1 line(s)
+  PASS  code is carried alongside it                   Meowl spawned!   ·   MEOWLCODE
+  PASS  game-side popup leads with the prize           + Meowl spawned!   ·   MEOWLCODE
+  PASS  first return true  -> green                    rgb(146,255,103)
+  PASS  failure reply also reaches the feed            "Invalid code   ·   NOTACODE"
+  PASS  first return false -> red                      rgb(255,130,155)
+  PASS  "sent" placeholder is not shown                -
+  PASS  claimOurs marker suppresses the repeat         ResultNotify returned false
+  PASS  marker clears after use                        ResultShown = nil
+  PASS  next code still notifies                       ResultNotify returned true
+
+  11 passed, 0 failed
+

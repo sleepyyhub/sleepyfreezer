@@ -71,3 +71,54 @@ and it will not move a single race.
 
 The thing that does move races is the frame rate, because it changes the size
 of the step: 16.67 ms at 60 fps, 4.17 ms at 240.
+
+---
+
+# The remote's result as a notification
+
+The redeem RemoteFunction answers with two values. The second one is the
+message ("Meowl spawned!"); the first is the verdict.
+
+`L.ResultNotify(code, ok, reply)` puts that second value on screen and colours
+it by the first:
+
+| first return | colour |
+|---|---|
+| `true` | green — `T.GREEN` rgb(146,255,103) |
+| `false` | red — `T.RED` rgb(255,130,155) |
+| `nil` / no answer | amber — `T.ORANGE` |
+
+The message reads first and the code follows it as a footnote, in both LUCK's
+own feed and the game's notification popup:
+
+```
+» Meowl spawned!   ·   MEOWLCODE
+» Invalid code   ·   NOTACODE
+```
+
+Three details that were not free:
+
+- **A fire-and-forget remote has no reply.** It learns its result from a
+  follow-up announcement, which `claimOurs` already shows. `L.ResultShown`
+  marks that code so `PostRedeem` does not print the same line twice.
+- **`"sent"` is a placeholder, not an answer.** It is suppressed.
+- **A non-string reply** is run through `L.PayloadText` first, so a table
+  payload still yields its message.
+
+Turn it off with `LUCK.ResultNotifyOn = false`.
+
+## Verified
+
+`./run.sh LUCK_fast.txt notify` — the server is made to answer with real prize
+strings and both `L.Notify` and `L.Toast` are wrapped to capture what actually
+reaches the screen. 11 checks, all passing, including the colour mapping in
+both directions.
+
+The first version of that test failed the two colour checks while printing the
+correct colours: it guarded with `typeof(a) ~= "Color3"`, but `typeof` inside
+the test file is the host's, not the sandbox's, so it reports `"table"` and
+rejected colours that were right. The test compared components after that.
+
+The notification runs inside `PostRedeem`, which is downstream of the send, so
+it costs the hot path nothing: the A/B still reads 127.32 ns original against
+115.99 ns patched, faster in 21 of 21 rounds.
