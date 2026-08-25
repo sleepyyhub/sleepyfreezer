@@ -1,8 +1,14 @@
-STRESS / FUZZ -- 21 checks against the real file under standalone Luau
+SEMANTICS -- one announcement is one redeem
 
-================================================================
-     probe: calling PoleTaken[1] moved gameCalls 361 -> 362  (src=/tmp/claude-0/-home-user-sleepyfreezer/3c80a013-19ae-5c42-b389-3413efa9c1f7/scratchpad/fuzz.luau)
+1 announcement                      -> 1 redeem
+20 announcements, same code         -> 20 redeems
+20 announcements, distinct codes    -> 20 redeems
+FAKE ON: 1 announcement             -> 8 redeems (FakeBurst=8)
+FAKE OFF: 1 announcement            -> 1 redeem
+
+STRESS / FUZZ -- 24 checks
+
      conns on the notify remote: 2 total, 1 enabled
 
-checks: 21   failures: 0
+checks: 24   failures: 0
 runtime errors during the whole run: 0

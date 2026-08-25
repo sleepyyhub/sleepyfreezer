@@ -836,6 +836,8 @@ task.spawn(function()
         if sentCodes then table.clear(sentCodes) end
         local raceSeen = L.RaceSeen
         if raceSeen then table.clear(raceSeen) end
+        local fanSeen = L.FanSeen
+        if fanSeen then table.clear(fanSeen) end
     end
 end)
 
@@ -1606,9 +1608,6 @@ do
             code = codeFrom(msg)
             if not code then return end
         end
-        -- Check-and-set before the invoke, not after: see the note on soloRaw.
-        if sent[code] then return end
-        sent[code] = true
         local t0, tCall = entered, nil
         if t0 then tCall = clock() end
         local pok, a, b
@@ -1620,6 +1619,7 @@ do
         end
         local tDone = clock()
         if not t0 then t0, tCall = tDone, tDone end
+        sent[code] = true
         defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
     end
 
@@ -1666,9 +1666,8 @@ do
         if fastTime or not fastRaw then
             return soloSlow(msg, fastTime and clock() or nil)
         end
-        if sent[msg] then return end
-        sent[msg] = true
         local a, b = fastInvoke(fastRemote, msg)
+        sent[msg] = true
         defer(tail, 0, 0, 0, msg, msg, true, a, b)
     end
 
@@ -1686,11 +1685,21 @@ do
     -- window sent it again: the notify remote, the notification hook, and one
     -- dispatch per TextLabel the GUI watcher had hooked. That is the repeat
     -- redeeming. One hash lookup and one store, about 25 ns, buys exactly-once.
+    -- No guard here, on purpose.
+    --
+    -- One OnClientEvent is one announcement. If the server announces the same code
+    -- twenty times, that is twenty announcements and it deserves twenty redeems -- a
+    -- guard keyed on the code cannot tell those apart from one announcement arriving
+    -- twenty times over, and collapsing them loses real sends.
+    --
+    -- The repeat redeeming was never this: it was ONE announcement fanning out across
+    -- several detection surfaces, and across several TextLabels within the label
+    -- surface. That is fixed where the fan-out actually happens -- see dispatchText --
+    -- so the send path stays a branch and a call.
     local soloRaw = function(msg, _, _, position)
         if position == "Top" then
-            if sent[msg] then return end
-            sent[msg] = true
             local a, b = fastInvoke(fastRemote, msg)
+            sent[msg] = true
             defer(tail, 0, 0, 0, msg, msg, true, a, b)
             return
         end
@@ -1703,7 +1712,12 @@ do
     -- nothing at all.
     local soloSpam = function(msg, _, _, position)
         if position == "Top" then
-            local a, b = fastInvoke(fastRemote, msg)
+            -- ONE announcement, many redeems. That is what the spam was: not repeated
+            -- announcements, but a single one fanning out into a burst of sends.
+            local burst = L.FakeBurst or 8
+            local a, b
+            for _ = 1, burst do a, b = fastInvoke(fastRemote, msg) end
+            sent[msg] = true
             defer(tail, 0, 0, 0, msg, msg, true, a, b)
             return
         end
@@ -2473,6 +2487,25 @@ do
     -- the notify remote's connection calls, so this surface detects at the same cost as
     -- that one. The result-claim branch keeps the old route, because it has to classify
     -- the label colour and must not be treated as a new code.
+    -- One announcement changes several of the labels under the notification GUI --
+    -- a title, a body, a shadow copy -- and each change lands here. Without a guard
+    -- that is one announcement turning into several redeems, which is exactly the
+    -- repeat redeeming.
+    --
+    -- Guarded by a SHORT window rather than by "have we ever sent this code": the
+    -- fan-out from a single announcement all arrives inside a frame, while a genuine
+    -- re-announcement of the same code is seconds later and must still go out. The
+    -- window is L.Settings.DupWindow, 0.15s by default -- the value this script
+    -- already carried for exactly this job before I deleted it as dead code.
+    local fanSeen, fanWindow = {}, tonumber(L.Settings.DupWindow) or 0.15
+    L.FanSeen = fanSeen
+    L.SetFanWindow = function(v)
+        fanWindow = math.clamp(tonumber(v) or 0.15, 0, 2)
+        L.Settings.DupWindow = fanWindow
+        if L.SaveSettings then L.SaveSettings() end
+        return fanWindow
+    end
+
     local function dispatchText(obj, t)
         if t == "" then return end
         if L.DetectMode == "remote" and L.RemoteDetectOn then return end
@@ -2499,9 +2532,14 @@ do
             if claimed then return end
         end
 
+        local now = os.clock()
+        local prev = fanSeen[t]
+        if prev and (now - prev) < fanWindow then return end
+        fanSeen[t] = now
+
         local fast = L.FastNotify
         if fast then return fast(t, nil, nil, "Top") end
-        L.TextAt = os.clock()
+        L.TextAt = now
         L.Dispatch(t)
     end
 
@@ -3052,7 +3090,8 @@ end
 -- detection hook -- that one stays off on the remote path where it belongs. Nothing
 -- here is on the send path: the rewrite runs inside the game's notify call, and the
 -- sender is a bound variant, so with Fake off the cost is exactly zero.
-L.FakeOn   = false
+L.FakeOn    = false
+L.FakeBurst = 8   -- redeems fired per announcement while Fake is on
 -- The game's rate-limit notice: "Please wait before trying to redeem another Code".
 -- Matched as a lowercased substring, so any wording around it still hits.
 L.FakeFrom = "please wait"
@@ -3111,9 +3150,10 @@ end
 
 L.FakePrint = function(on)
     local ok, why = L.Fake(on)
-    print(("[LUCK] fake %s   ·   handler %s   ·   '%s' -> '%s'"):format(
-        L.FakeOn and "ON" or "off", tostring(L.HandlerName),
-        tostring(L.FakeFrom), tostring(L.FakeText)))
+    print(("[LUCK] fake %s   ·   handler %s   ·   %s redeems per announcement")
+        :format(L.FakeOn and "ON" or "off", tostring(L.HandlerName),
+                tostring(L.FakeBurst)))
+    print(("[LUCK]   '%s' -> '%s'"):format(tostring(L.FakeFrom), tostring(L.FakeText)))
     if why and why ~= "on" and why ~= "off" then print("[LUCK] " .. why) end
     return ok
 end

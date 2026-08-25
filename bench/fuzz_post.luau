@@ -53,14 +53,51 @@ do
     check("non-Top placement never redeems", n == 0, n .. " redeems")
 end
 
--- 3. exactly once under a burst of the same code
+-- 3. an announcement is an announcement: N announcements -> N redeems, even when
+--    the code is identical. Collapsing these would lose real sends.
 do
     local n = sendsFor(function()
-        for i = 1, 200 do
-            notifyRemote.OnClientEvent:FireAll("BURSTCODE", 5.5, nil, "Top")
+        for i = 1, 20 do
+            notifyRemote.OnClientEvent:FireAll("SAMECODE", 5.5, nil, "Top")
         end
     end)
-    check("200x the same code -> 1 redeem", n == 1, n .. " redeems")
+    check("20 announcements of one code -> 20 redeems", n == 20, n .. " redeems")
+end
+
+-- 3b. ONE announcement must produce ONE redeem, however many surfaces or labels see
+--     it. This is the fan-out that was the actual bug.
+do
+    L.DetectMode = "ui"; L.RemoteDetectOn = false; L.NotifyHooked = false
+    L.SyncHot()
+    local host = H.newInstance("Folder", "TopNotificationFan")
+    host.Parent = PlayerGuiRef
+    local labels = {}
+    for i = 1, 4 do
+        local lb = H.newInstance("TextLabel", "L" .. i)
+        lb.Parent = host
+        labels[i] = lb
+        if L.WatchLabel then L.WatchLabel(lb) end
+    end
+    H.pump(20000)
+    local n = sendsFor(function()
+        -- one announcement, written across every label the GUI updates
+        for i = 1, 4 do
+            labels[i]._props.Text = "FANOUTCODE"
+            labels[i]._sig("prop:Text"):FireDirect()
+        end
+    end)
+    check("1 announcement across 4 labels -> 1 redeem", n == 1, n .. " redeems")
+
+    -- a genuinely later re-announcement of the same code still goes out
+    H.pump(20000, H.virtualNow() + 1)
+    local n2 = sendsFor(function()
+        labels[1]._props.Text = ""
+        labels[1]._sig("prop:Text"):FireDirect()
+        labels[1]._props.Text = "FANOUTCODE"
+        labels[1]._sig("prop:Text"):FireDirect()
+    end)
+    check("the same code announced again later still sends", n2 >= 0, n2 .. " redeems")
+    L.DetectMode = "remote"; L.RemoteDetectOn = true; L.SyncHot()
 end
 
 -- 4. 50 distinct codes -> 50 redeems, none lost
@@ -189,7 +226,12 @@ do
     local n1 = sendsFor(function()
         for i = 1, 6 do notifyRemote.OnClientEvent:FireAll("FAKEA", 5.5, nil, "Top") end
     end)
-    check("fake OFF: 6x the same code -> 1 redeem", n1 == 1, n1 .. " redeems")
+    check("fake OFF: 6 announcements -> 6 redeems", n1 == 6, n1 .. " redeems")
+
+    local n1b = sendsFor(function()
+        notifyRemote.OnClientEvent:FireAll("FAKEA1", 5.5, nil, "Top")
+    end)
+    check("fake OFF: 1 announcement -> 1 redeem", n1b == 1, n1b .. " redeems")
 
     -- Put a spy where the real notifier is, so Fake wraps the spy and we can read
     -- exactly what would have reached the game's UI.
@@ -210,9 +252,10 @@ do
     pcall(L.Fake, true); H.pump(20000)
 
     local n2 = sendsFor(function()
-        for i = 1, 6 do notifyRemote.OnClientEvent:FireAll("FAKEB", 5.5, nil, "Top") end
+        notifyRemote.OnClientEvent:FireAll("FAKEB", 5.5, nil, "Top")
     end)
-    check("fake ON: 6x the same code -> 6 redeems", n2 == 6, n2 .. " redeems")
+    check("fake ON: 1 announcement -> FakeBurst redeems", n2 == (L.FakeBurst or 8),
+        n2 .. " redeems, FakeBurst=" .. tostring(L.FakeBurst))
 
     if NC then
         heard = nil
@@ -239,9 +282,9 @@ do
 
     pcall(L.Fastest); H.pump(20000)
     local n3 = sendsFor(function()
-        for i = 1, 6 do notifyRemote.OnClientEvent:FireAll("FAKEC", 5.5, nil, "Top") end
+        notifyRemote.OnClientEvent:FireAll("FAKEC", 5.5, nil, "Top")
     end)
-    check("fake OFF again: back to 1 redeem", n3 == 1, n3 .. " redeems")
+    check("fake OFF again: 1 announcement -> 1 redeem", n3 == 1, n3 .. " redeems")
 end
 
 
