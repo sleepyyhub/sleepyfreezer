@@ -1,10 +1,13 @@
--- Frame rate first, before any service lookup. The client flushes its outgoing packets
--- on the network send step, so the faster the frames the shorter the wait between the
--- invoke and the packet actually leaving. This is the one client-side setting that
--- moves that number, and it costs nothing to set it on line 1 rather than two thirds
--- of the way down the file. Applied again later through L.SetFpsCap so the reported
--- state stays honest.
 if type(setfpscap) == "function" then pcall(setfpscap, 999) end
+-- ^ line 1 on purpose, and executable. The client flushes its outgoing packets on the
+-- network send step, so the faster the frames the shorter the wait between the invoke
+-- and the packet actually leaving; this is the one client-side setting that moves that
+-- number, and it costs nothing to set it here rather than two thirds of the way down.
+-- Applied again later through L.SetFpsCap so the reported state stays honest.
+--
+-- It is the FIRST line rather than the seventh because a leading comment block is what
+-- gets eaten when a copy/paste path collapses newlines: the comment swallows the first
+-- real statement and the parser reports an incomplete statement further down.
 
 local Players       = game:GetService("Players")
 local UIS           = game:GetService("UserInputService")
