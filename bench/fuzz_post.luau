@@ -327,6 +327,55 @@ do
     pcall(function() probeConn:Disconnect() end)
 end
 
+
+-- 13. Spam Redeem: hammers until it lands, red Invalid Code throughout, no rate-limit
+do
+    pcall(L.Fastest); H.pump(20000)
+    local NC = genvTable.__LumNotifyNC
+    if type(NC) ~= "table" then
+        local ctrl = RepS:FindFirstChild("Controllers")
+        local mod = ctrl and ctrl:FindFirstChild("NotificationController")
+        NC = mod and require(mod) or nil
+        genvTable.__LumNotifyNC = NC
+    end
+    local restoreNC = NC and NC.Notify
+    local heard = {}
+    if NC then NC.Notify = function(self, msg) heard[#heard + 1] = tostring(msg) end end
+
+    local tries, acceptAt = 0, 5
+    local prevBehaviour = R.setInvokeBehaviour(function()
+        tries += 1
+        if NC then NC:Notify("Please wait before trying to redeem another Code", 5, nil, "Top") end
+        if tries >= acceptAt then return true, "Meowl spawned!" end
+        return false, "rate limited"
+    end)
+
+    L.SpamRedeem(true, "spamcode")
+    for _ = 1, 40 do H.pump(4000, H.virtualNow() + 0.2) end
+    H.pump(60000)
+
+    check("spam stops once the code lands", L.SpamOn == false,
+        "SpamOn=" .. tostring(L.SpamOn))
+    check("spam kept trying until it landed", L.SpamAttempts == acceptAt,
+        L.SpamAttempts .. " attempts")
+
+    local red, wait = 0, 0
+    for _, m in ipairs(heard) do
+        if m:find("Invalid Code", 1, true) then red += 1 end
+        if m:lower():find("please wait", 1, true) then wait += 1 end
+    end
+    check("rate-limit notices are hidden", wait == 0, wait .. " leaked through")
+    check("red Invalid Code shown instead", red >= 1, red .. " shown")
+
+    R.setInvokeBehaviour(prevBehaviour)
+    if NC and restoreNC then NC.Notify = restoreNC end
+    H.pump(20000)
+
+    -- and the notifier is handed back intact when spam ends
+    check("notifier restored after spam", L.FakeOn == false and L.SpamOn == false,
+        ("FakeOn=%s SpamOn=%s"):format(tostring(L.FakeOn), tostring(L.SpamOn)))
+end
+
 print("")
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end

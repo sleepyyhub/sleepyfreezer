@@ -3148,6 +3148,86 @@ L.Fake = function(on)
     return true, "on"
 end
 
+-- Spam Redeem.
+--
+-- Hammers one code until the server takes it, and while that is happening the game's
+-- "Please wait before trying to redeem another Code" notices are rewritten into the
+-- game's own red invalid-code line. One rewrite does both halves of the job: the rate
+-- limit chatter disappears, and what you see instead is red "Invalid Code" over and
+-- over, drawn by the game's own notifier so it looks exactly like the real thing.
+--
+-- It stops the moment a redeem comes back successful, and puts the notifier back.
+L.SpamOn       = false
+L.SpamInterval = 0.12          -- gap between attempts, on top of the round trip
+L.SpamCode     = nil
+L.SpamAttempts = 0
+L.SpamMax      = 0             -- 0 = until it lands or you stop it
+L.SpamRedText  = '<font color="#ff5f6d">Invalid Code</font>'
+
+L.SpamRedeem = function(on, code)
+    on = on ~= false
+
+    if not on then
+        if not L.SpamOn then return false, "already off" end
+        L.SpamOn = false
+        pcall(L.Fake, false)   -- restores NC.Notify and the normal sender
+        if L.OnSpamChanged then pcall(L.OnSpamChanged, false) end
+        return false, "stopped"
+    end
+
+    code = code or L.SpamCode
+    if type(code) == "string" then
+        code = (code:gsub("[^%w]", "")):upper():sub(1, 50)
+    end
+    if type(code) ~= "string" or code == "" then
+        if L.Notify then L.Notify("spam: no code to send", T.RED) end
+        return false, "no code"
+    end
+    if L.SpamOn then L.SpamCode = code return true, "already running" end
+
+    L.SpamCode, L.SpamAttempts, L.SpamOn = code, 0, true
+
+    -- Fake's rewrite is exactly the mechanism wanted here, pointed at the red line.
+    -- FakeBurst is left alone: the loop below is what does the spamming, one clean
+    -- attempt at a time, so each reply can be checked.
+    local restoreText = L.FakeText
+    L.FakeText = L.SpamRedText
+    pcall(L.Fake, true)
+    L.FakeOn = false           -- rewrite only; the burst sender stays out of it
+    if L.SyncFast then L.SyncFast() end
+
+    if L.OnSpamChanged then pcall(L.OnSpamChanged, true) end
+
+    task.spawn(function()
+        while L.SpamOn do
+            L.SpamAttempts += 1
+            local ok, reply, timing = L.RedeemViaRemote(L.SpamCode)
+            if ok == true then
+                L.SpamOn = false
+                L.FakeText = restoreText
+                pcall(L.Fake, false)
+                if L.PostRedeem then
+                    pcall(L.PostRedeem, os.clock(), "spam", L.SpamCode, ok, reply, timing)
+                end
+                if L.Notify then
+                    L.Notify(("redeemed %s after %d tries")
+                        :format(tostring(L.SpamCode), L.SpamAttempts), T.GREEN)
+                end
+                if L.OnSpamChanged then pcall(L.OnSpamChanged, false) end
+                return
+            end
+            local cap = tonumber(L.SpamMax) or 0
+            if cap > 0 and L.SpamAttempts >= cap then break end
+            task.wait(L.SpamInterval)
+        end
+        L.SpamOn = false
+        L.FakeText = restoreText
+        pcall(L.Fake, false)
+        if L.OnSpamChanged then pcall(L.OnSpamChanged, false) end
+    end)
+    return true, "spamming"
+end
+
 L.FakePrint = function(on)
     local ok, why = L.Fake(on)
     print(("[LUCK] fake %s   ·   handler %s   ·   %s redeems per announcement")
@@ -3458,7 +3538,7 @@ local uiOK, uiErr = pcall(function()
     rev(CodeBox, "BackgroundTransparency", 0)
     rev(CodeBox, "TextTransparency", 0)
     rev(CodeStroke, "Transparency", 0.5)
-    local RedeemBtn = New("TextButton", {Size = UDim2.new(1, -96, 0, 30),
+    local RedeemBtn = New("TextButton", {Size = UDim2.new(1, -166, 0, 30),
         Position = UDim2.new(0, 10, 0, 40), BackgroundColor3 = T.ACCENT,
         BackgroundTransparency = 1, Text = "REDEEM", TextColor3 = T.VOID,
         Font = Enum.Font.GothamBold, TextSize = 12, TextTransparency = 1,
@@ -3471,6 +3551,45 @@ local uiOK, uiErr = pcall(function()
         Rotation = 90, Parent = RedeemBtn})
     rev(RedeemBtn, "BackgroundTransparency", 0)
     rev(RedeemBtn, "TextTransparency", 0)
+
+    local SpamBtn = New("TextButton", {Size = UDim2.new(0, 64, 0, 30),
+        Position = UDim2.new(1, -146, 0, 40), BackgroundColor3 = T.RAISED,
+        BackgroundTransparency = 1, Text = "SPAM", TextColor3 = T.RED,
+        Font = Enum.Font.GothamBold, TextSize = 11, TextTransparency = 1,
+        AutoButtonColor = false, Parent = C_Main})
+    Corner(SpamBtn, 9)
+    local SpamStroke = Stroke(SpamBtn, T.RED, 1)
+    rev(SpamBtn, "BackgroundTransparency", 0)
+    rev(SpamBtn, "TextTransparency", 0)
+    rev(SpamStroke, "Transparency", 0.45)
+
+    local function paintSpam(on)
+        SpamBtn.Text = on and "STOP" or "SPAM"
+        tw(SpamBtn, 0.15, {BackgroundColor3 = on and T.RED or T.RAISED,
+                           TextColor3 = on and T.VOID or T.RED})
+        tw(SpamStroke, 0.15, {Color = on and T.RED or T.RED,
+                              Transparency = on and 0.15 or 0.45})
+    end
+    L.OnSpamChanged = function(on) pcall(paintSpam, on) end
+
+    SpamBtn.MouseButton1Click:Connect(function()
+        if L.SpamOn then
+            L.SpamRedeem(false)
+            L.Notify(("spam stopped after %d tries"):format(L.SpamAttempts or 0), T.MUTED)
+            return
+        end
+        -- Whatever is in the box, else the last code we saw come past.
+        local typed = CodeBox.Text:gsub("[^%w]", ""):upper():sub(1, 50)
+        local code = (typed ~= "" and typed) or L.SpamCode or L.LastPreviewCode
+        local ok, why = L.SpamRedeem(true, code)
+        if ok then
+            CodeBox.Text = ""
+            L.Notify("spamming " .. tostring(L.SpamCode) .. " until it lands", T.RED)
+        elseif why == "no code" then
+            L.Notify("type a code first, or wait for one to drop", T.ORANGE)
+        end
+    end)
+    hover(SpamBtn, T.RAISED, SpamStroke)
 
     local WarmBtn = New("TextButton", {Size = UDim2.new(0, 66, 0, 30),
         Position = UDim2.new(1, -76, 0, 40), BackgroundColor3 = T.RAISED,
