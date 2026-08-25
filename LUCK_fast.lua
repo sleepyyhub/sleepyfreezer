@@ -196,6 +196,9 @@ L.SaveSettings = function()
 end
 
 L.Modded = (game.PlaceId ~= 109983668079237)
+-- Positional lookup is known good on the real place, so it wins there. On anything
+-- else the indices mean nothing and the verified lookup should decide.
+L.TrustIndex = not L.Modded
 L.SR = 146/255; L.SG = 255/255; L.SB = 103/255
 
 local T = {
@@ -334,24 +337,44 @@ do
         return ok and found or nil
     end
 
-    L.ResolveIndexedRemotes = function()
-        local ok, list = pcall(enumerateRemotes)
-        if not ok or type(list) ~= "table" then return false end
-        L.RemoteCount = #list
-        if not L.RedeemRemote then
-            local redeem = unwrap(list[70])
-            if redeem and classOf(redeem) then
-                L.RedeemRemote = redeem
-                L.RedeemRemoteIsEvent = classOf(redeem) == "event"
-                L.RedeemRemoteSource = "index 70"
+    -- Positional lookup has to come from a FRESH ordered walk, never from the cached
+    -- index. The cache is built once and keeps late arrivals by appending them, which
+    -- is fine for "scan every remote" but wrong for "give me number 146": a remote that
+    -- replicated in after the first walk sits at the end of the cache while a fresh
+    -- walk would place it in tree order. Get those two out of step and index 146 is a
+    -- different instance than it should be, which is exactly the shape of a notify
+    -- remote that works sometimes and not others.
+    L.NotifyIndex, L.RedeemIndex = 146, 70
+
+    local function orderedRemotes()
+        local out = {}
+        for _, d in ipairs(RepS:GetDescendants()) do
+            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
+                out[#out + 1] = d
             end
         end
-        if not L.NotifyRemote then
-            local notify = unwrap(list[146])
-            if notify and classOf(notify) == "event" then
-                L.NotifyRemote = notify
-                L.NotifyRemoteSource = "index 146"
-            end
+        return out
+    end
+
+    L.ResolveIndexedRemotes = function()
+        local ok, list = pcall(orderedRemotes)
+        if not ok or type(list) ~= "table" then return false end
+        L.RemoteCount = #list
+
+        -- Recorded whatever else wins, so a mismatch is visible in Diag instead of
+        -- silently deciding which announcements you do and do not see.
+        L.RedeemByIndex = unwrap(list[L.RedeemIndex])
+        L.NotifyByIndex = unwrap(list[L.NotifyIndex])
+
+        if not L.RedeemRemote and L.RedeemByIndex and classOf(L.RedeemByIndex) then
+            L.RedeemRemote = L.RedeemByIndex
+            L.RedeemRemoteIsEvent = classOf(L.RedeemByIndex) == "event"
+            L.RedeemRemoteSource = "index " .. L.RedeemIndex
+        end
+        if not L.NotifyRemote and L.NotifyByIndex
+            and classOf(L.NotifyByIndex) == "event" then
+            L.NotifyRemote = L.NotifyByIndex
+            L.NotifyRemoteSource = "index " .. L.NotifyIndex
         end
         return L.RedeemRemote ~= nil
     end
@@ -568,7 +591,15 @@ do
             local vn = verifiedNotify()
             if vn then
                 notifyVerified = true
-                if L.NotifyRemote ~= vn then
+                -- On the real place the positional lookup is known good, so verified
+                -- only fills a gap -- it does not get to overrule it. It used to
+                -- overrule unconditionally, and a place with more than one remote
+                -- carrying a NotificationController connection could pull us onto a
+                -- remote that only sees some of the announcements.
+                if L.TrustIndex and L.NotifyByIndex and L.NotifyRemote == L.NotifyByIndex
+                    and vn ~= L.NotifyByIndex then
+                    L.NotifyVerifiedDiffers = vn
+                elseif L.NotifyRemote ~= vn then
                     L.NotifyRemoteSource = L.NotifyRemote
                         and "verified (index was off)" or "verified"
                     L.NotifyRemote = vn
@@ -829,6 +860,21 @@ local clock, defer, protected = os.clock, task.defer, pcall
 local firedSeen = {}
 L.FiredSeen = firedSeen
 L.FIRED_TTL = 30
+
+-- One announcement can be seen by several surfaces at once: the notify remote, a
+-- second remote carrying the same text, and one dispatch per TextLabel the GUI
+-- watcher has hooked. This collapses those into a single redeem WITHOUT collapsing
+-- genuine repeats, because the window is short: a fan-out arrives inside a frame, a
+-- real re-announcement is seconds later.
+local fanSeen = {}
+L.FanSeen = fanSeen
+L.FanWindow = tonumber(L.Settings.DupWindow) or 0.15
+L.SeenRecently = function(key, now)
+    local prev = fanSeen[key]
+    if prev and (now - prev) < L.FanWindow then return true end
+    fanSeen[key] = now
+    return false
+end
 
 -- One janitor, not two. The fired-code table and the sent-code table each used to run
 -- their own 30s task.spawn loop, so the client woke twice per window to do work that
@@ -2542,13 +2588,11 @@ do
     -- re-announcement of the same code is seconds later and must still go out. The
     -- window is L.Settings.DupWindow, 0.15s by default -- the value this script
     -- already carried for exactly this job before I deleted it as dead code.
-    local fanSeen, fanWindow = {}, tonumber(L.Settings.DupWindow) or 0.15
-    L.FanSeen = fanSeen
     L.SetFanWindow = function(v)
-        fanWindow = math.clamp(tonumber(v) or 0.15, 0, 2)
-        L.Settings.DupWindow = fanWindow
+        L.FanWindow = math.clamp(tonumber(v) or 0.15, 0, 2)
+        L.Settings.DupWindow = L.FanWindow
         if L.SaveSettings then L.SaveSettings() end
-        return fanWindow
+        return L.FanWindow
     end
 
     local function dispatchText(obj, t)
@@ -2578,9 +2622,7 @@ do
         end
 
         local now = os.clock()
-        local prev = fanSeen[t]
-        if prev and (now - prev) < fanWindow then return end
-        fanSeen[t] = now
+        if L.SeenRecently(t, now) then return end
 
         local fast = L.FastNotify
         if fast then return fast(t, nil, nil, "Top") end
@@ -3026,6 +3068,16 @@ L.Diag = function()
         L.NotifyRemote and L.NotifyRemote.Name or "none",
         tostring(L.NotifyRemoteSource), yn(L.RemoteDetectOn),
         tostring(L.NotifyRemoteName)))
+    print(("[LUCK] index %d of %s = %s   using it: %s   trust index %s"):format(
+        L.NotifyIndex or 146, tostring(L.RemoteCount),
+        L.NotifyByIndex and L.NotifyByIndex.Name or "none",
+        yn(L.NotifyByIndex ~= nil and L.NotifyRemote == L.NotifyByIndex),
+        yn(L.TrustIndex)))
+    if L.NotifyVerifiedDiffers then
+        print(("[LUCK] NOTE: the verified lookup wanted %s instead -- two remotes on"):
+            format(L.NotifyVerifiedDiffers.Name))
+        print("[LUCK] this place carry a NotificationController connection")
+    end
     local mine, total
     if L.ConnIndex then mine, total = L.ConnIndex() end
     print(("[LUCK] handler %s   conn %s of %s   pole %s"):format(
