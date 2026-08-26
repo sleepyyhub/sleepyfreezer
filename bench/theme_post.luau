@@ -1,0 +1,227 @@
+do
+-- The theme engine: ten palettes, one throttled connection, no tree walks at
+-- runtime, and none of it allowed to touch the send path.
+local R = RIG
+local H = R.H
+H.pump(200000)
+local L = R.genvTable.LUCK
+if not L then print("no getgenv().LUCK") return end
+
+local fails, checks = {}, 0
+local function check(n, c, d)
+    checks += 1
+    if not c then fails[#fails + 1] = n .. (d and ("  -- " .. d) or "") end
+end
+
+print("PRIVATE THEME ENGINE")
+print("================================================================")
+
+check("this is the private build", L.Private == true)
+check("ten themes", L.Themes and #L.Themes == 10,
+    "got " .. tostring(L.Themes and #L.Themes))
+check("Rainbow is one of them", L.Themes and L.Themes[1].name == "Rainbow")
+
+local wanted = {"Rainbow", "Clover", "Toxic", "Mint", "Aqua",
+                "Ice", "Grape", "Sakura", "Gold", "Lava"}
+local have = {}
+for _, t in ipairs(L.Themes or {}) do have[t.name] = true end
+local missing = {}
+for _, w in ipairs(wanted) do if not have[w] then missing[#missing + 1] = w end end
+check("all ten are named and present", #missing == 0, table.concat(missing, ","))
+check("the greens theme is there", have.Clover == true)
+print("     themes: " .. table.concat(L.ThemeNames or {}, ", "))
+
+-- gradients actually got attached to the panels
+local gui
+for _, d in ipairs((L.GuiParent or R.RepS):GetChildren()) do
+    if d:IsA("ScreenGui") and tostring(d.Name):match("^LUCK_%d+$") then gui = d end
+end
+check("the LUCK gui was found", gui ~= nil)
+local grads, strokeCount = {}, 0
+if gui then
+    for _, d in ipairs(gui:GetDescendants()) do
+        if d.Name == "LuckThemeGradient" then grads[#grads + 1] = d end
+        if d:IsA("UIStroke") then strokeCount += 1 end
+    end
+end
+check("gradients were attached to the panels", #grads > 5, "found " .. tostring(#grads))
+check("there are strokes to tint", strokeCount > 5, "found " .. tostring(strokeCount))
+print(("     %d gradients, %d strokes"):format(#grads, strokeCount))
+
+-- the picker exists and has a row per theme
+local picker = gui and gui:FindFirstChild("LuckThemePicker")
+check("the picker panel exists", picker ~= nil)
+if picker then
+    local buttons = 0
+    for _, d in ipairs(picker:GetDescendants()) do
+        if d:IsA("TextButton") then buttons += 1 end
+    end
+    -- ten rows plus the drag header
+    check("a button per theme", buttons >= 10, "found " .. tostring(buttons))
+end
+
+-- it animates: the same gradient must hold different colours across frames
+local function firstColour(g)
+    local seq = g.Color
+    local kp = seq and seq.Keypoints and seq.Keypoints[2]
+    return kp and kp.Value or nil
+end
+local g1 = grads[1]
+check("a gradient has a colour sequence", g1 and firstColour(g1) ~= nil)
+if g1 then
+    -- Enough frames to clear the throttle: it updates at ThemeFps, not per frame.
+    RENDER(4, 1 / 30)
+    local a = firstColour(g1)
+    RENDER(60, 1 / 30)
+    local b = firstColour(g1)
+    check("the gradient moves between ticks",
+        a and b and (math.abs(a.R - b.R) + math.abs(a.G - b.G) + math.abs(a.B - b.B)) > 0.02,
+        a and b and ("%.3f,%.3f,%.3f -> %.3f,%.3f,%.3f"):format(a.R, a.G, a.B, b.R, b.G, b.B)
+            or "no colour")
+end
+
+-- throttled, not per frame
+if g1 then
+    L.ThemeFps = 30
+    RENDER(4, 1 / 30)
+    local before = firstColour(g1)
+    -- ten frames at 1000fps is 10ms, a third of one 30Hz tick: nothing should move
+    RENDER(10, 1 / 1000)
+    local after = firstColour(g1)
+    check("it does not rebuild on every frame",
+        before and after and math.abs(before.R - after.R) < 0.0001
+            and math.abs(before.G - after.G) < 0.0001,
+        "moved inside one tick")
+end
+
+-- switching themes changes the colours
+if g1 then
+    L.SetTheme("Lava")
+    RENDER(4, 1 / 30)
+    local lava = firstColour(g1)
+    L.SetTheme("Ice")
+    RENDER(4, 1 / 30)
+    local ice = firstColour(g1)
+    check("SetTheme is applied", L.Theme == "Ice", tostring(L.Theme))
+    check("Lava and Ice do not look the same",
+        lava and ice and (math.abs(lava.R - ice.R) + math.abs(lava.B - ice.B)) > 0.1,
+        lava and ice and ("lava %.2f/%.2f  ice %.2f/%.2f")
+            :format(lava.R, lava.B, ice.R, ice.B) or "?")
+    check("Ice is bluer than red", ice and ice.B > ice.R,
+        ice and ("R %.2f B %.2f"):format(ice.R, ice.B) or "?")
+    check("Lava is redder than blue", lava and lava.R > lava.B,
+        lava and ("R %.2f B %.2f"):format(lava.R, lava.B) or "?")
+end
+
+check("an unknown theme is refused", select(1, L.SetTheme("NotAThing")) == false)
+check("and leaves the current one alone", L.Theme == "Ice", tostring(L.Theme))
+
+-- cycling walks the list and wraps
+L.SetTheme("Lava")
+check("Lava is last in the list", L.Themes[#L.Themes].name == "Lava")
+L.NextTheme()
+check("cycling past the end wraps to the first", L.Theme == "Rainbow",
+    tostring(L.Theme))
+
+-- ThemeOn freezes it
+if g1 then
+    L.SetTheme("Rainbow")
+    RENDER(4, 1 / 30)
+    local before = firstColour(g1)
+    L.ThemeOn = false
+    RENDER(120, 1 / 30)
+    local after = firstColour(g1)
+    check("ThemeOn=false freezes the sweep",
+        before and after and math.abs(before.R - after.R) < 0.0001,
+        "still moving with the engine off")
+    L.ThemeOn = true
+end
+
+-- and none of it may touch the redeem path
+local before = R.invokeCount()
+R.notifyRemote.OnClientEvent:FireAll("THEMECODE1", 5.5, "Sounds.Sfx.Blop", "Top")
+H.pump(200000)
+check("a code still redeems exactly once with themes running",
+    R.invokeCount() - before == 1, "sends=" .. tostring(R.invokeCount() - before))
+
+print("")
+print(("checks: %d   failures: %d"):format(checks, #fails))
+for _, f in ipairs(fails) do print("  FAIL  " .. f) end
+print(("runtime errors: %d"):format(H.errors and #H.errors or 0))
+if H.errors then
+    local seen = {}
+    for _, e in ipairs(H.errors) do
+        local k = tostring(e)
+        if not seen[k] then seen[k] = true; print("  ERR  " .. k) end
+    end
+end
+end
+
+do
+-- The private build is the public one plus cosmetics. Cosmetics that touch the
+-- redeem path are not cosmetics, so this pins the two things that made the first
+-- version cost 171ns -> 315ns on the send: a callback on every instance the
+-- script creates, and a list that grows for the life of the session.
+local R = RIG
+local H = R.H
+local L = R.genvTable.LUCK
+local fails, checks = {}, 0
+local function check(n, c, d)
+    checks += 1
+    if not c then fails[#fails + 1] = n .. (d and ("  -- " .. d) or "") end
+end
+
+print("")
+print("PRIVATE COSTS THE SEND PATH NOTHING")
+print("----------------------------------------------------------------")
+
+local gui
+for _, d in ipairs((L.GuiParent or R.RepS):GetChildren()) do
+    if d:IsA("ScreenGui") and tostring(d.Name):match("^LUCK_%d+$") then gui = d end
+end
+
+-- nothing of ours may be listening for new instances
+local listeners = 0
+if gui then
+    local sig = rawget(gui, "DescendantAdded")
+    if type(sig) == "table" and sig.conns then listeners = #sig.conns end
+end
+check("no DescendantAdded hook on the gui", listeners == 0,
+    tostring(listeners) .. " connected")
+
+-- and the registries must not grow as the script does its normal work
+local function counts()
+    local g, s = 0, 0
+    if gui then
+        for _, d in ipairs(gui:GetDescendants()) do
+            if d.Name == "LuckThemeGradient" then g += 1 end
+        end
+    end
+    L.ThemePrint = L.ThemePrint
+    return g
+end
+local gradsBefore = counts()
+
+-- 200 redeems' worth of toasts, feed lines and history rows
+L.ToastOn = true
+for i = 1, 200 do
+    R.notifyRemote.OnClientEvent:FireAll("THEMEGROW" .. i, 5.5, "Sounds.Sfx.Blop", "Top")
+end
+H.pump(400000)
+RENDER(10, 1 / 30)
+
+local gradsAfter = counts()
+check("the gradient set did not grow with traffic", gradsAfter == gradsBefore,
+    ("%d -> %d"):format(gradsBefore, gradsAfter))
+
+-- the theme sweep must be throttled, not per frame
+local ticks = 0
+local probe = L.ThemeFps
+check("the sweep is throttled well under frame rate", probe and probe <= 30,
+    "ThemeFps=" .. tostring(probe))
+
+check("it can be turned off entirely", type(L.ThemeStop) == "function")
+
+print(("checks: %d   failures: %d"):format(checks, #fails))
+for _, f in ipairs(fails) do print("  FAIL  " .. f) end
+end

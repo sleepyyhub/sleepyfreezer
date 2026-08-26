@@ -141,6 +141,13 @@ end
 local RunService = svc("RunService")
 RunService.Heartbeat = H.newSignal()
 RunService.RenderStepped = H.newSignal()
+-- Drive RenderStepped by hand so a test can advance the theme engine a known
+-- number of frames instead of hoping the scheduler produces some.
+RENDER = function(frames, dt)
+    for _ = 1, (frames or 1) do
+        RunService.RenderStepped:FireAll(dt or 1/60)
+    end
+end
 RunService.Set3dRenderingEnabled = function() end
 
 local UIS = svc("UserInputService")

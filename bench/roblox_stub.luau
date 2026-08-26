@@ -240,6 +240,7 @@ local function newInstance(class, name)
     self.MouseEnter = sig("MouseEnter")
     self.MouseLeave = sig("MouseLeave")
     self.InputBegan = sig("InputBegan")
+    self.InputEnded = sig("InputEnded")
     self.FocusLost = sig("FocusLost")
     self.Changed = sig("Changed")
 
@@ -309,12 +310,53 @@ Color3.new = function(r, g, b)
     function c:Lerp() return c end
     return c
 end
+-- Real interpolation and a real HSV conversion, not stubs: the theme engine's
+-- output is the thing under test, so a Lerp that returns its receiver would make
+-- every gradient check pass for the wrong reason.
+local function mkColor(r, g, b)
+    local c = {R = r, G = g, B = b}
+    function c:Lerp(other, a)
+        return mkColor(self.R + (other.R - self.R) * a,
+                       self.G + (other.G - self.G) * a,
+                       self.B + (other.B - self.B) * a)
+    end
+    return c
+end
+Color3.fromRGB = function(r, g, b)
+    return mkColor((r or 0) / 255, (g or 0) / 255, (b or 0) / 255)
+end
+Color3.new = function(r, g, b) return mkColor(r or 0, g or 0, b or 0) end
+Color3.fromHSV = function(h, s, v)
+    h = (h or 0) % 1
+    s, v = s or 0, v or 0
+    local i = math.floor(h * 6)
+    local f = h * 6 - i
+    local pv, q, t = v * (1 - s), v * (1 - f * s), v * (1 - (1 - f) * s)
+    local m = i % 6
+    if m == 0 then return mkColor(v, t, pv) end
+    if m == 1 then return mkColor(q, v, pv) end
+    if m == 2 then return mkColor(pv, v, t) end
+    if m == 3 then return mkColor(pv, q, v) end
+    if m == 4 then return mkColor(t, pv, v) end
+    return mkColor(v, pv, q)
+end
 H.Color3 = Color3
 
 H.Vector2 = {new = function(x, y) return {X = x or 0, Y = y or 0} end}
-H.ColorSequence = passthru("ColorSequence")
+H.ColorSequence = {
+    new = function(a, b)
+        -- keeps the keypoints, so a test can read back what was actually written
+        if type(a) == "table" and a[1] ~= nil then
+            return {__t = "ColorSequence", Keypoints = a}
+        end
+        return {__t = "ColorSequence", Keypoints = {
+            {Time = 0, Value = a}, {Time = 1, Value = b or a}}}
+    end,
+}
 H.NumberSequence = passthru("NumberSequence")
-H.ColorSequenceKeypoint = passthru("ColorSequenceKeypoint")
+H.ColorSequenceKeypoint = {
+    new = function(t, v) return {__t = "ColorSequenceKeypoint", Time = t, Value = v} end,
+}
 H.NumberSequenceKeypoint = passthru("NumberSequenceKeypoint")
 H.TweenInfo = passthru("TweenInfo")
 
