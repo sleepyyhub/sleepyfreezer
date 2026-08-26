@@ -106,7 +106,7 @@ These are properties of the design, not bugs:
 
 ## Live deployment
 
-**https://clovyre-mcp.onrender.com**
+**https://clovyre-mcp-ncrs.onrender.com**
 
 Running on a Render free instance, which means two things worth knowing before you rely on it:
 
