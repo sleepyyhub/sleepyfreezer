@@ -41,6 +41,7 @@ local SETTINGS_FILE = "LUCK/settings.json"
 local SETTINGS_DEFAULTS = {
     SpeedIndex = IS_PC and 4 or 1,
     AutoOn = true,
+    AutoArm = false,
     Threshold = 1,
     ThresholdMode = "preset",
     CustomThreshold = 0,
@@ -76,6 +77,7 @@ local function normalizeSettings(source)
         SpeedIndex = settingInt(source.SpeedIndex, SETTINGS_DEFAULTS.SpeedIndex, 1, 4),
         AutoOn = type(source.AutoOn) == "boolean" and source.AutoOn
             or SETTINGS_DEFAULTS.AutoOn,
+        AutoArm = source.AutoArm == true,
         ThresholdMode = source.ThresholdMode == "custom" and "custom" or "preset",
         CustomThreshold = settingInt(source.CustomThreshold, 0, 0, 50),
         LastPreset = settingInt(source.LastPreset, 1, 1, 5),
@@ -847,6 +849,56 @@ L.SpeedModes = {
 L.SpeedIndex = math.clamp(L.Settings.SpeedIndex or 1, 1, #L.SpeedModes)
 L.Mode = L.SpeedModes[L.SpeedIndex]
 L.AutoOn = L.Settings.AutoOn == true
+
+-- ---------------------------------------------------------------------------
+-- Auto-arm
+--
+-- The script listens whether or not Auto Redeem is on -- with it off the handler
+-- still runs, it just does not send. So an announcement that says a code is
+-- coming can be used to switch sending on by itself, which is the difference
+-- between catching a drop and reading about it afterwards.
+--
+-- Off by default. It is a thing that reaches over and changes a setting, and
+-- that should be something asked for rather than something discovered.
+--
+-- The check lives on the idle path only -- the path that is bound precisely when
+-- Auto Redeem is off. With it on there is nothing to arm, so the hot handler
+-- never sees a single instruction of this.
+L.AutoArm = L.Settings.AutoArm == true
+L.AutoArmPhrases = {"use code", "code is", "code:", "redeem code", "new code",
+                    "codigo", "free code"}
+L.ArmedBy, L.ArmedAt, L.ArmCount = nil, nil, 0
+
+L.CheckAutoArm = function(text)
+    if not L.AutoArm or L.AutoOn or type(text) ~= "string" then return false end
+    local low = text:lower()
+    local list = L.AutoArmPhrases
+    for i = 1, #list do
+        local phrase = list[i]
+        if low:find(phrase, 1, true) then
+            L.ArmedBy, L.ArmedAt = phrase, os.clock()
+            L.ArmCount += 1
+            -- Deferred, because SetAuto rebinds the notify connection and this is
+            -- running from inside that connection's own handler. The announcement
+            -- that armed it carries on down the normal path either way, so a code
+            -- in the same message is not lost waiting for the rebind.
+            task.defer(function()
+                if L.AutoOn then return end
+                if L.SetAuto then L.SetAuto(true)
+                else
+                    L.AutoOn, L.Settings.AutoOn = true, true
+                    if L.SyncHot then L.SyncHot() end
+                end
+                if L.Notify then
+                    L.Notify(("auto redeem ON · heard \"%s\""):format(phrase),
+                        L.Palette and L.Palette.HIGH or nil)
+                end
+            end)
+            return true
+        end
+    end
+    return false
+end
 L.ThresholdMode = L.Settings.ThresholdMode
 L.CustomThreshold = L.Settings.CustomThreshold
 L.LastPreset = L.Settings.LastPreset
@@ -1645,6 +1697,13 @@ do
     for i = 1, WN do spawnWorker(i) end
 
     L.Dispatch = function(msg)
+        -- The single place every non-fast surface funnels through, so the arm is
+        -- checked here and nowhere else. Two table reads and out when there is
+        -- nothing to arm, and this is the idle path regardless -- with Auto
+        -- Redeem on, the bound handler sends without ever coming through here.
+        if L.AutoArm and not L.AutoOn and type(msg) == "string" then
+            L.CheckAutoArm(msg)
+        end
         for i = 1, WN do
             if not BUSY[i] and coroutine.status(W[i]) == "suspended" then
                 if not coroutine.resume(W[i], msg) then spawnWorker(i) end
@@ -1832,6 +1891,8 @@ do
             msg = payloadText(msg, 0)
             if not msg then return end
         end
+        -- No arm check here: this calls dispatch, and dispatch is where it lives.
+        -- Checking in both counted one announcement twice.
         return dispatch(msg)
     end
 
@@ -3312,6 +3373,9 @@ L.Diag = function()
         yn(L.Solo), yn(L.Instrument)))
     print(("[LUCK] auto %s   threshold %s   guess %s   parts %s"):format(
         yn(L.AutoOn), tostring(L.Threshold), yn(L.GuessCode), tostring(L.BufN)))
+    print(("[LUCK] auto-arm %s   armed %d time%s%s"):format(
+        yn(L.AutoArm), L.ArmCount or 0, (L.ArmCount == 1) and "" or "s",
+        L.ArmedBy and ("   last on \"" .. tostring(L.ArmedBy) .. "\"") or ""))
     print(("[LUCK] signals %s   fps %.0f   cap %s   turbo %s"):format(
         tostring(L.SignalMode), L.Fps or 0, tostring(L.FpsCap), yn(L.TurboOn)))
     print(("[LUCK] bench %s ns   send %s ns   floor %s ns"):format(
@@ -3750,7 +3814,7 @@ local function buildUI()
         tw(lbl, 0.18, {TextColor3 = on and T.TEXT or T.MUTED})
     end
 
-    local P_Main, C_Main, H_Main = createPanel("Main", 300, 342,
+    local P_Main, C_Main, H_Main = createPanel("Main", 300, 366,
         UDim2.new(1, -316, 0.5, -171), "🍀 LUCK")
 
     local stdBtn = New("TextButton", {Size = UDim2.new(0, 32, 0, 20),
@@ -3830,11 +3894,16 @@ local function buildUI()
 
     local AutoLbl, AutoSw, AutoSwStroke, AutoKnob =
         makeSwitch(C_Main, 10, 78, "Auto Redeem")
+    -- Sits directly under Auto Redeem because it is a modifier on it, not a
+    -- feature of its own.
+    local ArmLbl, ArmSw, ArmSwStroke, ArmKnob =
+        makeSwitch(C_Main, 10, 102, "Auto-Arm on \u{201C}use code\u{201D}")
     local GuessLbl, GuessSw, GuessSwStroke, GuessKnob =
-        makeSwitch(C_Main, 10, 102, "Guess Code")
+        makeSwitch(C_Main, 10, 126, "Guess Code")
 
     local function paintSwitches()
         paintSwitch(AutoLbl, AutoSw, AutoSwStroke, AutoKnob, L.AutoOn)
+        paintSwitch(ArmLbl, ArmSw, ArmSwStroke, ArmKnob, L.AutoArm)
         paintSwitch(GuessLbl, GuessSw, GuessSwStroke, GuessKnob, L.GuessCode)
     end
     L.PaintSwitches = paintSwitches
@@ -3853,14 +3922,27 @@ local function buildUI()
         L.SyncHot()
         paintSwitches()
     end
+    L.SetAutoArm = function(v)
+        L.AutoArm = v and true or false
+        L.Settings.AutoArm = L.AutoArm
+        L.SaveSettings()
+        paintSwitches()
+        if status then
+            status.set(L.AutoArm
+                and "auto-arm on \u{2014} listening for \u{201C}use code\u{201D}"
+                or "auto-arm off", T.MUTED)
+        end
+        return L.AutoArm
+    end
     AutoSw.MouseButton1Click:Connect(function() setAuto(not L.AutoOn) end)
+    ArmSw.MouseButton1Click:Connect(function() L.SetAutoArm(not L.AutoArm) end)
     GuessSw.MouseButton1Click:Connect(function() L.SetGuess(not L.GuessCode) end)
 
-    smallTag(C_Main, "PARTS PER CODE", 10, 132)
+    smallTag(C_Main, "PARTS PER CODE", 10, 156)
     local PartBtns = {}
     for i = 1, 5 do
         local b = New("TextButton", {Size = UDim2.new(0, 34, 0, 22),
-            Position = UDim2.new(0, 10 + (i - 1) * 38, 0, 146),
+            Position = UDim2.new(0, 10 + (i - 1) * 38, 0, 170),
             BackgroundColor3 = T.RAISED, BackgroundTransparency = 1,
             Text = tostring(i), TextColor3 = T.MUTED,
             Font = Enum.Font.GothamBold, TextSize = 11, TextTransparency = 1,
@@ -3871,7 +3953,7 @@ local function buildUI()
         PartBtns[i] = b
     end
     local CustomBtn = New("TextButton", {Size = UDim2.new(0, 76, 0, 22),
-        Position = UDim2.new(0, 10 + 5 * 38, 0, 146),
+        Position = UDim2.new(0, 10 + 5 * 38, 0, 170),
         BackgroundColor3 = T.RAISED, BackgroundTransparency = 1,
         Text = "Custom", TextColor3 = T.MUTED, Font = Enum.Font.GothamBold,
         TextSize = 10, TextTransparency = 1, AutoButtonColor = false,
@@ -3881,7 +3963,7 @@ local function buildUI()
     rev(CustomBtn, "TextTransparency", 0)
 
     local CustomRow = New("Frame", {Size = UDim2.new(1, -20, 0, 22),
-        Position = UDim2.new(0, 10, 0, 172), BackgroundTransparency = 1,
+        Position = UDim2.new(0, 10, 0, 196), BackgroundTransparency = 1,
         Visible = false, Parent = C_Main})
     local CustomMinus = New("TextButton", {Size = UDim2.new(0, 30, 1, 0),
         BackgroundColor3 = T.RAISED, BackgroundTransparency = 1, Text = "−",
@@ -3961,12 +4043,12 @@ local function buildUI()
         setCustom((L.CustomThreshold or 0) + 1)
     end)
 
-    smallTag(C_Main, "SPEED", 10, 202)
+    smallTag(C_Main, "SPEED", 10, 226)
     local SpeedBtns = {}
     local speedNames = {"Normal", "Medium", "Fast", "Lucky"}
     for i = 1, 4 do
         local b = New("TextButton", {Size = UDim2.new(0, 62, 0, 22),
-            Position = UDim2.new(0, 10 + (i - 1) * 67, 0, 216),
+            Position = UDim2.new(0, 10 + (i - 1) * 67, 0, 240),
             BackgroundColor3 = T.RAISED, BackgroundTransparency = 1,
             Text = speedNames[i], TextColor3 = T.MUTED,
             Font = Enum.Font.GothamBold, TextSize = 10, TextTransparency = 1,
