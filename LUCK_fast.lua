@@ -1084,57 +1084,6 @@ L.SyncHot()
 
 local rawFire
 
--- task.defer packs its varargs into a fresh table. Every `defer(rawFire, ...)` below
--- carries nine of them, and that allocation is paid inline the instant the send returns
--- -- it does not delay this packet, but it sits on the deferred queue in front of
--- whatever is resumed next, which under Deferred signals includes a second
--- announcement's handler. Same fix as queueRedispatch: park the arguments in one flat
--- array that is reused forever and defer a zero-argument drain, which packs nothing.
---
--- A FIFO, not a single slot. Coalescing is right for the redispatch -- the game only
--- needs the newest notification -- and wrong here: every entry is a redeem that has
--- already gone to the server, so dropping one loses its result.
--- A RING, with a hard cap and wraparound. The first cut of this was a plain growing
--- array with a reset when it emptied, and it was slower than what it replaced: with the
--- deferred queue not draining -- a burst, a stalled frame -- the array grew without
--- bound and kept every code string in it alive, so the heap stayed large and GC steps
--- got expensive enough to land inside the next announcement's pre-send window. Fixed
--- capacity means the memory is allocated once and old entries are overwritten.
---
--- Full ring means the deferred queue is not draining at all, which is not a state to
--- lose sends in. Fall back to the vararg pack there and pay the allocation.
-local queueRawFire
-do
-    local SLOTS, CAP = 9, 288
-    local q, qw, qr, qn = table.create(CAP), 0, 0, 0
-    local function drainRawFire()
-        if qn == 0 then return end
-        local r = qr
-        local nr = r + SLOTS
-        qr = nr < CAP and nr or 0
-        qn -= 1
-        local t0, tCall, tDone = q[r + 1], q[r + 2], q[r + 3]
-        local text, code, pok = q[r + 4], q[r + 5], q[r + 6]
-        local r1, r2, fireOnly = q[r + 7], q[r + 8], q[r + 9]
-        -- Cursors settled and values in registers before rawFire runs, because rawFire
-        -- pushes again on the reject-retry path.
-        rawFire(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
-    end
-    queueRawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
-        if qn * SLOTS >= CAP then
-            return defer(rawFire, t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
-        end
-        local w = qw
-        local nw = w + SLOTS
-        qw = nw < CAP and nw or 0
-        qn += 1
-        q[w + 1], q[w + 2], q[w + 3] = t0, tCall, tDone
-        q[w + 4], q[w + 5], q[w + 6] = text, code, pok
-        q[w + 7], q[w + 8], q[w + 9] = r1, r2, fireOnly
-        defer(drainRawFire)
-    end
-end
-
 L.RedeemMode = "normal"
 L.UIBox = nil
 L.UIHandlers = {}
@@ -1358,74 +1307,7 @@ L.NotifyHandler = function(a)
 
     local tDone = clock()
 
-    queueRawFire(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
-end
-
--- The two task.delay calls on rawFire's fast path each built a fresh closure, capturing
--- three or four upvalues apiece, and rawFire runs on the deferred queue -- so that was
--- two allocations sitting in front of whatever the queue resumes next. Same treatment as
--- queueRawFire: one reused flat array per delay, drained by a shared zero-argument
--- function, so scheduling the work allocates nothing.
---
--- FIFO order is fire order here because every entry on a given queue waits the same
--- delay, so the one pushed first is always the one due first.
-local queueStatusLine, queueOursWindow
-do
-    local SLOTS, CAP = 3, 96
-
-    local function setStatusLine(code, floorMs, surface)
-        if status then
-            status.set(("sent  ·  %s  ·  %.3fms detect->send%s")
-                :format(code, floorMs, surface), T.MUTED)
-        end
-    end
-    local sq, sw, sr, sn = table.create(CAP), 0, 0, 0
-    local function drainStatusLine()
-        if sn == 0 then return end
-        local r = sr
-        local nr = r + SLOTS
-        sr = nr < CAP and nr or 0
-        sn -= 1
-        setStatusLine(sq[r + 1], sq[r + 2], sq[r + 3])
-    end
-    queueStatusLine = function(code, floorMs, surface)
-        if sn * SLOTS >= CAP then
-            return task.delay(L.PostDelay, setStatusLine, code, floorMs, surface)
-        end
-        local w = sw
-        local nw = w + SLOTS
-        sw = nw < CAP and nw or 0
-        sn += 1
-        sq[w + 1], sq[w + 2], sq[w + 3] = code, floorMs, surface
-        task.delay(L.PostDelay, drainStatusLine)
-    end
-
-    local function closeOursWindow(code, t0, timing)
-        if L.OursPending == code then
-            L.OursPending = nil
-            postRedeem(t0, L.NotifyRemoteName, code, nil, "no result", timing)
-        end
-    end
-    local wq, ww, wr, wn = table.create(CAP), 0, 0, 0
-    local function drainOursWindow()
-        if wn == 0 then return end
-        local r = wr
-        local nr = r + SLOTS
-        wr = nr < CAP and nr or 0
-        wn -= 1
-        closeOursWindow(wq[r + 1], wq[r + 2], wq[r + 3])
-    end
-    queueOursWindow = function(code, t0, timing)
-        if wn * SLOTS >= CAP then
-            return task.delay(L.OURS_WINDOW, closeOursWindow, code, t0, timing)
-        end
-        local w = ww
-        local nw = w + SLOTS
-        ww = nw < CAP and nw or 0
-        wn += 1
-        wq[w + 1], wq[w + 2], wq[w + 3] = code, t0, timing
-        task.delay(L.OURS_WINDOW, drainOursWindow)
-    end
+    defer(rawFire, t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
 end
 
 rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
@@ -1450,16 +1332,21 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
         -- label write, and rawFire runs on the deferred queue -- the same queue a
         -- second announcement's handler is resumed from.
         if status then
-            -- Read now, formatted later. L.FloorUs belongs to this send and a second
-            -- code arriving in the same frame overwrites it, so snapshotting it here
-            -- is what keeps the line honest -- the string.format itself is the part
-            -- that waits.
-            queueStatusLine(code,
-                L.FloorUs and (L.FloorUs / 1000) or L.LastGapMs or 0,
-                (L.DetectMode == "remote" and L.RemoteDetectOn) and "  ·  remote"
-                    or (L.NotifyHooked and "  ·  notify" or "  ·  label"))
+            local floorMs = L.FloorUs and (L.FloorUs / 1000) or L.LastGapMs or 0
+            local surface = (L.DetectMode == "remote" and L.RemoteDetectOn)
+                and "  ·  remote"
+                or (L.NotifyHooked and "  ·  notify" or "  ·  label")
+            task.delay(L.PostDelay, function()
+                status.set(("sent  ·  %s  ·  %.3fms detect->send%s")
+                    :format(code, floorMs, surface), T.MUTED)
+            end)
         end
-        queueOursWindow(code, t0, timing)
+        task.delay(L.OURS_WINDOW, function()
+            if L.OursPending == code then
+                L.OursPending = nil
+                postRedeem(t0, L.NotifyRemoteName, code, nil, "no result", timing)
+            end
+        end)
         return
     else
         ok, reply = r1, r2
@@ -1670,7 +1557,7 @@ do
         local tCall = clock()
         local pok, r1, r2, fireOnly = L.FireFast(code)
         local tDone = clock()
-        queueRawFire(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
+        defer(rawFire, t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
     end
 
     -- Second copy of the same 600 x 0.1s poll, walking the same Confirm connection list
@@ -1705,26 +1592,25 @@ do
     local sent = {}
 
     -- Exactly-once has to hold DURING the round trip, not only after it. InvokeServer
-    -- yields until the server answers, so for 100ms and more the sent[] flag is the
-    -- only record that a code went out -- and writing it after the invoke means there
-    -- is no record at all for that entire window. Any other surface that saw the same
-    -- announcement in there read a clear flag and sent it again. Solo mode hides this,
-    -- because Solo means one live surface, but flipping MultiSurface or RaceArmed while
-    -- a send is pending re-opens it, so the ordering cannot rest on the current mode.
+    -- yields until the server answers, so with sent[] written after the invoke there is
+    -- no record for 100ms and more that the code went out, and any other surface that
+    -- saw the same announcement in that window read a clear flag and sent it again.
+    -- Solo mode hides it -- Solo means one live surface -- but flipping MultiSurface or
+    -- RaceArmed while a send is pending re-opens it, so the ordering cannot rest on
+    -- whichever mode happens to be on.
     --
-    -- Writing sent[] before the invoke closes the hole, but it costs 52 ns to do: a
-    -- fresh string key into a hash, measured, against 17 ns for a key already there.
-    -- That is 52 ns parked in front of the packet, in the one place nothing is allowed
-    -- to grow. Storing the code anywhere costs something -- it is a GC value, so every
-    -- candidate pays a write barrier -- so the marker is whatever pays it most cheaply.
-    -- Measured, over the bare loop: two upvalues 7 ns, a four-slot array ring 15 ns,
-    -- the hash store 52 ns. Two upvalues it is, and the hash write stays after the
-    -- send where it has always been.
+    -- Writing sent[] before the invoke closes the hole, but it costs 52 ns: a fresh
+    -- string key into a hash, measured, against 17 ns for a key already there. That is
+    -- 52 ns parked in front of the packet, in the one place nothing is allowed to grow.
+    -- Storing the code anywhere costs something -- it is a GC value, so every candidate
+    -- pays a write barrier -- so the marker is whichever pays least. Measured over the
+    -- bare loop: two upvalues 7 ns, a four-slot array ring 15 ns, the hash store 52 ns.
+    -- Two upvalues, written before the send; the hash write stays after it.
     --
     -- Two deep because that is what can really be in the air: a send parks its handler
-    -- thread for the round trip, and by the time a third code has dropped the first
-    -- has long since been answered. Cleared alongside sent[] so a code cannot stay
-    -- suppressed past a reset.
+    -- thread for the whole round trip, and by the time a third code has dropped the
+    -- first has long since been answered. Cleared alongside sent[] so a code cannot
+    -- stay suppressed past a reset.
     local fly1, fly2
 
     L.SentCodes = sent
@@ -1793,47 +1679,6 @@ do
         rawFire(t0, tCall, tDone, text, raw, pok, a, b, fastIsEvent or a == nil)
     end
 
-    -- Same story as queueRawFire: `defer(tail, t0, tCall, tDone, msg, msg, true, a, b)`
-    -- packed eight varargs into a fresh table on every single send. That table does not
-    -- delay this packet -- it is built after the invoke returns -- but it is allocated
-    -- inline in the handler and it lands on the deferred queue, where a second
-    -- announcement arriving in the same frame queues behind it.
-    --
-    -- FIFO with flat slots and a zero-argument drain, so a send schedules its follow-up
-    -- work with eight array stores and no allocation at all.
-    -- Fixed capacity and wraparound, for the reason spelled out at queueRawFire: a ring
-    -- that grows keeps every code string alive and makes GC steps expensive enough to
-    -- show up in the NEXT announcement's pre-send window, which is the one number that
-    -- must never move. Full ring falls back to the vararg pack rather than drop a send.
-    local SLOTS, CAP = 8, 256
-    local tq, tqW, tqR, tqN = table.create(CAP), 0, 0, 0
-    local function drainTail()
-        if tqN == 0 then return end
-        local r = tqR
-        local nr = r + SLOTS
-        tqR = nr < CAP and nr or 0
-        tqN -= 1
-        local t0, tCall, tDone = tq[r + 1], tq[r + 2], tq[r + 3]
-        local text, code, pok = tq[r + 4], tq[r + 5], tq[r + 6]
-        local a, b = tq[r + 7], tq[r + 8]
-        -- Cursors settled and values in registers before tail runs: tail calls rawFire
-        -- straight through, and the reject-retry inside it can push again.
-        tail(t0, tCall, tDone, text, code, pok, a, b)
-    end
-    local function queueTail(t0, tCall, tDone, text, code, pok, a, b)
-        if tqN * SLOTS >= CAP then
-            return defer(tail, t0, tCall, tDone, text, code, pok, a, b)
-        end
-        local w = tqW
-        local nw = w + SLOTS
-        tqW = nw < CAP and nw or 0
-        tqN += 1
-        tq[w + 1], tq[w + 2], tq[w + 3] = t0, tCall, tDone
-        tq[w + 4], tq[w + 5], tq[w + 6] = text, code, pok
-        tq[w + 7], tq[w + 8] = a, b
-        defer(drainTail)
-    end
-
     local soloSlow
     local function side(msg)
         if L.OursPending and L.ClaimResult then
@@ -1874,7 +1719,7 @@ do
         local tDone = clock()
         if not t0 then t0, tCall = tDone, tDone end
         sent[code] = true
-        queueTail(t0, tCall, tDone, msg, code, pok, a, b)
+        defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
     end
 
     local guarded = function(msg, _, _, position)
@@ -1895,8 +1740,8 @@ do
         end
 
         -- sent[] for everything already answered, fly1/fly2 for anything still in the
-        -- air. Two compares, and only on this handler -- the default sender never
-        -- runs them.
+        -- air. Two compares, and only on this handler -- the default sender never runs
+        -- them.
         if sent[code] or fly1 == code or fly2 == code then return end
         sent[code] = true
 
@@ -1912,7 +1757,7 @@ do
         local tDone = clock()
         if not t0 then t0, tCall = tDone, tDone end
 
-        queueTail(t0, tCall, tDone, msg, code, pok, a, b)
+        defer(tail, t0, tCall, tDone, msg, code, pok, a, b)
     end
 
     local solo = function(msg, _, _, position)
@@ -1926,7 +1771,7 @@ do
         fly2 = fly1; fly1 = msg
         local a, b = fastInvoke(fastRemote, msg)
         sent[msg] = true
-        queueTail(0, 0, 0, msg, msg, true, a, b)
+        defer(tail, 0, 0, 0, msg, msg, true, a, b)
     end
 
     -- solo minus the flag test. `fastTime` and `fastRaw` only change inside
@@ -1936,11 +1781,10 @@ do
     -- The Top branch comes first so the hot path falls through instead of
     -- taking a jump: measured at 2.07 ns, free, and semantically identical.
     --
-    -- The in-flight ring is written BEFORE the invoke and sent[] after it -- see the
-    -- note where fly is declared. The pre-send half is what makes exactly-once hold
-    -- during the round trip; the post-send half is what makes it hold afterwards.
-    --
-    -- This variant does not TEST either of them, on purpose -- only writes them.
+    -- fly1/fly2 go in BEFORE the invoke and sent[] after it -- see the note where
+    -- fly1 is declared. The pre-send half is what makes exactly-once hold during the
+    -- round trip; the post-send half is what makes it hold afterwards. This variant
+    -- writes both and tests neither, on purpose.
     --
     -- One OnClientEvent is one announcement. If the server announces the same code
     -- twenty times, that is twenty announcements and it deserves twenty redeems -- a
@@ -1956,7 +1800,7 @@ do
             fly2 = fly1; fly1 = msg
             local a, b = fastInvoke(fastRemote, msg)
             sent[msg] = true
-            queueTail(0, 0, 0, msg, msg, true, a, b)
+            defer(tail, 0, 0, 0, msg, msg, true, a, b)
             return
         end
         if L.OursPending then return side(msg) end
@@ -1975,7 +1819,7 @@ do
             local a, b
             for _ = 1, burst do a, b = fastInvoke(fastRemote, msg) end
             sent[msg] = true
-            queueTail(0, 0, 0, msg, msg, true, a, b)
+            defer(tail, 0, 0, 0, msg, msg, true, a, b)
             return
         end
         if L.OursPending then return side(msg) end
@@ -2285,7 +2129,7 @@ do
             fly2 = fly1; fly1 = msg
             local a, b = fastInvoke(fastRemote, msg)
             sent[msg] = true
-            queueTail(0, 0, 0, msg, msg, true, a, b)
+            defer(tail, 0, 0, 0, msg, msg, true, a, b)
             queueRedispatch(msg, dur, sound, position)
             return
         end
@@ -2508,7 +2352,7 @@ do
         local tDone = clock()
 
         defer(L.Note, name, code, at)
-        queueRawFire(at, at, tDone, code, code, pok, a, b, a == nil)
+        defer(rawFire, at, at, tDone, code, code, pok, a, b, a == nil)
         return true
     end
 
