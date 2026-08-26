@@ -1,6 +1,6 @@
 do
--- The cooldown readout learns its length from replies. These drive the exact reply
--- sequence a real server produces and check what it concluded.
+-- Five seconds between redeems that count. An attempt made inside that window is
+-- discarded by the server and must not move the clock in either direction.
 local R = RIG
 local H = R.H
 H.pump(200000)
@@ -12,13 +12,19 @@ local function check(n, c, d)
     checks += 1
     if not c then fails[#fails + 1] = n .. (d and ("  -- " .. d) or "") end
 end
+local function near(a, b) return math.abs(a - b) < 0.001 end
+local function reset()
+    L.CooldownSecs, L.CooldownKnown = 5, true
+    L.CooldownEnds, L.CooldownAt = 0, nil
+    L.CooldownMin, L.CooldownRejects, L.CooldownWasted = 0, 0, 0
+end
 
 print("REDEEM COOLDOWN")
 print("================================================================")
 
--- reset to a clean slate
-L.CooldownSecs, L.CooldownKnown = 15, false
-L.CooldownEnds, L.CooldownAt, L.CooldownMin, L.CooldownRejects = 0, nil, 0, 0
+check("the length is the measured 5s, not a guess",
+    near(L.CooldownSecs, 5) and L.CooldownKnown == true,
+    tostring(L.CooldownSecs) .. " known=" .. tostring(L.CooldownKnown))
 
 check("classifies the real rejection text",
     L.IsCooldownReply("Please wait before trying to redeem another Code") == true)
@@ -28,77 +34,103 @@ check("classifies a success as an answer",
     L.IsCooldownReply("You received a Meowl!") == false)
 check("a nil reply is not a cooldown", L.IsCooldownReply(nil) == false)
 
--- a redeem gets an answer: the window opens
+-- an invalid code counts, and starts the five seconds
+reset()
 local t = 1000
-check("free before anything happened", L.CooldownEnds == 0)
 L.NoteRedeemReply(false, "Invalid Code", t)
-check("a real answer starts the window", L.CooldownAt == t)
-check("the countdown runs off the estimate", L.CooldownEnds == t + 15)
-
--- rejected 4s in: still inside, and that is a lower bound
-L.NoteRedeemReply(false, "Please wait before trying to redeem another Code", t + 4)
-check("a rejection is not treated as an answer", L.CooldownAt == t,
-    "CooldownAt moved to " .. tostring(L.CooldownAt))
-check("the lower bound learned 4s", math.abs(L.CooldownMin - 4) < 0.001,
-    tostring(L.CooldownMin))
-check("still counting down", L.CooldownEnds == t + 15)
-
--- answered 12s in: the window was over, so 12s is an upper bound
-L.NoteRedeemReply(false, "Invalid Code", t + 12)
-check("a real answer bounds it from above", L.CooldownKnown == true)
-check("the length is now the measured 12s", math.abs(L.CooldownSecs - 12) < 0.001,
-    tostring(L.CooldownSecs))
-check("and a fresh window started", L.CooldownAt == t + 12)
-check("running off the measured length now", L.CooldownEnds == t + 24)
-
--- a rejection past the current estimate stretches it rather than reading zero
-L.CooldownSecs, L.CooldownKnown = 15, false
-L.CooldownEnds, L.CooldownAt, L.CooldownMin, L.CooldownRejects = 0, nil, 0, 0
-L.NoteRedeemReply(false, "Invalid Code", t)
-L.NoteRedeemReply(false, "Please wait", t + 20)
-check("a rejection past the guess stretches it", L.CooldownSecs > 20,
-    tostring(L.CooldownSecs))
-check("and never shows ready while being told to wait", L.CooldownEnds > t + 20,
+check("an invalid redeem counts and opens the window", L.CooldownAt == t)
+check("it runs five seconds", near(L.CooldownEnds, t + 5),
     tostring(L.CooldownEnds - t))
-check("it is still marked an estimate", L.CooldownKnown == false)
 
--- an idle stretch with no rejection in it must not be mistaken for a measurement
-L.CooldownSecs, L.CooldownKnown = 15, false
-L.CooldownEnds, L.CooldownAt, L.CooldownMin, L.CooldownRejects = 0, nil, 0, 0
+-- three attempts inside the window: all discarded, clock untouched
+for _, offset in ipairs({0.5, 1.0, 4.9}) do
+    L.NoteRedeemReply(false, "Please wait before trying to redeem another Code", t + offset)
+end
+check("attempts inside the window do not restart it", L.CooldownAt == t,
+    "start moved to " .. tostring(L.CooldownAt))
+check("and do not extend it either", near(L.CooldownEnds, t + 5),
+    ("ends at +%.2f"):format(L.CooldownEnds - t))
+check("and do not shorten it", L.CooldownEnds >= t + 5)
+check("they are counted as discarded", L.CooldownRejects == 3,
+    tostring(L.CooldownRejects))
+check("and tallied for the session", L.CooldownWasted == 3,
+    tostring(L.CooldownWasted))
+
+-- the next one that counts starts a fresh five
+L.NoteRedeemReply(false, "Invalid Code", t + 5.2)
+check("the next real answer opens a new window", L.CooldownAt == t + 5.2)
+check("five seconds again", near(L.CooldownEnds, t + 10.2),
+    tostring(L.CooldownEnds - t))
+check("the discard counter resets with it", L.CooldownRejects == 0)
+check("the session tally does not reset", L.CooldownWasted == 3,
+    tostring(L.CooldownWasted))
+
+-- a success counts the same way
+reset()
+L.NoteRedeemReply(true, "You received a Meowl!", t)
+check("a successful redeem opens the window too", near(L.CooldownEnds, t + 5),
+    tostring(L.CooldownEnds - t))
+
+-- the safety valve: told to wait after the window should already have closed
+reset()
 L.NoteRedeemReply(false, "Invalid Code", t)
-L.NoteRedeemReply(false, "Invalid Code", t + 300)
-check("an idle gap is not a measurement", L.CooldownKnown == false,
-    "learned " .. tostring(L.CooldownSecs))
+L.NoteRedeemReply(false, "Please wait", t + 8)
+check("being told to wait past 5s lengthens it", L.CooldownSecs > 5,
+    tostring(L.CooldownSecs))
+check("it never reads ready while the server says no", L.CooldownEnds >= t + 8,
+    ("ends at +%.2f"):format(L.CooldownEnds - t))
+
+-- and it must never shorten
+reset()
+L.NoteRedeemReply(false, "Invalid Code", t)
+L.NoteRedeemReply(false, "Please wait", t + 1)
+check("an early rejection does not shorten it", near(L.CooldownSecs, 5),
+    tostring(L.CooldownSecs))
+check("nor pull the end in", near(L.CooldownEnds, t + 5),
+    tostring(L.CooldownEnds - t))
 
 -- a timeout says nothing either way
-L.CooldownSecs, L.CooldownKnown = 15, false
-L.CooldownEnds, L.CooldownAt, L.CooldownMin, L.CooldownRejects = 0, nil, 0, 0
+reset()
 check("a no-result timeout is ignored", L.NoteRedeemReply(nil, "no result", t) == nil)
 check("and leaves the window untouched", L.CooldownAt == nil)
 
--- end to end: announce a code, the server rejects it, the readout is counting
+-- end to end through a real announcement
+reset()
 R.setInvokeBehaviour(function() return false, "Invalid Code" end)
-L.CooldownSecs, L.CooldownKnown = 15, false
-L.CooldownEnds, L.CooldownAt, L.CooldownMin, L.CooldownRejects = 0, nil, 0, 0
 R.notifyRemote.OnClientEvent:FireAll("COOLCODE1", 5.5, "Sounds.Sfx.Blop", "Top")
 H.pump(40000, H.virtualNow())
 check("a redeem starts the countdown with no clock advance", L.CooldownLeft() > 0,
     "left=" .. tostring(L.CooldownLeft()))
+check("and it is about five seconds", L.CooldownLeft() > 4 and L.CooldownLeft() <= 5,
+    ("%.2f"):format(L.CooldownLeft()))
 
 local gui
 for _, d in ipairs((L.GuiParent or R.RepS):GetChildren()) do
     if d:IsA("ScreenGui") and tostring(d.Name):match("^LUCK_%d+$") then gui = d end
 end
-local shown
-if gui then
+local function readPanel()
+    if not gui then return nil end
     for _, d in ipairs(gui:GetDescendants()) do
-        if d:IsA("TextLabel") and tostring(d.Text):find("before the next redeem", 1, true) then
-            shown = d.Text
-        end
+        local txt = tostring(d.Text or "")
+        if d:IsA("TextLabel") and (txt:find("next redeem", 1, true)
+            or txt:find("discarded", 1, true)) then return txt end
     end
 end
-check("the panel is showing it", shown ~= nil, "no cooldown label found")
+local shown = readPanel()
+check("the panel is showing the countdown", shown ~= nil, "no cooldown label found")
 if shown then print("     panel reads: " .. tostring(shown)) end
+
+-- and it reports the wasted attempts once some pile up
+R.setInvokeBehaviour(function() return false, "Please wait before trying to redeem another Code" end)
+for i = 1, 3 do
+    R.notifyRemote.OnClientEvent:FireAll("COOLBURN" .. i, 5.5, "Sounds.Sfx.Blop", "Top")
+end
+H.pump(40000, H.virtualNow())
+if L.PaintCooldown then L.PaintCooldown() end
+local burned = readPanel()
+check("the panel says how many were thrown away",
+    burned ~= nil and burned:find("discarded", 1, true) ~= nil, tostring(burned))
+if burned then print("     panel reads: " .. tostring(burned)) end
 
 print("")
 print(("checks: %d   failures: %d"):format(checks, #fails))

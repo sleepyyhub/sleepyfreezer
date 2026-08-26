@@ -1113,23 +1113,22 @@ L.PostDelay = 0
 -- ---------------------------------------------------------------------------
 -- Redeem cooldown
 --
--- The server refuses a second redeem for a while after one goes through -- "Please wait
--- before trying to redeem another Code". How long is not published, and it is server
--- state, so a client cannot read it. It can be inferred from the replies, which is what
--- this does: a rejection proves the cooldown was still running at that moment, a real
--- answer proves it was over. Those are a lower and an upper bound, and the estimate is
--- the tightest upper bound seen so far.
+-- Five seconds between redeems that count, and an attempt made inside that window does
+-- not count -- it comes back "Please wait before trying to redeem another Code" and the
+-- clock keeps running from where it already was. It does not reset it, does not extend
+-- it, does not shorten it. So the countdown is anchored to the last redeem that got a
+-- real answer, and rejections only ever get counted, never acted on.
 --
--- Until an upper bound turns up the countdown is a guess and says so with a ~. It is
--- never inferred by probing -- an attempt spent measuring is an attempt not spent on a
--- code, and the earlier probe already established the check-and-set is atomic, so
--- nothing is winnable by firing into it anyway.
-L.CooldownSecs   = 15       -- current best estimate, seconds
-L.CooldownKnown  = false    -- true once a real answer has bounded it from above
+-- That is also the answer to the question the cooldown probe existed to settle: firing
+-- into an open window buys nothing. The check-and-set is atomic and the attempts are
+-- discarded, so there is no burst worth building.
+L.CooldownSecs   = 5        -- seconds between redeems that count
+L.CooldownKnown  = true     -- the length is known, not inferred, so no ~ on the readout
 L.CooldownEnds   = 0        -- clock time it runs out; 0 means free
-L.CooldownAt     = nil      -- when the current one started
-L.CooldownMin    = 0        -- longest gap ever seen still rejected -- the lower bound
-L.CooldownRejects = 0       -- rejections seen inside the current window
+L.CooldownAt     = nil      -- when the current window started
+L.CooldownMin    = 0        -- longest gap ever seen still rejected -- see the note below
+L.CooldownRejects = 0       -- attempts thrown away inside the current window
+L.CooldownWasted = 0        -- and across the whole session
 
 L.CooldownLeft = function()
     local ends = L.CooldownEnds or 0
@@ -1156,32 +1155,26 @@ L.NoteRedeemReply = function(ok, reply, at)
     local started = L.CooldownAt
 
     if isCooldownReply(reply) then
+        -- Did not count. The window is untouched -- no reset, no extension.
+        L.CooldownRejects += 1
+        L.CooldownWasted += 1
         if started then
             local gap = at - started
             if gap > L.CooldownMin then L.CooldownMin = gap end
-            -- Proved longer than we thought. Stretch the estimate past what we just saw
-            -- rather than counting down to zero and sitting there lying about it.
-            if not L.CooldownKnown and gap >= L.CooldownSecs then
-                L.CooldownSecs = gap + 1
+            -- One safety valve, and it can only ever lengthen. Being told to wait after
+            -- the countdown has already run out means five is not the real number on
+            -- this place, and a readout that says ready while the server says no is
+            -- worse than no readout. Never shortens: the five is his measurement, not
+            -- something to relitigate against sampling noise.
+            if gap > L.CooldownSecs then
+                L.CooldownSecs = gap
+                L.CooldownEnds = started + gap
             end
-            L.CooldownEnds = started + L.CooldownSecs
         end
-        if (L.CooldownEnds or 0) <= at then L.CooldownEnds = at + 0.5 end
-        L.CooldownRejects += 1
         return "cooldown"
     end
 
-    -- A real answer means the gate let this one through, so the previous window is over
-    -- and a new one starts now. Only treat the gap as an upper bound if we were actually
-    -- told to wait inside it -- otherwise it is just how long he happened to go without
-    -- redeeming, which measures nothing. The 4x clamp keeps one long idle stretch from
-    -- blowing the estimate up.
-    if started and L.CooldownRejects > 0 then
-        local gap = at - started
-        if gap > 0 and gap < L.CooldownSecs * 4 then
-            L.CooldownSecs, L.CooldownKnown = gap, true
-        end
-    end
+    -- Got a real answer, so this one counted and a fresh window starts here.
     L.CooldownRejects = 0
     L.CooldownAt = at
     L.CooldownEnds = at + L.CooldownSecs
@@ -3282,11 +3275,10 @@ L.Diag = function()
     if L.UIError then print("[LUCK] UI BUILD FAILED: " .. tostring(L.UIError)) end
     do
         local left = L.CooldownLeft()
-        print(("[LUCK] cooldown %s   length %s%.1fs   bracket %.1f..%s   rejects %d"):format(
-            left > 0 and ("%.1fs left"):format(left) or "ready",
-            L.CooldownKnown and "" or "~", L.CooldownSecs,
-            L.CooldownMin, L.CooldownKnown and ("%.1f"):format(L.CooldownSecs) or "?",
-            L.CooldownRejects or 0))
+        print(("[LUCK] cooldown %s   length %s%.1fs   discarded %d now, %d this session"):
+            format(left > 0 and ("%.1fs left"):format(left) or "ready",
+                   L.CooldownKnown and "" or "~", L.CooldownSecs,
+                   L.CooldownRejects or 0, L.CooldownWasted or 0))
     end
     print(("[LUCK] redeem  %s   source %s   tested %s   reply %s"):format(
         L.RedeemRemote and L.RedeemRemote.Name or "none",
@@ -4087,10 +4079,15 @@ local function buildUI()
             CdLabel.TextColor3 = T.GREEN
             return false
         end
-        -- The ~ is the honest part: until a reply has bounded it from above this is an
-        -- estimate, not a readout.
-        CdLabel.Text = ("%s%.1fs  ·  wait before the next redeem")
-            :format(L.CooldownKnown and "" or "~", left)
+        -- The wasted count is the useful half: anything sent inside this window is
+        -- thrown away by the server, so seeing it climb tells you the sends are going
+        -- nowhere rather than leaving you to wonder.
+        local burned = L.CooldownRejects or 0
+        CdLabel.Text = ("%s%.1fs  ·  %s"):format(
+            L.CooldownKnown and "" or "~", left,
+            burned > 0
+                and ("%d attempt%s discarded"):format(burned, burned == 1 and "" or "s")
+                or "wait before the next redeem")
         CdLabel.TextColor3 = left > 1.5 and T.RED or T.ORANGE
         return true
     end
