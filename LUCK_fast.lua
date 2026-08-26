@@ -1097,16 +1097,102 @@ end
 -- of it is read by the send path -- OursPending, LastTiming and LastDetect are all set
 -- back in rawFire, before this runs.
 --
--- It used to run on task.defer, which is the SAME resumption queue that deferred
--- OnClientEvent handlers are resumed from. So if a second code landed in the same
--- frame, this work -- Instance.new for a toast and its corner and its stroke, two
--- tweens, a history insert, a row of label writes -- could be resumed ahead of the
--- second announcement's handler, and delay detecting it by however long all of that
--- takes. Pushed onto a real delay so it can never sit in front of the next code. 30ms
--- late on screen is invisible; 30ms late on a send is the whole game.
-L.PostDelay = 0.03
+-- The result is shown the instant it arrives. Every step of the redeem's presentation
+-- used to sit on a 30ms timer -- the status line, the feed, the toast, the history row,
+-- the preview verdict -- to keep that work off the resumption queue a second
+-- announcement's handler comes from. The send is already on the wire by then, so the
+-- delay only ever moved pixels, never packets, but it did mean the answer showed up a
+-- couple of frames after the code did.
+--
+-- Nothing on the result path waits now. The only timer left anywhere near a redeem is
+-- OURS_WINDOW, and that one is not a result -- it is the absence of one.
+--
+-- Kept as a field, at zero, so anything reaching for LUCK.PostDelay finds it.
+L.PostDelay = 0
+
+-- ---------------------------------------------------------------------------
+-- Redeem cooldown
+--
+-- The server refuses a second redeem for a while after one goes through -- "Please wait
+-- before trying to redeem another Code". How long is not published, and it is server
+-- state, so a client cannot read it. It can be inferred from the replies, which is what
+-- this does: a rejection proves the cooldown was still running at that moment, a real
+-- answer proves it was over. Those are a lower and an upper bound, and the estimate is
+-- the tightest upper bound seen so far.
+--
+-- Until an upper bound turns up the countdown is a guess and says so with a ~. It is
+-- never inferred by probing -- an attempt spent measuring is an attempt not spent on a
+-- code, and the earlier probe already established the check-and-set is atomic, so
+-- nothing is winnable by firing into it anyway.
+L.CooldownSecs   = 15       -- current best estimate, seconds
+L.CooldownKnown  = false    -- true once a real answer has bounded it from above
+L.CooldownEnds   = 0        -- clock time it runs out; 0 means free
+L.CooldownAt     = nil      -- when the current one started
+L.CooldownMin    = 0        -- longest gap ever seen still rejected -- the lower bound
+L.CooldownRejects = 0       -- rejections seen inside the current window
+
+L.CooldownLeft = function()
+    local ends = L.CooldownEnds or 0
+    if ends <= 0 then return 0 end
+    local left = ends - os.clock()
+    return left > 0 and left or 0
+end
+
+local function isCooldownReply(reply)
+    if type(reply) ~= "string" then return false end
+    local t = reply:lower()
+    return t:find("wait", 1, true) ~= nil
+        or t:find("cooldown", 1, true) ~= nil
+        or t:find("too fast", 1, true) ~= nil
+        or t:find("slow down", 1, true) ~= nil
+end
+L.IsCooldownReply = isCooldownReply
+
+L.NoteRedeemReply = function(ok, reply, at)
+    -- The OURS_WINDOW timeout reports the absence of a reply, which says nothing about
+    -- the cooldown either way.
+    if ok == nil and reply == "no result" then return nil end
+    at = at or os.clock()
+    local started = L.CooldownAt
+
+    if isCooldownReply(reply) then
+        if started then
+            local gap = at - started
+            if gap > L.CooldownMin then L.CooldownMin = gap end
+            -- Proved longer than we thought. Stretch the estimate past what we just saw
+            -- rather than counting down to zero and sitting there lying about it.
+            if not L.CooldownKnown and gap >= L.CooldownSecs then
+                L.CooldownSecs = gap + 1
+            end
+            L.CooldownEnds = started + L.CooldownSecs
+        end
+        if (L.CooldownEnds or 0) <= at then L.CooldownEnds = at + 0.5 end
+        L.CooldownRejects += 1
+        return "cooldown"
+    end
+
+    -- A real answer means the gate let this one through, so the previous window is over
+    -- and a new one starts now. Only treat the gap as an upper bound if we were actually
+    -- told to wait inside it -- otherwise it is just how long he happened to go without
+    -- redeeming, which measures nothing. The 4x clamp keeps one long idle stretch from
+    -- blowing the estimate up.
+    if started and L.CooldownRejects > 0 then
+        local gap = at - started
+        if gap > 0 and gap < L.CooldownSecs * 4 then
+            L.CooldownSecs, L.CooldownKnown = gap, true
+        end
+    end
+    L.CooldownRejects = 0
+    L.CooldownAt = at
+    L.CooldownEnds = at + L.CooldownSecs
+    return "answered"
+end
 
 local function postRedeemBody(t0, src, code, ok, reply, timing)
+    -- First, before any presentation: the countdown should already be running by the
+    -- time the result is on screen.
+    L.NoteRedeemReply(ok, reply)
+    if L.StartCooldownTicker then L.StartCooldownTicker() end
     if L.ResultNotify then L.ResultNotify(code, ok, reply) end
     if L.ToastResult then L.ToastResult(code, ok, reply) end
     L.LogHeard(t0, src, code)
@@ -1116,13 +1202,10 @@ local function postRedeemBody(t0, src, code, ok, reply, timing)
     if L.ReportRedeem then L.ReportRedeem(ok, reply, timing) end
     if L.RefreshPreview then L.RefreshPreview() end
     if L.AutoReport then pcall(L.AutoReport) end
-    task.delay(1.25, function()
-        if L.RefreshPreview then L.RefreshPreview() end
-    end)
 end
 
 L.PostRedeem = function(t0, src, code, ok, reply, timing)
-    task.delay(L.PostDelay, postRedeemBody, t0, src, code, ok, reply, timing)
+    postRedeemBody(t0, src, code, ok, reply, timing)
 end
 
 local logHeard, postFragment, postRedeem, feed =
@@ -1340,7 +1423,7 @@ L.NotifyHandler = function(a)
     -- Delayed, not deferred: killFeed walks every player in the server doing two string
     -- finds each, and on task.defer that walk can be resumed ahead of the next code's
     -- handler. It only draws a "X sniped CODE" feed line, so it can wait.
-    if L.NotifyRedeem then task.delay(L.PostDelay, killFeed, text) end
+    if L.NotifyRedeem then killFeed(text) end
 
     if not hotAuto and not hotGuess then return end
 
@@ -1389,19 +1472,18 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
         end
     elseif fireOnly then
         L.OursT0, L.OursTiming, L.OursCode = t0, timing, code
-        -- Delayed with the rest of the presentation. This is a string.format and a
-        -- label write, and rawFire runs on the deferred queue -- the same queue a
-        -- second announcement's handler is resumed from.
+        -- Written now, not on a timer. A string.format and a label write, and the send
+        -- is already out -- so this cannot touch the packet, only the moment you see it.
         if status then
             local floorMs = L.FloorUs and (L.FloorUs / 1000) or L.LastGapMs or 0
             local surface = (L.DetectMode == "remote" and L.RemoteDetectOn)
                 and "  ·  remote"
                 or (L.NotifyHooked and "  ·  notify" or "  ·  label")
-            task.delay(L.PostDelay, function()
-                status.set(("sent  ·  %s  ·  %.3fms detect->send%s")
-                    :format(code, floorMs, surface), T.MUTED)
-            end)
+            status.set(("sent  ·  %s  ·  %.3fms detect->send%s")
+                :format(code, floorMs, surface), T.MUTED)
         end
+        -- This one stays a timer, because it is not a result -- it is the absence of
+        -- one. It fires only if the server never answered.
         task.delay(L.OURS_WINDOW, function()
             if L.OursPending == code then
                 L.OursPending = nil
@@ -1729,14 +1811,11 @@ do
         if a == nil then
             L.OursPending, L.OursAt = code, t0 ~= 0 and t0 or clock()
         end
-        -- Delayed. Note only feeds the race report, and t0 is passed in, so the timing
-        -- it records is identical whether it runs now or in 30ms -- but running it now
-        -- puts a table insert and an O(n) shift in the deferred queue, where it can sit
-        -- in front of the next code's handler.
-        if L.Note then
-            task.delay(L.PostDelay, L.Note, L.NotifyRemoteName or "remote", code, t0)
-        end
-        if L.NotifyRedeem then task.delay(L.PostDelay, killFeed, text) end
+        -- Straight through, like everything else on this path. t0 is passed in either
+        -- way, so what the race report records is identical -- the only thing the timer
+        -- ever changed was when it appeared.
+        if L.Note then L.Note(L.NotifyRemoteName or "remote", code, t0) end
+        if L.NotifyRedeem then killFeed(text) end
         rawFire(t0, tCall, tDone, text, raw, pok, a, b, fastIsEvent or a == nil)
     end
 
@@ -3201,6 +3280,14 @@ L.Diag = function()
         yn(L.Ready), tostring(L.ReadyBy or "waiting"), yn(L.UIBuilt),
         L.UpIn and ("   up in %.2fs"):format(L.UpIn) or ""))
     if L.UIError then print("[LUCK] UI BUILD FAILED: " .. tostring(L.UIError)) end
+    do
+        local left = L.CooldownLeft()
+        print(("[LUCK] cooldown %s   length %s%.1fs   bracket %.1f..%s   rejects %d"):format(
+            left > 0 and ("%.1fs left"):format(left) or "ready",
+            L.CooldownKnown and "" or "~", L.CooldownSecs,
+            L.CooldownMin, L.CooldownKnown and ("%.1f"):format(L.CooldownSecs) or "?",
+            L.CooldownRejects or 0))
+    end
     print(("[LUCK] redeem  %s   source %s   tested %s   reply %s"):format(
         L.RedeemRemote and L.RedeemRemote.Name or "none",
         tostring(L.RedeemRemoteSource), tostring(L.RedeemRemoteTested),
@@ -3921,12 +4008,11 @@ local function buildUI()
         Parent = C_Main})
     rev(StatusLine, "TextTransparency", 0)
     status = { set = function(t, c)
-        if not L.IntroDone then return end
         StatusLine.Text = tostring(t)
         StatusLine.TextColor3 = c or T.MUTED
     end }
 
-    local P_Status, C_Status = createPanel("Status", 280, 148,
+    local P_Status, C_Status = createPanel("Status", 280, 176,
         UDim2.new(0, 16, 0, 16))
     smallTag(C_Status, "REMOTES", 10, 4)
     local SysLabel = New("TextLabel", {Size = UDim2.new(1, -20, 0, 12),
@@ -3979,6 +4065,53 @@ local function buildUI()
         TextTransparency = 1, TextTruncate = Enum.TextTruncate.AtEnd,
         Parent = C_Status})
     rev(SrcLabel, "TextTransparency", 0)
+
+    smallTag(C_Status, "COOLDOWN", 10, 118)
+    local CdLabel = New("TextLabel", {Size = UDim2.new(1, -20, 0, 14),
+        Position = UDim2.new(0, 10, 0, 131), BackgroundTransparency = 1,
+        Text = "ready", TextColor3 = T.GREEN, Font = Enum.Font.GothamBold,
+        TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+        TextTransparency = 1, TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = C_Status})
+    rev(CdLabel, "TextTransparency", 0)
+
+    -- Returns whether there is still something to count, so the ticker below knows when
+    -- to stop. No cooldown running means no callback running.
+    local function paintCooldown()
+        local left = L.CooldownLeft()
+        if left <= 0 then
+            CdLabel.Text = L.CooldownAt
+                and ("ready  ·  %s%.0fs between redeems")
+                    :format(L.CooldownKnown and "" or "~", L.CooldownSecs)
+                or "ready"
+            CdLabel.TextColor3 = T.GREEN
+            return false
+        end
+        -- The ~ is the honest part: until a reply has bounded it from above this is an
+        -- estimate, not a readout.
+        CdLabel.Text = ("%s%.1fs  ·  wait before the next redeem")
+            :format(L.CooldownKnown and "" or "~", left)
+        CdLabel.TextColor3 = left > 1.5 and T.RED or T.ORANGE
+        return true
+    end
+    L.PaintCooldown = paintCooldown
+
+    local cdTicking = false
+    L.StartCooldownTicker = function()
+        if cdTicking then return end
+        if not paintCooldown() then return end
+        cdTicking = true
+        task.spawn(function()
+            -- 10Hz while counting, then gone. Not a Heartbeat connection -- that is a
+            -- Lua callback on every frame, 999 of them a second, to move one label.
+            while paintCooldown() do task.wait(0.1) end
+            cdTicking = false
+        end)
+    end
+    -- Not just a paint: detection goes live before the panels do, so a code can already
+    -- have been redeemed by the time this runs and the countdown needs to pick it up
+    -- mid-flight rather than showing a frozen number.
+    L.StartCooldownTicker()
 
     local function paintPill(btnUI, btnRemote, current)
         local uiOn = current == "ui"
@@ -4056,7 +4189,6 @@ local function buildUI()
             L.Mode and L.Mode.name or "?", L.NotifyRemoteName or "?")
     end
     L.ReportRedeem = function(ok, reply, timing)
-        if not L.IntroDone then return end
         local t = tostring(reply or (ok == nil and "no result") or "?")
         local ms = ""
         if timing and timing.server and timing.server > 0 then
@@ -4256,12 +4388,13 @@ local function buildUI()
         Corner(t, 9)
         local ts = Stroke(t, T.ACCENT, 1)
         ts.Transparency = 0.6
-        t.BackgroundTransparency = 1
-        tw(t, 0.25, {BackgroundTransparency = 0.15, TextTransparency = 0})
+        -- Full opacity on creation. It used to be born invisible and tweened in over
+        -- 250ms, so the result was legible a quarter of a second after it existed.
+        t.TextTransparency = 0
+        -- The dismissal stays on a timer -- a toast that never leaves is worse than a
+        -- late one -- but it is a plain destroy, not a fade and a wait.
         task.delay(3.5, function()
-            tw(t, 0.4, {BackgroundTransparency = 1, TextTransparency = 1})
-            task.wait(0.45)
-            t:Destroy()
+            if t and t.Parent then t:Destroy() end
         end)
         -- Same FIFO treatment as the feed: no GetChildren() walk per toast. Note the
         -- old walk trimmed by child order, which is creation order, so it destroyed the
@@ -4273,13 +4406,14 @@ local function buildUI()
         end
     end
 
+    -- No IntroDone gate on either of these any more. The panels exist by the time
+    -- these are bound, and a redeem that lands during the intro is exactly the one you
+    -- want to see -- it used to be dropped on the floor.
     L.Notify = function(text, color)
-        if not L.IntroDone then return end
         feedLine("» " .. tostring(text), color or T.TEXT)
         toast("» " .. tostring(text), color or T.TEXT)
     end
     L.NotifyRedeem = function(code, prize, who)
-        if not L.IntroDone then return end
         local nm = (who and who.Name) or "?"
         local msg = ("⚔ %s sniped %s%s"):format(nm, tostring(code or "?"),
             prize and ("  (" .. tostring(prize) .. ")") or "")
