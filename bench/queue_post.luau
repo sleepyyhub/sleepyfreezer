@@ -73,10 +73,19 @@ do
         return coroutine.yield()
     end)
 
+    -- H.pump fast-forwards the virtual clock to the next timer, so where the warmup
+    -- happens to stop decides whether the 30s janitor -- which clears sent[] and the
+    -- in-flight marker -- lands in the middle of this test. Wait for a clear to happen,
+    -- then start: that buys a full 30s of runway instead of leaving it to chance.
+    L.SentCodes.__runway = true
+    for _ = 1, 200 do
+        H.pump(4000, H.virtualNow() + 0.5)
+        if L.SentCodes.__runway == nil then break end
+    end
+    check("the test has a clean janitor window", L.SentCodes.__runway == nil)
+
     print("     handler at the time of the send: " .. tostring(L.HandlerName))
-    -- H.pump fast-forwards the virtual clock to the next timer, so an unbounded pump
-    -- here would run the 30s janitor and table.clear(sent) out from under the test.
-    -- Cap the advance to 20ms, well inside one round trip.
+    -- Cap each advance to 20ms, well inside one round trip.
     local function tick() H.pump(20000, H.virtualNow() + 0.02) end
     local before = R.invokeCount()
     -- fired from a coroutine, because the send is going to park mid-call
@@ -86,6 +95,8 @@ do
     tick()
     check("the send is actually in flight", R.invokeCount() - before == 1 and resume ~= nil,
         "invokes=" .. tostring(R.invokeCount() - before))
+    local f1 = L.InFlight and L.InFlight() or nil
+    check("the in-flight marker is set for it", f1 == "INFLIGHT1", "fly1=" .. tostring(f1))
 
     L.MultiSurface = true
     if L.SyncFast then L.SyncFast() end

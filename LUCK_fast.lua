@@ -202,6 +202,55 @@ L.Modded = (game.PlaceId ~= 109983668079237)
 L.TrustIndex = not L.Modded
 L.SR = 146/255; L.SG = 255/255; L.SB = 103/255
 
+-- ---------------------------------------------------------------------------
+-- Readiness gate
+--
+-- Nothing that costs frames gets to run until the script is actually working. The UI
+-- is nearly a thousand Instance.new calls and property writes across six panels, plus
+-- tweens -- and it used to be built synchronously at load, in the same window where
+-- discovery was still resolving the remotes and testing the redeem. A code dropping in
+-- there met a client mid-hitch with detection not yet live.
+--
+-- Now: resolve the remotes, connect detection, test the redeem, take pole, apply the
+-- boost. THEN build the UI. Registered callbacks, not polling -- readiness fires once.
+L.Ready = false
+-- How long to wait for that before building the UI anyway. Discovery normally lands in
+-- the first frame or two, plus one round trip for the redeem test, so this is only the
+-- floor for a place where something never resolves -- there the panel still comes up
+-- and its status line says what is missing, instead of leaving a blank screen.
+L.UIWaitMax = 10
+do
+    local waiters = {}
+    L.WhenReady = function(fn)
+        if type(fn) ~= "function" then return end
+        if L.Ready then return task.defer(fn) end
+        waiters[#waiters + 1] = fn
+    end
+    -- `why` is recorded rather than acted on, so Diag can say whether the UI came up
+    -- because everything resolved or because the wait ran out.
+    L.FireReady = function(why)
+        if L.Ready then return end
+        L.Ready, L.ReadyBy = true, why or "discovery"
+        L.ReadyAt = os.clock()
+        -- Fired in registration order, so the boost and pole land before the UI build.
+        for i = 1, #waiters do task.defer(waiters[i]) end
+        table.clear(waiters)
+    end
+end
+
+-- A no-op with a memory, replaced by the real one when the UI builds. Detection goes
+-- live before the panels exist, so a code can be caught and answered in between -- and
+-- ClaimResult calls this without a guard. Buffer those lines and let the real Notify
+-- replay them, rather than dropping the confirmation for the one redeem that happened
+-- while the UI was still coming up.
+L.LoadedAt = os.clock()
+L.NotifyBacklog = {}
+L.Notify = function(text, colour)
+    local q = L.NotifyBacklog
+    if #q >= 8 then table.remove(q, 1) end
+    q[#q + 1] = {text, colour}
+end
+
 local T = {
     VOID     = Color3.fromRGB(4, 10, 7),
     BG       = Color3.fromRGB(8, 17, 11),
@@ -673,6 +722,9 @@ do
             L.Discovered = true
             dropKicks()
             if L.OnDiscovered then task.defer(L.OnDiscovered) end
+            -- Remotes resolved, detection connected, redeem answered once. This is the
+            -- point everything waiting on readiness has been waiting for.
+            L.FireReady("discovery")
         end
     end
     L.RunDiscovery = runDiscovery
@@ -708,6 +760,15 @@ do
         -- Budget spent. Whatever was going to resolve has resolved; drop the event
         -- hooks so a place that keeps replicating remotes in does not keep waking us.
         dropKicks()
+        -- And release the gate regardless: 60s in, nothing else is coming.
+        L.FireReady("discovery gave up")
+    end)
+
+    -- The UI must not be hostage to a place where something never resolves. Discovery
+    -- normally lands within a frame or two plus one redeem round trip, so this only
+    -- fires when it did not.
+    task.delay(tonumber(L.UIWaitMax) or 10, function()
+        L.FireReady("wait ran out")
     end)
 end
 
@@ -3136,6 +3197,10 @@ L.Diag = function()
     print("[LUCK] ---- diagnostics ----")
     print(("[LUCK] place %s   modded %s   platform %s"):format(
         tostring(game.PlaceId), yn(L.Modded), L.IsMobile and "mobile" or "pc"))
+    print(("[LUCK] ready %s (%s)   ui built %s%s"):format(
+        yn(L.Ready), tostring(L.ReadyBy or "waiting"), yn(L.UIBuilt),
+        L.UpIn and ("   up in %.2fs"):format(L.UpIn) or ""))
+    if L.UIError then print("[LUCK] UI BUILD FAILED: " .. tostring(L.UIError)) end
     print(("[LUCK] redeem  %s   source %s   tested %s   reply %s"):format(
         L.RedeemRemote and L.RedeemRemote.Name or "none",
         tostring(L.RedeemRemoteSource), tostring(L.RedeemRemoteTested),
@@ -3208,11 +3273,10 @@ do
         pcall(L.Boost)
     end
     L.OnDiscovered = boostOnce
-    if L.Discovered or L.RemoteDetectOn then
-        task.defer(boostOnce)
-    else
-        task.delay(20, boostOnce)
-    end
+    -- Registered before the UI is, so the fps cap, the signal mode and pole are all in
+    -- place by the time a single Instance.new runs. The old 20s delayed fallback is
+    -- gone: the readiness gate has its own deadline and fires either way.
+    L.WhenReady(boostOnce)
 end
 
 -- Off. This pushes our result text through the GAME's NotificationController, so a
@@ -3367,7 +3431,7 @@ do
     end
 end
 
-local uiOK, uiErr = pcall(function()
+local function buildUI()
     local function New(cls, props)
         local i = Instance.new(cls)
         for k, v in pairs(props or {}) do i[k] = v end
@@ -4328,13 +4392,37 @@ local uiOK, uiErr = pcall(function()
         end
         task.delay(0.4, function()
             L.Notify("🍀 LUCK online", T.HIGH)
+            -- Anything caught before the panels existed, replayed in order now that
+            -- there is somewhere to put it.
+            local backlog = L.NotifyBacklog
+            if backlog then
+                L.NotifyBacklog = nil
+                for i = 1, #backlog do
+                    L.Notify(backlog[i][1], backlog[i][2])
+                end
+            end
             if status then
+                local waited = L.ReadyAt and (" · up in %.2fs"):format(L.UpIn or 0) or ""
                 status.set("ready  ·  detect " .. L.DetectMode
-                    .. "  ·  redeem " .. L.RedeemPath, T.MUTED)
+                    .. "  ·  redeem " .. L.RedeemPath .. waited, T.MUTED)
             end
         end)
     end)
-end)
-if not uiOK then
-    warn("[LUCK] UI failed to build: " .. tostring(uiErr))
 end
+
+-- The UI is the last thing to happen, not the first. Everything above resolved the
+-- remotes, connected detection, tested the redeem and took pole; only then does a
+-- single Instance.new run. On a place where some of that never resolved the gate opens
+-- on its own deadline, so the panel always comes up -- LUCK.Diag() says which it was.
+L.BuildUI = function()
+    if L.UIBuilt then return true end
+    L.UIBuilt = true
+    L.UpIn = os.clock() - (L.LoadedAt or os.clock())
+    local ok, err = pcall(buildUI)
+    if not ok then
+        L.UIError = tostring(err)
+        warn("[LUCK] UI failed to build: " .. tostring(err))
+    end
+    return ok
+end
+L.WhenReady(L.BuildUI)
