@@ -268,6 +268,12 @@ local T = {
     WHITE    = Color3.fromRGB(255, 255, 255),
 }
 
+-- The palette every widget reads its colours from, exposed rather than kept
+-- local. Nothing in the public build writes to it; the private build's theme
+-- engine does, and because widgets read it at creation time, retinting it means
+-- everything built afterwards comes out in the new colours for free.
+L.Palette = T
+
 local function safe(fn) local ok,r = pcall(fn); return ok and r or nil end
 
 L.NotifyRemoteName = "gui"

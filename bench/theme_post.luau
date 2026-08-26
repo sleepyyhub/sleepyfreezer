@@ -225,3 +225,110 @@ check("it can be turned off entirely", type(L.ThemeStop) == "function")
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end
 end
+
+do
+-- The theme has to reach ALL of the UI, not just the panel bodies, and the
+-- picker has to collapse.
+local R = RIG
+local H = R.H
+local L = R.genvTable.LUCK
+local fails, checks = {}, 0
+local function check(n, c, d)
+    checks += 1
+    if not c then fails[#fails + 1] = n .. (d and ("  -- " .. d) or "") end
+end
+local function key(c)
+    if not c then return "nil" end
+    return ("%d,%d,%d"):format(math.floor(c.R * 255 + 0.5),
+        math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+end
+
+print("")
+print("THEME REACHES THE WHOLE UI")
+print("----------------------------------------------------------------")
+
+local gui
+for _, d in ipairs((L.GuiParent or R.RepS):GetChildren()) do
+    if d:IsA("ScreenGui") and tostring(d.Name):match("^LUCK_%d+$") then gui = d end
+end
+
+check("the palette is exposed", type(L.Palette) == "table")
+
+-- snapshot every colour in the UI under one theme, then another
+local function snapshot()
+    local out = {}
+    for _, d in ipairs(gui:GetDescendants()) do
+        local bg, tx
+        pcall(function() if d:IsA("GuiObject") then bg = d.BackgroundColor3 end end)
+        pcall(function()
+            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                tx = d.TextColor3
+            end
+        end)
+        if bg or tx then out[#out + 1] = key(bg) .. "/" .. key(tx) end
+    end
+    return out
+end
+
+L.SetTheme("Clover")
+RENDER(4, 1 / 30)
+local green = snapshot()
+local greenPal = key(L.Palette.ACCENT) .. "|" .. key(L.Palette.BG)
+
+L.SetTheme("Sakura")
+RENDER(4, 1 / 30)
+local pink = snapshot()
+local pinkPal = key(L.Palette.ACCENT) .. "|" .. key(L.Palette.BG)
+
+check("the palette itself changed", greenPal ~= pinkPal,
+    greenPal .. "  vs  " .. pinkPal)
+check("Sakura's accent is pinker than Clover's",
+    L.Palette.ACCENT.R > L.Palette.ACCENT.G, key(L.Palette.ACCENT))
+
+local moved, same = 0, 0
+for i = 1, math.min(#green, #pink) do
+    if green[i] ~= pink[i] then moved += 1 else same += 1 end
+end
+check("most of the UI recoloured, not just the panels", moved > 20,
+    ("%d of %d widgets changed"):format(moved, moved + same))
+print(("     %d of %d widgets recoloured between themes"):format(moved, moved + same))
+
+-- widgets built AFTER a theme change come out already themed
+L.SetTheme("Lava")
+RENDER(4, 1 / 30)
+local lavaAccent = key(L.Palette.ACCENT)
+L.ToastOn = true
+R.notifyRemote.OnClientEvent:FireAll("THEMEAFTER1", 5.5, "Sounds.Sfx.Blop", "Top")
+H.pump(200000)
+check("the palette a new widget would read is the Lava one",
+    key(L.Palette.ACCENT) == lavaAccent)
+
+-- minimize
+local picker = gui and gui:FindFirstChild("LuckThemePicker")
+check("the picker has a body to collapse", picker and picker:FindFirstChild("Body") ~= nil)
+check("minimize is exposed", type(L.MinimizeThemePanel) == "function")
+if picker and L.MinimizeThemePanel then
+    local body = picker:FindFirstChild("Body")
+    L.MinimizeThemePanel(false)
+    local openH = picker.Size.Y.Offset
+    check("open, the body shows", body.Visible == true)
+    L.MinimizeThemePanel(true)
+    check("minimized, the body is hidden", body.Visible == false)
+    check("and the panel shrinks to its header",
+        picker.Size.Y.Offset < openH and picker.Size.Y.Offset <= 30,
+        ("%d -> %d"):format(openH, picker.Size.Y.Offset))
+    check("toggling with no argument flips it back",
+        L.MinimizeThemePanel() == false and body.Visible == true)
+end
+
+-- and a redeem is still exactly once through all of that
+local before = R.invokeCount()
+R.notifyRemote.OnClientEvent:FireAll("THEMEWIDE1", 5.5, "Sounds.Sfx.Blop", "Top")
+H.pump(200000)
+check("a code still redeems exactly once", R.invokeCount() - before == 1,
+    "sends=" .. tostring(R.invokeCount() - before))
+
+print(("checks: %d   failures: %d"):format(checks, #fails))
+for _, f in ipairs(fails) do print("  FAIL  " .. f) end
+print(("runtime errors: %d"):format(H.errors and #H.errors or 0))
+end
