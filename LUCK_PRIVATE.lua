@@ -4754,10 +4754,19 @@ end)()
 -- --------------------------------------------------------------------
 L.ThemeOn    = true      -- false freezes every gradient where it stands
 L.ThemeFps   = 30        -- gradient updates per second, NOT per frame
-L.ThemeSpeed = 0.14      -- laps per second through the ramp
-L.ThemeSpan  = 0.85      -- how much of the ramp is visible at once
+L.ThemeSpeed = 0.22      -- laps per second through the ramp
+L.ThemeSpan  = 1.6       -- how much of the ramp is visible at once
 L.ThemeKeys  = 20        -- keypoints per gradient
 L.ThemeTilt  = 35        -- gradient rotation, degrees
+
+-- Span above 1 means the ramp repeats inside one gradient, so a palette of four
+-- close colours still visibly travels instead of shimmering. Rainbow read as
+-- moving and the others did not, and that was the reason.
+
+-- How it moves. Same per-tick cost for all of them -- different arithmetic, not
+-- more of it.
+L.ThemeMotions = {"Flow", "Wave", "Pulse", "Spin", "Static"}
+L.ThemeMotion  = "Flow"
 
 local IS_MOBILE = L.IsMobile == true
 if IS_MOBILE then
@@ -4798,6 +4807,8 @@ local function uiFor(theme)
             DEEP    = Color3.fromRGB(150, 60, 190),
             TEXT    = Color3.fromRGB(238, 238, 246),
             MUTED   = Color3.fromRGB(140, 138, 156),
+            GREEN   = Color3.fromRGB(255, 205, 235),
+            ORANGE  = Color3.fromRGB(255, 120, 200),
         }
         return theme.ui
     end
@@ -4814,6 +4825,10 @@ local function uiFor(theme)
         DEEP    = dark,
         TEXT    = toward(light, WHITE, 0.55),
         MUTED   = scale(toward(mid, WHITE, 0.2), 0.62),
+        -- "success" and "pending" in the theme's own colours, two steps apart so
+        -- they stay tellable from each other.
+        GREEN   = light,
+        ORANGE  = bright,
     }
     return theme.ui
 end
@@ -4914,11 +4929,33 @@ local function tick(dt)
 
     local sample = sampleOf(currentTheme())
     local n = L.ThemeKeys
-    local head = fract(tAccum * L.ThemeSpeed)
+    local speed = L.ThemeSpeed
+    local span = L.ThemeSpan
+    local motion = L.ThemeMotion
+    local head = fract(tAccum * speed)
+    local dim, rot = nil, nil
+
+    if motion == "Wave" then
+        -- Back and forth rather than around, so it reads as a sweep with a
+        -- direction instead of an endless belt.
+        head = 0.5 + 0.5 * math.sin(tAccum * speed * 6.2831853)
+    elseif motion == "Pulse" then
+        -- The ramp holds still and the whole thing breathes.
+        head = 0
+        dim = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(tAccum * speed * 6.2831853))
+    elseif motion == "Spin" then
+        -- The gradient's angle turns. One extra property write per gradient.
+        rot = (tAccum * speed * 360) % 360
+    elseif motion == "Static" then
+        head = 0
+    end
+
     local kps = table.create(n)
     for i = 1, n do
         local t = (i - 1) / (n - 1)
-        kps[i] = ColorSequenceKeypoint.new(t, sample(head + t * L.ThemeSpan))
+        local c = sample(head + t * span)
+        if dim then c = scale(c, dim) end
+        kps[i] = ColorSequenceKeypoint.new(t, c)
     end
     local seq = ColorSequence.new(kps)
 
@@ -4926,9 +4963,15 @@ local function tick(dt)
     -- still to come.
     for i = #gradients, 1, -1 do
         local g = gradients[i]
-        if g.Parent then g.Color = seq else table.remove(gradients, i) end
+        if g.Parent then
+            g.Color = seq
+            if rot then g.Rotation = rot end
+        else
+            table.remove(gradients, i)
+        end
     end
     local a, b = sample(head), sample(head + 0.35)
+    if dim then a, b = scale(a, dim), scale(b, dim) end
     for i = #strokes, 1, -1 do
         local s = strokes[i]
         if s.Parent then s.Color = s.Thickness > 1 and a or b
@@ -5020,8 +5063,14 @@ end
 -- One walk per theme change, which is a click. Nothing per frame, nothing on
 -- the path of a redeem.
 -- --------------------------------------------------------------------
+-- GREEN and ORANGE are in here now. They were left out as "semantic" colours,
+-- which sounded right and looked wrong: the cooldown's ready line, the history
+-- ticks, the preview verdict and every result notification stayed bright green
+-- no matter what theme was on. RED stays out -- a failure reading as red is
+-- worth more than a failure matching the palette.
 local PAL_KEYS = {"VOID", "BG", "SURFACE", "RAISED", "LINE",
-                  "ACCENT", "HIGH", "DEEP", "TEXT", "MUTED"}
+                  "ACCENT", "HIGH", "DEEP", "TEXT", "MUTED",
+                  "GREEN", "ORANGE"}
 local bootPalette
 
 local function keyOf(c)
@@ -5169,6 +5218,7 @@ L.Theme = loadTheme() or "Rainbow"
 -- colours rather than the script.
 -- --------------------------------------------------------------------
 local CUSTOM_SLOTS = 4
+local refreshCustomUI
 
 local function saveCustom()
     local out = table.create(CUSTOM_SLOTS)
@@ -5206,6 +5256,132 @@ local function loadCustom()
 end
 loadCustom()
 
+-- --------------------------------------------------------------------
+-- Named presets
+--
+-- One line each: name|r,g,b|r,g,b|r,g,b|r,g,b|motion. Readable, and a line that
+-- does not parse is skipped rather than taking the file with it.
+-- --------------------------------------------------------------------
+local PRESET_FILE = "LUCK/private_theme_presets.txt"
+local MOTION_FILE = "LUCK/private_theme_motion.txt"
+L.CustomPresets = {}
+
+local refreshPresetUI
+
+local function writeFile(path, body)
+    pcall(function()
+        if type(makefolder) == "function"
+            and (type(isfolder) ~= "function" or not isfolder("LUCK")) then
+            makefolder("LUCK")
+        end
+        writefile(path, body)
+    end)
+end
+
+L.SaveThemeMotion = function()
+    writeFile(MOTION_FILE, tostring(L.ThemeMotion))
+end
+pcall(function()
+    if type(isfile) == "function" and not isfile(MOTION_FILE) then return end
+    local v = readfile(MOTION_FILE)
+    for _, m in ipairs(L.ThemeMotions) do
+        if m == v then L.ThemeMotion = m return end
+    end
+end)
+
+local function packColor(c)
+    return ("%d,%d,%d"):format(floor(c.R * 255 + 0.5),
+        floor(c.G * 255 + 0.5), floor(c.B * 255 + 0.5))
+end
+
+local function savePresets()
+    local lines = {}
+    for _, e in ipairs(L.CustomPresets) do
+        local parts = {e.name}
+        for i = 1, CUSTOM_SLOTS do parts[#parts + 1] = packColor(e.colors[i]) end
+        parts[#parts + 1] = e.motion or "Flow"
+        lines[#lines + 1] = table.concat(parts, "|")
+    end
+    writeFile(PRESET_FILE, table.concat(lines, "\n"))
+end
+
+local function loadPresets()
+    pcall(function()
+        if type(isfile) == "function" and not isfile(PRESET_FILE) then return end
+        local raw = readfile(PRESET_FILE)
+        if type(raw) ~= "string" then return end
+        for line in raw:gmatch("[^\n]+") do
+            local parts = {}
+            for piece in line:gmatch("[^|]+") do parts[#parts + 1] = piece end
+            if #parts >= CUSTOM_SLOTS + 1 then
+                local colors, ok = {}, true
+                for i = 1, CUSTOM_SLOTS do
+                    local r, g, b = parts[i + 1]:match("^(%d+),(%d+),(%d+)$")
+                    if not r then ok = false break end
+                    colors[i] = rgb(tonumber(r), tonumber(g), tonumber(b))
+                end
+                if ok then
+                    L.CustomPresets[#L.CustomPresets + 1] = {
+                        name = parts[1],
+                        colors = colors,
+                        motion = parts[CUSTOM_SLOTS + 2] or "Flow",
+                    }
+                end
+            end
+        end
+    end)
+end
+loadPresets()
+
+local function presetIndex(name)
+    local want = tostring(name):lower()
+    for i, e in ipairs(L.CustomPresets) do
+        if e.name:lower() == want then return i end
+    end
+    return nil
+end
+
+L.SaveCustomPreset = function(name)
+    name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then return false, "needs a name" end
+    if #name > 18 then name = name:sub(1, 18) end
+    local colors = {}
+    for i = 1, CUSTOM_SLOTS do colors[i] = CUSTOM.colors[i] end
+    local entry = {name = name, colors = colors, motion = L.ThemeMotion}
+    -- Saving over a name you already used replaces it, rather than growing a
+    -- second row with the same label on it.
+    local at = presetIndex(name)
+    if at then L.CustomPresets[at] = entry
+    else L.CustomPresets[#L.CustomPresets + 1] = entry end
+    savePresets()
+    if refreshPresetUI then refreshPresetUI() end
+    return true
+end
+
+L.LoadCustomPreset = function(name)
+    local at = presetIndex(name)
+    if not at then return false end
+    local e = L.CustomPresets[at]
+    for i = 1, CUSTOM_SLOTS do CUSTOM.colors[i] = e.colors[i] end
+    CUSTOM.accent = CUSTOM.colors[3]
+    invalidate(CUSTOM)
+    saveCustom()
+    if e.motion then L.ThemeMotion = e.motion; L.SaveThemeMotion() end
+    if L.SetTheme then L.SetTheme("Custom") end
+    if refreshCustomUI then refreshCustomUI() end
+    if refreshPresetUI then refreshPresetUI() end
+    return true
+end
+
+L.DeleteCustomPreset = function(name)
+    local at = presetIndex(name)
+    if not at then return false end
+    table.remove(L.CustomPresets, at)
+    savePresets()
+    if refreshPresetUI then refreshPresetUI() end
+    return true
+end
+
 L.CustomSlots = CUSTOM_SLOTS
 L.GetCustomColor = function(slot)
     local c = CUSTOM.colors[slot]
@@ -5213,7 +5389,6 @@ L.GetCustomColor = function(slot)
     return floor(c.R * 255 + 0.5), floor(c.G * 255 + 0.5), floor(c.B * 255 + 0.5)
 end
 
-local refreshCustomUI
 L.SetCustomColor = function(slot, r, g, b)
     slot = tonumber(slot)
     if not slot or slot < 1 or slot > CUSTOM_SLOTS then return false end
@@ -5249,6 +5424,19 @@ L.RandomCustom = function()
 end
 
 local repaintPicker
+L.SetThemeMotion = function(name)
+    for _, m in ipairs(L.ThemeMotions) do
+        if m:lower() == tostring(name):lower() then
+            L.ThemeMotion = m
+            if L.SaveThemeMotion then L.SaveThemeMotion() end
+            if repaintPicker then repaintPicker() end
+            return true
+        end
+    end
+    print("[LUCK] motions: " .. table.concat(L.ThemeMotions, ", "))
+    return false
+end
+
 L.ApplyTheme = function()
     local t = currentTheme()
     applyPalette(t)
@@ -5293,7 +5481,7 @@ local function buildPicker()
 
     local ROWS = math.ceil(#THEMES / 2)
     local LIST_H = 12 + ROWS * 36
-    local EDIT_H = 118
+    local EDIT_H = 238
     local W, H = 214, 40 + LIST_H + EDIT_H
     local root = Instance.new("Frame")
     root.Name = "LuckThemePicker"
@@ -5650,7 +5838,7 @@ local function buildPicker()
     makeSlider(82, "B", rgb(120, 175, 255), "B")
 
     local randBtn = Instance.new("TextButton")
-    randBtn.Size = UDim2.new(1, -24, 0, 20)
+    randBtn.Size = UDim2.new(0, 92, 0, 20)
     randBtn.Position = UDim2.new(0, 12, 0, 100)
     randBtn.BackgroundColor3 = (L.Palette and L.Palette.RAISED) or rgb(17, 36, 23)
     randBtn.Text = "RANDOM"
@@ -5662,6 +5850,153 @@ local function buildPicker()
     randBtn.Parent = editor
     Instance.new("UICorner", randBtn).CornerRadius = UDim.new(0, 6)
     randBtn.MouseButton1Click:Connect(function() L.RandomCustom() end)
+
+    -- ----------------------------------------------------------------
+    -- Motion
+    --
+    -- Applies to every theme, not just this one -- Rainbow spinning is as much
+    -- a thing as a custom one spinning. It lives down here because this is where
+    -- the fiddling happens.
+    -- ----------------------------------------------------------------
+    local nameBox = Instance.new("TextBox")
+    nameBox.Size = UDim2.new(0, 90, 0, 20)
+    nameBox.Position = UDim2.new(0, 112, 0, 100)
+    nameBox.BackgroundColor3 = (L.Palette and L.Palette.SURFACE) or rgb(12, 25, 16)
+    nameBox.BorderSizePixel = 0
+    nameBox.PlaceholderText = "name it\u{2026}"
+    nameBox.PlaceholderColor3 = (L.Palette and L.Palette.MUTED) or rgb(108, 148, 120)
+    nameBox.Text = ""
+    nameBox.TextColor3 = (L.Palette and L.Palette.TEXT) or rgb(228, 246, 233)
+    nameBox.ClearTextOnFocus = false
+    nameBox.Font = Enum.Font.GothamSemibold
+    nameBox.TextSize = 9
+    nameBox.TextXAlignment = Enum.TextXAlignment.Left
+    nameBox.Parent = editor
+    Instance.new("UICorner", nameBox).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIPadding", nameBox).PaddingLeft = UDim.new(0, 6)
+
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(0, 44, 0, 20)
+    saveBtn.Position = UDim2.new(1, -56, 0, 100)
+    saveBtn.BackgroundColor3 = (L.Palette and L.Palette.DEEP) or rgb(22, 163, 74)
+    saveBtn.Text = "SAVE"
+    saveBtn.TextColor3 = (L.Palette and L.Palette.HIGH) or rgb(165, 255, 198)
+    saveBtn.Font = Enum.Font.GothamBold
+    saveBtn.TextSize = 9
+    saveBtn.AutoButtonColor = false
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Parent = editor
+    Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 6)
+    local function doSave()
+        local n = nameBox.Text
+        if L.SaveCustomPreset(n) then
+            nameBox.Text = ""
+            if L.Notify then L.Notify("saved theme \u{201C}" .. n .. "\u{201D}",
+                (L.Palette and L.Palette.HIGH) or nil) end
+        end
+    end
+    saveBtn.MouseButton1Click:Connect(doSave)
+    nameBox.FocusLost:Connect(function(enter) if enter then doSave() end end)
+
+    local motionTag = Instance.new("TextLabel")
+    motionTag.Size = UDim2.new(1, -24, 0, 11)
+    motionTag.Position = UDim2.new(0, 12, 0, 126)
+    motionTag.BackgroundTransparency = 1
+    motionTag.Text = "MOTION"
+    motionTag.TextColor3 = (L.Palette and L.Palette.MUTED) or rgb(108, 148, 120)
+    motionTag.Font = Enum.Font.GothamSemibold
+    motionTag.TextSize = 8
+    motionTag.TextXAlignment = Enum.TextXAlignment.Left
+    motionTag.Parent = editor
+
+    local motionBtns = {}
+    for i, m in ipairs(L.ThemeMotions) do
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0, 36, 0, 18)
+        b.Position = UDim2.new(0, 12 + (i - 1) * 39, 0, 140)
+        b.BackgroundColor3 = (L.Palette and L.Palette.RAISED) or rgb(17, 36, 23)
+        b.Text = m
+        b.TextColor3 = (L.Palette and L.Palette.MUTED) or rgb(108, 148, 120)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 8
+        b.AutoButtonColor = false
+        b.BorderSizePixel = 0
+        b.Parent = editor
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+        b.MouseButton1Click:Connect(function() L.SetThemeMotion(m) end)
+        motionBtns[i] = {button = b, motion = m}
+    end
+
+    -- ----------------------------------------------------------------
+    -- Saved presets
+    -- ----------------------------------------------------------------
+    local savedTag = Instance.new("TextLabel")
+    savedTag.Size = UDim2.new(1, -24, 0, 11)
+    savedTag.Position = UDim2.new(0, 12, 0, 164)
+    savedTag.BackgroundTransparency = 1
+    savedTag.Text = "SAVED"
+    savedTag.TextColor3 = (L.Palette and L.Palette.MUTED) or rgb(108, 148, 120)
+    savedTag.Font = Enum.Font.GothamSemibold
+    savedTag.TextSize = 8
+    savedTag.TextXAlignment = Enum.TextXAlignment.Left
+    savedTag.Parent = editor
+
+    local savedList = Instance.new("ScrollingFrame")
+    savedList.Size = UDim2.new(1, -24, 0, 58)
+    savedList.Position = UDim2.new(0, 12, 0, 176)
+    savedList.BackgroundColor3 = (L.Palette and L.Palette.SURFACE) or rgb(12, 25, 16)
+    savedList.BackgroundTransparency = 0.35
+    savedList.BorderSizePixel = 0
+    savedList.ScrollBarThickness = 3
+    savedList.Parent = editor
+    Instance.new("UICorner", savedList).CornerRadius = UDim.new(0, 7)
+
+    local savedRows = {}
+    refreshPresetUI = function()
+        for _, r in ipairs(savedRows) do pcall(function() r:Destroy() end) end
+        table.clear(savedRows)
+        local list = L.CustomPresets
+        savedList.CanvasSize = UDim2.new(0, 0, 0, #list * 20 + 4)
+        for i, e in ipairs(list) do
+            local row = Instance.new("TextButton")
+            row.Size = UDim2.new(1, -26, 0, 18)
+            row.Position = UDim2.new(0, 3, 0, 2 + (i - 1) * 20)
+            row.BackgroundColor3 = e.colors[3]
+            row.BackgroundTransparency = 0.55
+            row.Text = ("%s   %s"):format(e.name, e.motion or "Flow")
+            row.TextColor3 = (L.Palette and L.Palette.TEXT) or rgb(228, 246, 233)
+            row.Font = Enum.Font.GothamSemibold
+            row.TextSize = 9
+            row.TextXAlignment = Enum.TextXAlignment.Left
+            row.AutoButtonColor = false
+            row.BorderSizePixel = 0
+            row.Parent = savedList
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 5)
+            Instance.new("UIPadding", row).PaddingLeft = UDim.new(0, 6)
+            row.MouseButton1Click:Connect(function()
+                L.LoadCustomPreset(e.name)
+            end)
+            savedRows[#savedRows + 1] = row
+
+            local del = Instance.new("TextButton")
+            del.Size = UDim2.new(0, 18, 0, 18)
+            del.Position = UDim2.new(1, -21, 0, 2 + (i - 1) * 20)
+            del.BackgroundColor3 = (L.Palette and L.Palette.RAISED) or rgb(17, 36, 23)
+            del.Text = "\u{00D7}"
+            del.TextColor3 = (L.Palette and L.Palette.RED) or rgb(255, 130, 155)
+            del.Font = Enum.Font.GothamBold
+            del.TextSize = 10
+            del.AutoButtonColor = false
+            del.BorderSizePixel = 0
+            del.Parent = savedList
+            Instance.new("UICorner", del).CornerRadius = UDim.new(0, 5)
+            del.MouseButton1Click:Connect(function()
+                L.DeleteCustomPreset(e.name)
+            end)
+            savedRows[#savedRows + 1] = del
+        end
+    end
+    refreshPresetUI()
 
     refreshCustomUI = function()
         for i, sb in ipairs(slotBtns) do
@@ -5684,6 +6019,15 @@ local function buildPicker()
             local on = r.theme.name == L.Theme
             r.button.BackgroundColor3 = on and rgb(31, 60, 41) or rgb(17, 36, 23)
             r.label.TextColor3 = on and r.theme.accent or rgb(160, 190, 170)
+        end
+        for _, mb in ipairs(motionBtns) do
+            local on = mb.motion == L.ThemeMotion
+            mb.button.BackgroundColor3 = on
+                and ((L.Palette and L.Palette.DEEP) or rgb(22, 163, 74))
+                or ((L.Palette and L.Palette.RAISED) or rgb(17, 36, 23))
+            mb.button.TextColor3 = on
+                and ((L.Palette and L.Palette.HIGH) or rgb(165, 255, 198))
+                or ((L.Palette and L.Palette.MUTED) or rgb(108, 148, 120))
         end
         -- The editor is only in the way when a fixed palette is picked.
         editor.Visible = (L.Theme == "Custom")

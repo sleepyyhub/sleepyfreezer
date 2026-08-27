@@ -443,3 +443,172 @@ end
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end
 end
+
+do
+-- Green must not survive a theme change; every motion mode must actually move
+-- differently; presets must save, name, load and delete.
+local R = RIG
+local H = R.H
+local L = R.genvTable.LUCK
+local fails, checks = {}, 0
+local function check(n, c, d)
+    checks += 1
+    if not c then fails[#fails + 1] = n .. (d and ("  -- " .. d) or "") end
+end
+local function key(c)
+    if not c then return "nil" end
+    return ("%d,%d,%d"):format(math.floor(c.R * 255 + 0.5),
+        math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+end
+
+print("")
+print("NO STRAY GREEN  ·  MOTION  ·  PRESETS")
+print("----------------------------------------------------------------")
+
+-- the greens
+local LUCK_GREEN  = "146,255,103"
+local LUCK_ORANGE = "255,190,120"
+L.SetTheme("Sakura")
+RENDER(4, 1 / 30)
+check("GREEN is themed, not the original green",
+    key(L.Palette.GREEN) ~= LUCK_GREEN, key(L.Palette.GREEN))
+check("ORANGE is themed too",
+    key(L.Palette.ORANGE) ~= LUCK_ORANGE, key(L.Palette.ORANGE))
+check("RED is deliberately left alone",
+    L.Palette.RED ~= nil and key(L.Palette.RED) == "255,130,155",
+    key(L.Palette.RED))
+
+local gui
+for _, d in ipairs((L.GuiParent or R.RepS):GetChildren()) do
+    if d:IsA("ScreenGui") and tostring(d.Name):match("^LUCK_%d+$") then gui = d end
+end
+local function greenWidgets()
+    local n = 0
+    for _, d in ipairs(gui:GetDescendants()) do
+        local ok, c = pcall(function()
+            if d:IsA("TextLabel") or d:IsA("TextButton") then return d.TextColor3 end
+        end)
+        if ok and c and key(c) == LUCK_GREEN then n += 1 end
+    end
+    return n
+end
+check("no widget is still wearing the old green", greenWidgets() == 0,
+    tostring(greenWidgets()) .. " left")
+
+-- motion: each mode has to produce a different sequence over the same time
+local grad
+for _, d in ipairs(gui:GetDescendants()) do
+    if d.Name == "LuckThemeGradient" then grad = d break end
+end
+local function firstColour(gr)
+    local seq = gr and gr.Color
+    local kp = seq and seq.Keypoints and seq.Keypoints[2]
+    return kp and kp.Value or nil
+end
+check("the motion list exists", L.ThemeMotions and #L.ThemeMotions == 5,
+    tostring(L.ThemeMotions and #L.ThemeMotions))
+print("     motions: " .. table.concat(L.ThemeMotions, ", "))
+
+L.SetTheme("Clover")
+local samples = {}
+for _, m in ipairs(L.ThemeMotions) do
+    check(("motion %s can be set"):format(m), L.SetThemeMotion(m) == true)
+    RENDER(4, 1 / 30)
+    local a = firstColour(grad)
+    RENDER(40, 1 / 30)
+    local b = firstColour(grad)
+    local moved = a and b and
+        (math.abs(a.R - b.R) + math.abs(a.G - b.G) + math.abs(a.B - b.B))
+    samples[m] = moved or 0
+end
+check("Flow moves", samples.Flow > 0.02, tostring(samples.Flow))
+check("Wave moves", samples.Wave > 0.02, tostring(samples.Wave))
+check("Pulse moves", samples.Pulse > 0.02, tostring(samples.Pulse))
+check("Static does not move", samples.Static < 0.001, tostring(samples.Static))
+check("an unknown motion is refused", L.SetThemeMotion("Disco") == false)
+
+-- Spin turns the gradient rather than recolouring it
+L.SetThemeMotion("Spin")
+RENDER(4, 1 / 30)
+local rotA = grad.Rotation
+RENDER(40, 1 / 30)
+check("Spin changes the gradient angle", grad.Rotation ~= rotA,
+    tostring(rotA) .. " -> " .. tostring(grad.Rotation))
+L.SetThemeMotion("Flow")
+
+-- a fixed palette has to visibly travel, not just shimmer
+check("span is wide enough for a close palette to travel", L.ThemeSpan > 1,
+    tostring(L.ThemeSpan))
+
+-- presets
+L.SetTheme("Custom")
+L.SetCustomColor(1, 10, 20, 60)
+L.SetCustomColor(2, 30, 60, 150)
+L.SetCustomColor(3, 60, 120, 255)
+L.SetCustomColor(4, 180, 210, 255)
+L.SetThemeMotion("Wave")
+check("a preset can be saved", L.SaveCustomPreset("Blues") == true)
+check("it is in the list", (function()
+    for _, e in ipairs(L.CustomPresets) do
+        if e.name == "Blues" then return true end
+    end
+    return false
+end)())
+check("an unnamed preset is refused", select(1, L.SaveCustomPreset("  ")) == false)
+
+-- change the colours, then load it back
+L.SetCustomColor(3, 255, 0, 0)
+L.SetThemeMotion("Flow")
+check("the live colour changed away", (function()
+    local r = L.GetCustomColor(3)
+    return r == 255
+end)())
+check("loading the preset brings it back", L.LoadCustomPreset("Blues") == true)
+local r3, g3, b3 = L.GetCustomColor(3)
+check("with its colours", r3 == 60 and g3 == 120 and b3 == 255,
+    ("%d,%d,%d"):format(r3, g3, b3))
+check("and its motion", L.ThemeMotion == "Wave", tostring(L.ThemeMotion))
+
+-- saving the same name replaces rather than duplicating
+local before = #L.CustomPresets
+L.SaveCustomPreset("Blues")
+check("saving over a name replaces it", #L.CustomPresets == before,
+    ("%d -> %d"):format(before, #L.CustomPresets))
+
+-- a second one, then delete
+L.SetCustomColor(3, 255, 200, 40)
+check("a second preset saves", L.SaveCustomPreset("Amber") == true)
+check("both are listed", #L.CustomPresets == before + 1,
+    tostring(#L.CustomPresets))
+check("one can be deleted", L.DeleteCustomPreset("Amber") == true)
+check("and is gone", presetGone == nil and (function()
+    for _, e in ipairs(L.CustomPresets) do
+        if e.name == "Amber" then return false end
+    end
+    return true
+end)())
+check("deleting something that is not there is refused",
+    L.DeleteCustomPreset("Nope") == false)
+
+-- the panel shows them
+local picker = gui and gui:FindFirstChild("LuckThemePicker")
+local editor = picker and picker:FindFirstChild("Body")
+editor = editor and editor:FindFirstChild("CustomEditor")
+check("the editor exists", editor ~= nil)
+if editor then
+    local sawPreset, sawMotion = false, 0
+    for _, d in ipairs(editor:GetDescendants()) do
+        local t = tostring(d.Text or "")
+        if t:find("Blues", 1, true) then sawPreset = true end
+        for _, m in ipairs(L.ThemeMotions) do
+            if t == m then sawMotion += 1 end
+        end
+    end
+    check("the saved preset has a row", sawPreset, "no Blues row")
+    check("every motion has a button", sawMotion == #L.ThemeMotions,
+        tostring(sawMotion))
+end
+
+print(("checks: %d   failures: %d"):format(checks, #fails))
+for _, f in ipairs(fails) do print("  FAIL  " .. f) end
+end
