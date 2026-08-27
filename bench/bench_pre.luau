@@ -123,6 +123,30 @@ decoyNotify.OnClientEvent:Connect(makeHandler(function() end))
 
 
 -- The game's NotificationController, as a module LUCK can require and hook.
+-- The game's own brainrot data, which the webhook reads to decide where a win
+-- gets posted. Field names are guesses on the real place, so the stub uses one
+-- of the ones the reader tries.
+local Datas = new("Folder", "Datas"); Datas.Parent = RepS
+local Animals = new("Folder", "Animals"); Animals.Parent = Datas
+Animals._module = {
+    ["la vacca"]    = {DisplayName = "La Vacca", Rarity = "Secret",  Generation = 250000000},
+    ["small secret"]= {DisplayName = "Small Secret", Rarity = "Secret", Generation = 5000000},
+    ["og pet"]      = {DisplayName = "OG Pet",  Rarity = "OG",      Generation = "1.5B"},
+    ["meowl"]       = {DisplayName = "Meowl",   Rarity = "Rare",    Generation = 1200},
+    ["big common"]  = {DisplayName = "Big Common", Rarity = "Common", Generation = 900000000},
+}
+
+-- Captures every webhook post so a test can read where it went.
+POSTS = {}
+local realRequest = nil
+request = function(opts)
+    POSTS[#POSTS + 1] = {url = opts.Url, body = opts.Body, method = opts.Method}
+    local forced = FORCE_STATUS and FORCE_STATUS(opts.Url)
+    return {StatusCode = forced or 204, Body = ""}
+end
+
+DateTime = {now = function() return {ToIsoDate = function() return "2026-01-01T00:00:00Z" end} end}
+
 local Controllers = new("Folder", "Controllers"); Controllers.Parent = RepS
 local NCModule = new("Folder", "NotificationController"); NCModule.Parent = Controllers
 NCModule._module = {
@@ -176,11 +200,36 @@ TweenService.Create = function(_, inst, info, goal)
 end
 
 local HttpService = svc("HttpService")
-HttpService.JSONEncode = function(_, t) return "{}" end
+-- A real encoder. It used to return "{}" for everything, so any test reading a
+-- request body was checking a constant and passing for it.
+local function jsonEnc(v)
+    local t = type(v)
+    if t == "nil" then return "null" end
+    if t == "boolean" or t == "number" then return tostring(v) end
+    if t == "string" then
+        return '"' .. v:gsub('[\\"]', '\\%0'):gsub("\n", "\\n") .. '"'
+    end
+    if t ~= "table" then return "null" end
+    if #v > 0 or next(v) == nil then
+        local out = {}
+        for i = 1, #v do out[i] = jsonEnc(v[i]) end
+        return "[" .. table.concat(out, ",") .. "]"
+    end
+    local keys = {}
+    for k in pairs(v) do keys[#keys + 1] = tostring(k) end
+    table.sort(keys)
+    local out = {}
+    for _, k in ipairs(keys) do
+        out[#out + 1] = jsonEnc(k) .. ":" .. jsonEnc(v[k])
+    end
+    return "{" .. table.concat(out, ",") .. "}"
+end
+HttpService.JSONEncode = function(_, t) return jsonEnc(t) end
 HttpService.JSONDecode = function(_, s) return {} end
 
 local LocalPlayer = new("Folder", "clover")
 LocalPlayer.DisplayName = "clover"
+LocalPlayer.UserId = 2678001507
 PlayerGui.Parent = LocalPlayer
 
 local Players = svc("Players")

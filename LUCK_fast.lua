@@ -3669,6 +3669,248 @@ L.Prize = function(msg)
     return clean ~= "" and clean or L.Strip(msg)
 end
 
+-- ---------------------------------------------------------------------------
+-- Webhook
+--
+-- Posts a win. Routing is by what was won: the top tiers above a generation
+-- threshold go to their own channel, everything else to the general one, which
+-- has a spare to fall back on when the first is rate limited.
+-- ---------------------------------------------------------------------------
+do
+    L.HookOn = true
+
+    L.HookRare = {
+        "https://discord.com/api/webhooks/1542568143753584792/Ly6z7D4RCLyY-XFOii0vQFBf8ZqjDMlyDd4WiQXHbYAxhBDsW4OE0FKn1eIjUmMTdRbB",
+    }
+    L.HookNormal = {
+        "https://discord.com/api/webhooks/1542582881333813292/OYzMYQ31WDRbY5lpUj7-OYvzU5os3StyBlsDmbjR9VpirjnY4x4REAJT141Ylp9QqVKa",
+        "https://discord.com/api/webhooks/1542582884248985671/RN9KZAJqQZCExYZ-cBNjJwyKqiMfiTDMp8Te_UBVUAnBMDqAtHaekT0BhW2kxQM6MCfK",
+    }
+
+    -- What counts as rare. Read literally: one of these tiers AND above the
+    -- threshold. Set HookRareEither to true to make it either one on its own.
+    L.HookRareTiers  = {og = true, secret = true}
+    L.HookRareMinGen = 100000000
+    L.HookRareEither = false
+
+    local cool = {}
+
+    local function httpPost(url, body)
+        local req = (syn and syn.request) or (http and http.request) or http_request or request
+        if req then
+            local ok, res = pcall(function()
+                return req({Url = url, Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"}, Body = body})
+            end)
+            if not ok then return false, 0 end
+            local code = (res and res.StatusCode) or 0
+            return (code >= 200 and code < 300), code
+        end
+        local ok = pcall(function()
+            HttpService:PostAsync(url, body or "", Enum.HttpContentType.ApplicationJson)
+        end)
+        return ok, ok and 200 or 0
+    end
+
+    -- First one always, the rest only when it will not take the post. Not a
+    -- round robin: the spare exists to catch a rate limit, so everything should
+    -- land in the same channel until the first one stops accepting.
+    --
+    -- A 429 rests that url longer than a plain failure, because a rate limit
+    -- means come back later while a 500 might just be that one request.
+    local function post(pool, body)
+        local n = #pool
+        if n == 0 then return false end
+        -- Keyed by the pool table itself, then by position.
+        local rest = cool[pool]
+        if not rest then rest = {}; cool[pool] = rest end
+        for i = 1, n do
+            if (rest[i] or 0) <= os.clock() then
+                local ok, code = httpPost(pool[i], body)
+                if ok then return true end
+                rest[i] = os.clock() + (code == 429 and 10 or 3)
+            end
+        end
+        return false
+    end
+
+    -- --------------------------------------------------------------
+    -- What the prize actually is
+    --
+    -- Read defensively. The field names in the game's own data are not
+    -- something this script gets to know for certain, so it tries the ones it
+    -- might be called and takes the first that answers.
+    -- --------------------------------------------------------------
+    local info = {}
+    local loaded = false
+
+    local SUFFIX = {k = 1e3, m = 1e6, b = 1e9, t = 1e12}
+    local function toNumber(v)
+        if type(v) == "number" then return v end
+        if type(v) ~= "string" then return nil end
+        local num, suffix = v:lower():gsub(",", ""):match("([%d%.]+)%s*([kmbt]?)")
+        num = tonumber(num)
+        if not num then return nil end
+        return num * (SUFFIX[suffix] or 1)
+    end
+
+    local function readTier(entry)
+        local r = entry.Rarity or entry.RarityName or entry.RarityData or entry.Tier
+        if type(r) == "string" then return r end
+        if type(r) == "table" then
+            return r.DisplayName or r.Name or r.Id or r.Value
+        end
+        return nil
+    end
+
+    local function readGen(entry)
+        for _, key in ipairs({"Generation", "Gen", "Income", "Money", "Cash",
+                              "Rate", "Production", "PerSecond", "Profit"}) do
+            local v = toNumber(entry[key])
+            if v then return v end
+        end
+        return nil
+    end
+
+    local function loadAnimals()
+        if loaded then return end
+        local ok = pcall(function()
+            local datas = RepS:FindFirstChild("Datas")
+            local mod = datas and datas:FindFirstChild("Animals")
+            if not mod then return end
+            local data = require(mod)
+            if type(data) ~= "table" then return end
+            for key, entry in pairs(data) do
+                if type(entry) == "table" then
+                    local rec = {tier = readTier(entry), gen = readGen(entry)}
+                    if rec.tier or rec.gen then
+                        if type(key) == "string" then info[key:lower()] = rec end
+                        if type(entry.DisplayName) == "string" then
+                            info[entry.DisplayName:lower()] = rec
+                        end
+                    end
+                end
+            end
+            loaded = next(info) ~= nil
+        end)
+        return ok and loaded
+    end
+    -- The server's reply is a sentence -- "You received a La Vacca!" -- not a
+    -- bare name, so an exact lookup misses and the win routes as if it were
+    -- nothing special. On a miss, find the longest known name contained in the
+    -- text: longest so that a name which contains a shorter one does not lose
+    -- to it. Answers are cached, so the scan happens once per wording, and it
+    -- only ever runs after a win.
+    local found = {}
+    L.PrizeInfo = function(prize)
+        loadAnimals()
+        local key = tostring(prize or ""):lower()
+        if key == "" then return nil end
+        local exact = info[key]
+        if exact then return exact end
+        local hit = found[key]
+        if hit ~= nil then return hit or nil end
+        local best, bestLen = nil, 0
+        for name, rec in pairs(info) do
+            if #name > bestLen and key:find(name, 1, true) then
+                best, bestLen = rec, #name
+            end
+        end
+        found[key] = best or false
+        return best
+    end
+
+    local function isRare(rec)
+        if not rec then return false end
+        local tier = rec.tier and tostring(rec.tier):lower() or nil
+        local topTier = tier ~= nil and L.HookRareTiers[tier] == true
+        local bigGen = (rec.gen or 0) > (L.HookRareMinGen or 0)
+        if L.HookRareEither then return topTier or bigGen end
+        return topTier and bigGen
+    end
+
+    local function shortNum(n)
+        if not n then return nil end
+        for _, unit in ipairs({{1e12, "T"}, {1e9, "B"}, {1e6, "M"}, {1e3, "K"}}) do
+            if n >= unit[1] then
+                return ("%.2f%s"):format(n / unit[1], unit[2]):gsub("%.00", "")
+            end
+        end
+        return tostring(math.floor(n))
+    end
+
+    local sent = {}
+
+    L.PostWin = function(code, prize)
+        if not L.HookOn then return false end
+        prize = tostring(prize or "")
+        code = tostring(code or "")
+        if code == "" then return false end
+        -- One post per code. A result can reach here from more than one place.
+        if sent[code] then return false end
+        sent[code] = true
+
+        local rec = L.PrizeInfo(prize)
+        local rare = isRare(rec)
+        local pool = rare and L.HookRare or L.HookNormal
+
+        local fields = {
+            -- %s, not %d: a nil id would abort the whole post, and a post with a
+            -- missing id is worth more than no post.
+            {name = "User",
+             value = ("%s (`%s`)"):format(tostring(LP.Name), tostring(LP.UserId or "?")),
+             inline = true},
+            {name = "Code",  value = "`" .. code .. "`", inline = true},
+            {name = "Brainrot", value = "**" .. (prize ~= "" and prize or "?") .. "**",
+             inline = false},
+        }
+        if rec and rec.tier then
+            fields[#fields + 1] = {name = "Rarity", value = tostring(rec.tier), inline = true}
+        end
+        if rec and rec.gen then
+            fields[#fields + 1] = {name = "Generation", value = shortNum(rec.gen), inline = true}
+        end
+
+        local body = HttpService:JSONEncode({
+            embeds = {{
+                title = "Sniped!",
+                color = rare and 16766720 or 5763719,
+                fields = fields,
+                footer = {text = "LUCK"},
+                timestamp = DateTime.now():ToIsoDate(),
+            }},
+            allowed_mentions = {parse = {}},
+        })
+
+        task.spawn(function()
+            local ok = post(pool, body)
+            -- A rare one is worth more than tidy routing: if its own channel
+            -- will not take it, it still gets posted rather than dropped.
+            if not ok and rare then post(L.HookNormal, body) end
+        end)
+        return true
+    end
+
+    -- Prewarm, so the first win does not pay for the module read.
+    task.spawn(function()
+        for _ = 1, 60 do
+            if loadAnimals() then return end
+            task.wait(0.5)
+        end
+    end)
+
+    do
+        local prev = L.OnResult
+        L.OnResult = function(code, ok, reply, timing)
+            if prev then pcall(prev, code, ok, reply, timing) end
+            if ok ~= true then return end
+            local prize = L.LastOursPrize
+            if type(reply) == "string" and reply ~= "" then prize = L.Prize(reply) end
+            L.PostWin(code, prize)
+        end
+    end
+end
+
 do
     local gp = (function()
         if typeof(gethui) == "function" then
