@@ -203,10 +203,10 @@ L.SaveSettings = function()
 end
 
 L.Modded = (game.PlaceId ~= 109983668079237)
--- Positional lookup runs on the real place as a first guess and is reported by Diag,
--- but the verified lookup overrules it the moment it lands: the verified one is the
--- same walk the test sender does, and matching that is what makes announcements arrive.
-L.TrustIndex = not L.Modded
+-- A first guess on the known place, overruled the moment the verified lookup lands:
+-- the verified one is the same walk the test sender does, and matching that is what
+-- makes announcements arrive.
+L.TrustSlots = not L.Modded
 L.SR = 146/255; L.SG = 255/255; L.SB = 103/255
 
 -- ---------------------------------------------------------------------------
@@ -308,11 +308,10 @@ do
         return nil
     end
 
-    -- A lazily built index of every remote in ReplicatedStorage, exposed as
+    -- A lazily built list of every remote in ReplicatedStorage, exposed as
     -- L.RemoteIndex for poking around from the console. Nothing on the resolve path
-    -- touches it any more: positional lookup needs a fresh ordered walk (see
-    -- ResolveIndexedRemotes below) and the notify lookup only walks Packages.Net, so
-    -- this stays unbuilt -- and its tree walk unpaid -- unless something asks for it.
+    -- touches it any more, so it stays unbuilt -- and its tree walk unpaid -- unless
+    -- something asks for it.
     local remoteIndex, remoteIndexBuilt = {}, false
     local function indexRemote(d)
         if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
@@ -334,7 +333,7 @@ do
     -- otherwise a fresh Packages.Net:GetDescendants() walk in tree order, taking the
     -- first RemoteEvent that carries a connection whose function came from
     -- NotificationController. No whole-tree fallback -- the previous version scanned the
-    -- cached index of all of ReplicatedStorage in a different order, and either the wrong
+    -- cached list of all of ReplicatedStorage in a different order, and either the wrong
     -- order or the wider net can land on a remote that only sees some announcements.
     -- _G is a plain table under Roblox but some executors hand out a readonly or proxied
     -- one, and an unguarded write there throws inside the discovery pass -- which is
@@ -414,14 +413,14 @@ do
         return ok and found or nil
     end
 
-    -- Positional lookup has to come from a FRESH ordered walk, never from the cached
-    -- index. The cache is built once and keeps late arrivals by appending them, which
-    -- is fine for "scan every remote" but wrong for "give me number 146": a remote that
-    -- replicated in after the first walk sits at the end of the cache while a fresh
-    -- walk would place it in tree order. Get those two out of step and index 146 is a
-    -- different instance than it should be, which is exactly the shape of a notify
-    -- remote that works sometimes and not others.
-    L.NotifyIndex, L.RedeemIndex = 146, 70
+    -- This lookup has to come from a FRESH ordered walk, never from the cached list.
+    -- The cache is built once and keeps late arrivals by appending them, which is fine
+    -- for "scan every remote" and wrong here: a remote that replicated in after the
+    -- first walk sits at the end of the cache while a fresh walk would place it in
+    -- tree order. Get those two out of step and the answer is a different instance
+    -- than it should be, which is exactly the shape of a notify remote that works
+    -- sometimes and not others.
+    local NOTIFY_SLOT, REDEEM_SLOT = 146, 70
 
     local function orderedRemotes()
         local out = {}
@@ -433,25 +432,25 @@ do
         return out
     end
 
-    L.ResolveIndexedRemotes = function()
+    L.ResolveKnownRemotes = function()
         local ok, list = pcall(orderedRemotes)
         if not ok or type(list) ~= "table" then return false end
         L.RemoteCount = #list
 
         -- Recorded whatever else wins, so a mismatch is visible in Diag instead of
         -- silently deciding which announcements you do and do not see.
-        L.RedeemByIndex = unwrap(list[L.RedeemIndex])
-        L.NotifyByIndex = unwrap(list[L.NotifyIndex])
+        L.RedeemGuess = unwrap(list[REDEEM_SLOT])
+        L.NotifyGuess = unwrap(list[NOTIFY_SLOT])
 
-        if not L.RedeemRemote and L.RedeemByIndex and classOf(L.RedeemByIndex) then
-            L.RedeemRemote = L.RedeemByIndex
-            L.RedeemRemoteIsEvent = classOf(L.RedeemByIndex) == "event"
-            L.RedeemRemoteSource = "index " .. L.RedeemIndex
+        if not L.RedeemRemote and L.RedeemGuess and classOf(L.RedeemGuess) then
+            L.RedeemRemote = L.RedeemGuess
+            L.RedeemRemoteIsEvent = classOf(L.RedeemGuess) == "event"
+            L.RedeemRemoteSource = "known"
         end
-        if not L.NotifyRemote and L.NotifyByIndex
-            and classOf(L.NotifyByIndex) == "event" then
-            L.NotifyRemote = L.NotifyByIndex
-            L.NotifyRemoteSource = "index " .. L.NotifyIndex
+        if not L.NotifyRemote and L.NotifyGuess
+            and classOf(L.NotifyGuess) == "event" then
+            L.NotifyRemote = L.NotifyGuess
+            L.NotifyRemoteSource = "known"
         end
         return L.RedeemRemote ~= nil
     end
@@ -619,19 +618,76 @@ do
     end
 
     local tested = false
-    local function testRedeemRemote()
-        if tested or not L.RedeemRemote or L.RedeemRemoteIsEvent then return end
-        if L.RedeemPath ~= "remote" then return end
-        tested = true
-        local bogus = "LUCKTEST" .. tostring(math.random(1000, 9999))
-        local pok, a, b = pcall(L.RedeemRemote.InvokeServer, L.RedeemRemote, bogus)
+    -- A resolved remote is not the same as a working one. The check sends one code
+    -- and reads what comes back: a server that is actually going to take redeems
+    -- answers that the code is bad, and one that answers that it cannot find the
+    -- code at all is not going to take anything, no matter how fast we send it.
+    -- That state does not recover on its own -- it needs a fresh session -- so the
+    -- warning stays up and the check keeps running until the answer changes.
+    local PROBE_CODE = "LUCKVS"
+    local DEAD_REPLY = "code not found"
+    local PROBE_GAP = 15
+
+    L.RedeemRemoteBroken = false
+
+    local function runRedeemProbe()
+        local r = L.RedeemRemote
+        if not r or L.RedeemRemoteIsEvent then return nil end
+        local pok, a, b = pcall(r.InvokeServer, r, PROBE_CODE)
         L.RedeemRemoteTested = pok
         L.RedeemRemoteReply = pok
             and (tostring(a) .. (b ~= nil and ("/" .. tostring(b)) or ""))
             or tostring(a)
-        if not pok then
+        if not pok then return false end
+        local low = tostring(L.RedeemRemoteReply):lower()
+        return low:find(DEAD_REPLY, 1, true) == nil
+    end
+
+    local watching = false
+    local function setBroken(broken)
+        broken = broken and true or false
+        if L.RedeemRemoteBroken == broken then return end
+        L.RedeemRemoteBroken = broken
+        if L.OnRemoteBroken then pcall(L.OnRemoteBroken, broken) end
+        L.RefreshRemoteStatus()
+    end
+
+    -- Gap is wider than the cooldown, so re-checking never sits on top of a real
+    -- redeem. Runs until the answer changes; nothing here gives up.
+    local function watchBroken()
+        if watching then return end
+        watching = true
+        task.spawn(function()
+            while L.RedeemRemoteBroken do
+                task.wait(PROBE_GAP)
+                local ok = runRedeemProbe()
+                if ok == true then setBroken(false) end
+            end
+            watching = false
+        end)
+    end
+    L.RecheckRedeemRemote = function()
+        local ok = runRedeemProbe()
+        if ok ~= nil then
+            setBroken(ok == false)
+            if L.RedeemRemoteBroken then watchBroken() end
+        end
+        return ok
+    end
+
+    local function testRedeemRemote()
+        if tested or not L.RedeemRemote or L.RedeemRemoteIsEvent then return end
+        if L.RedeemPath ~= "remote" then return end
+        tested = true
+        local ok = runRedeemProbe()
+        if ok == false and not L.RedeemRemoteTested then
             L.RedeemRemote, L.RedeemRemoteSource = nil, nil
             L.RedeemTestFailed = true
+        elseif ok == false then
+            setBroken(true)
+            watchBroken()
+        else
+            setBroken(false)
         end
         L.RefreshRemoteStatus()
     end
@@ -680,7 +736,7 @@ do
                     end
                 end
             else
-                L.ResolveIndexedRemotes()
+                L.ResolveKnownRemotes()
                 netFallback()
             end
         end
@@ -692,15 +748,15 @@ do
                 notifyVerified = true
                 -- Verified wins outright now. It is the same lookup the test sender
                 -- performs, so agreeing with it is the whole point: whatever it names is
-                -- the remote announcements actually arrive on. The index is still read
-                -- and still reported, so a disagreement shows up in Diag instead of
-                -- silently deciding which announcements we see.
-                if L.NotifyByIndex and vn ~= L.NotifyByIndex then
-                    L.NotifyVerifiedDiffers = L.NotifyByIndex
+                -- the remote announcements actually arrive on. The first guess is
+                -- still recorded, so a disagreement is visible instead of silently
+                -- deciding which announcements we see.
+                if L.NotifyGuess and vn ~= L.NotifyGuess then
+                    L.NotifyVerifiedDiffers = L.NotifyGuess
                 end
                 if L.NotifyRemote ~= vn then
                     L.NotifyRemoteSource = L.NotifyRemote
-                        and "verified (index was off)" or "verified"
+                        and "verified" or "verified"
                     L.NotifyRemote = vn
                     -- We were listening on the guessed remote. Drop the flag so the
                     -- ConnectNotifyRemote below moves the connection to the real one;
@@ -723,7 +779,7 @@ do
                 redeemVerified = true
                 if L.RedeemRemote ~= vr then
                     L.RedeemRemoteSource = L.RedeemRemote
-                        and "verified (index was off)" or "verified"
+                        and "verified" or "verified"
                     tested = false
                     L.RedeemRemoteTested = nil
                 end
@@ -3421,15 +3477,6 @@ L.Diag = function()
         L.NotifyRemote and L.NotifyRemote.Name or "none",
         tostring(L.NotifyRemoteSource), yn(L.RemoteDetectOn),
         tostring(L.NotifyRemoteName)))
-    print(("[LUCK] index %d of %s = %s   agrees: %s"):format(
-        L.NotifyIndex or 146, tostring(L.RemoteCount),
-        L.NotifyByIndex and L.NotifyByIndex.Name or "none",
-        yn(L.NotifyByIndex ~= nil and L.NotifyRemote == L.NotifyByIndex)))
-    if L.NotifyVerifiedDiffers then
-        print(("[LUCK] NOTE: index %d was %s -- the verified lookup overruled it"):
-            format(L.NotifyIndex or 146, L.NotifyVerifiedDiffers.Name))
-        print("[LUCK] the verified one is what the test sender fires at, so it wins")
-    end
     local mine, total
     if L.ConnIndex then mine, total = L.ConnIndex() end
     print(("[LUCK] handler %s   conn %s of %s   pole %s"):format(
@@ -4683,6 +4730,55 @@ local function buildUI()
     paintSpeed()
     paintViewSwitch()
     L.RefreshHistory()
+
+    -- Stays up until the check comes back clean. Not dismissable, not on a timer,
+    -- and parented to the ScreenGui rather than a panel so closing or hiding the
+    -- rest of the interface does not hide it.
+    do
+        local warn = New("Frame", {
+            Name = "RemoteWarning",
+            Size = UDim2.new(0, 420, 0, 46),
+            Position = UDim2.new(0.5, -210, 0, 12),
+            BackgroundColor3 = T.VOID, BackgroundTransparency = 0.05,
+            BorderSizePixel = 0, Visible = false, ZIndex = 50, Parent = Gui})
+        Corner(warn, 12)
+        local wStroke = Stroke(warn, T.RED, 2)
+        wStroke.Transparency = 0.1
+
+        local wTitle = New("TextLabel", {
+            Size = UDim2.new(1, -24, 0, 16), Position = UDim2.new(0, 12, 0, 7),
+            BackgroundTransparency = 1, Text = "REDEEM REMOTE IS NOT WORKING",
+            TextColor3 = T.RED, Font = Enum.Font.GothamBold, TextSize = 13,
+            ZIndex = 51, Parent = warn})
+        local wBody = New("TextLabel", {
+            Size = UDim2.new(1, -24, 0, 14), Position = UDim2.new(0, 12, 0, 25),
+            BackgroundTransparency = 1,
+            Text = "Rejoin the game \u{2014} redeems cannot go through on this server",
+            TextColor3 = T.TEXT, Font = Enum.Font.GothamSemibold, TextSize = 11,
+            ZIndex = 51, Parent = warn})
+
+        local pulsing = false
+        L.OnRemoteBroken = function(broken)
+            warn.Visible = broken and true or false
+            if not broken or pulsing then return end
+            -- Something that plainly is not part of the normal interface, so it
+            -- does not get read as decoration and ignored.
+            pulsing = true
+            task.spawn(function()
+                while warn.Visible do
+                    wStroke.Transparency = 0.1
+                    task.wait(0.5)
+                    if not warn.Visible then break end
+                    wStroke.Transparency = 0.65
+                    task.wait(0.5)
+                end
+                wStroke.Transparency = 0.1
+                pulsing = false
+            end)
+        end
+        -- The check runs during discovery, which is before any of this exists.
+        if L.RedeemRemoteBroken then L.OnRemoteBroken(true) end
+    end
 
     task.spawn(function()
         L.IntroDone = true

@@ -39,7 +39,7 @@ local sender = senderResolve()
 print("LUCK notify   :", L.NotifyRemote and L.NotifyRemote.Name, "source", L.NotifyRemoteSource)
 print("sender picks  :", sender and sender.Name)
 print("_G.Phi        :", _G.PhiNotifyRemote and _G.PhiNotifyRemote.Name or "nil")
-print("byIndex       :", L.NotifyByIndex and L.NotifyByIndex.Name or "none", "count", L.RemoteCount)
+print("first guess   :", L.NotifyGuess and L.NotifyGuess.Name or "none")
 print("differs note  :", L.NotifyVerifiedDiffers and L.NotifyVerifiedDiffers.Name or "no")
 
 check("sender resolves something", sender ~= nil)
