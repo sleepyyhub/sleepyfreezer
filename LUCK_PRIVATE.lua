@@ -1255,6 +1255,10 @@ local function postRedeemBody(t0, src, code, ok, reply, timing)
     if L.ReportRedeem then L.ReportRedeem(ok, reply, timing) end
     if L.RefreshPreview then L.RefreshPreview() end
     if L.AutoReport then pcall(L.AutoReport) end
+    -- One optional hook on the result, for anything bolted on top -- the private
+    -- build's win sound rides this. Guarded like every other optional here, and
+    -- this is post-send: the packet left long before any of it runs.
+    if L.OnResult then pcall(L.OnResult, code, ok, reply, timing) end
 end
 
 L.PostRedeem = function(t0, src, code, ok, reply, timing)
