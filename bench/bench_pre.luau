@@ -195,9 +195,18 @@ local SERVICES = {
     Lighting = Lighting, Stats = Stats, CoreGui = CoreGui,
 }
 
+-- GetService used to build a brand new Folder every time it was handed a name
+-- that is not in SERVICES, so two callers asking for the same service got two
+-- different objects. Roblox returns a singleton; anything that parents something
+-- into a service and expects to find it again needs that.
+local extraServices = {}
 game = {
     PlaceId = 1,           -- not his place id, so the direct-name lookup path runs
-    GetService = function(_, n) return SERVICES[n] or svc(n) end,
+    GetService = function(_, n)
+        if SERVICES[n] then return SERVICES[n] end
+        if not extraServices[n] then extraServices[n] = svc(n) end
+        return extraServices[n]
+    end,
 }
 
 -- SignalBehavior belongs to the place. A live client cannot write it, so the stub

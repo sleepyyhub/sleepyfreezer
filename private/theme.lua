@@ -64,6 +64,11 @@ local THEMES = {
 
     {name = "Lava",    accent = rgb(255, 90, 40), colors = {
         rgb(112, 26, 6), rgb(190, 52, 16), rgb(255, 90, 40), rgb(255, 178, 100)}},
+
+    -- Yours. Four slots, driven by the sliders, saved between sessions. Starts as
+    -- a copy of Clover so it is something rather than four blacks.
+    {name = "Custom",  custom = true, accent = rgb(95, 235, 145), colors = {
+        rgb(24, 92, 54), rgb(45, 165, 95), rgb(95, 235, 145), rgb(170, 255, 205)}},
 }
 
 local byName = {}
@@ -72,6 +77,14 @@ for i, t in ipairs(THEMES) do
     byName[t.name] = t
 end
 L.Themes = THEMES
+local CUSTOM = byName.Custom
+
+-- rampFor and uiFor both cache what they derive, which is right for the fixed
+-- palettes and wrong for this one -- a slider that moves has to drop both or the
+-- panel keeps painting the colour you just changed away from.
+local function invalidate(theme)
+    theme.ramp, theme.ui = nil, nil
+end
 L.ThemeNames = (function()
     local out = table.create(#THEMES)
     for i, t in ipairs(THEMES) do out[i] = t.name end
@@ -467,8 +480,9 @@ end
 -- --------------------------------------------------------------------
 -- Choosing
 -- --------------------------------------------------------------------
-local THEME_FILE = "LUCK/private_theme.txt"
-local MIN_FILE   = "LUCK/private_theme_min.txt"
+local THEME_FILE  = "LUCK/private_theme.txt"
+local MIN_FILE    = "LUCK/private_theme_min.txt"
+local CUSTOM_FILE = "LUCK/private_theme_custom.txt"
 local function saveTheme()
     pcall(function()
         if type(makefolder) == "function"
@@ -489,7 +503,101 @@ end
 
 L.Theme = loadTheme() or "Rainbow"
 
+-- --------------------------------------------------------------------
+-- The custom palette
+--
+-- Four slots, dark to light, which is the order the ramp flows through.
+-- Stored as plain "r,g,b" lines so it stays readable and a bad file loses the
+-- colours rather than the script.
+-- --------------------------------------------------------------------
+local CUSTOM_SLOTS = 4
+
+local function saveCustom()
+    local out = table.create(CUSTOM_SLOTS)
+    for i = 1, CUSTOM_SLOTS do
+        local c = CUSTOM.colors[i]
+        out[i] = ("%d,%d,%d"):format(floor(c.R * 255 + 0.5),
+            floor(c.G * 255 + 0.5), floor(c.B * 255 + 0.5))
+    end
+    pcall(function()
+        if type(makefolder) == "function"
+            and (type(isfolder) ~= "function" or not isfolder("LUCK")) then
+            makefolder("LUCK")
+        end
+        writefile(CUSTOM_FILE, table.concat(out, "\n"))
+    end)
+end
+
+local function loadCustom()
+    local ok, raw = pcall(function()
+        if type(isfile) == "function" and not isfile(CUSTOM_FILE) then return nil end
+        return readfile(CUSTOM_FILE)
+    end)
+    if not ok or type(raw) ~= "string" then return end
+    local i = 0
+    for line in raw:gmatch("[^\n]+") do
+        local r, g, b = line:match("^(%d+),(%d+),(%d+)$")
+        if r then
+            i += 1
+            if i <= CUSTOM_SLOTS then
+                CUSTOM.colors[i] = rgb(tonumber(r), tonumber(g), tonumber(b))
+            end
+        end
+    end
+    invalidate(CUSTOM)
+end
+loadCustom()
+
+L.CustomSlots = CUSTOM_SLOTS
+L.GetCustomColor = function(slot)
+    local c = CUSTOM.colors[slot]
+    if not c then return nil end
+    return floor(c.R * 255 + 0.5), floor(c.G * 255 + 0.5), floor(c.B * 255 + 0.5)
+end
+
+local refreshCustomUI
+L.SetCustomColor = function(slot, r, g, b)
+    slot = tonumber(slot)
+    if not slot or slot < 1 or slot > CUSTOM_SLOTS then return false end
+    r = math.clamp(tonumber(r) or 0, 0, 255)
+    g = math.clamp(tonumber(g) or 0, 0, 255)
+    b = math.clamp(tonumber(b) or 0, 0, 255)
+    CUSTOM.colors[slot] = rgb(r, g, b)
+    -- Slot 3 is the bright one the derived palette uses for its accent, so it is
+    -- what the swatch and the picker highlight follow.
+    if slot == 3 then CUSTOM.accent = CUSTOM.colors[3] end
+    invalidate(CUSTOM)
+    saveCustom()
+    if refreshCustomUI then refreshCustomUI() end
+    if L.Theme == "Custom" and L.ApplyTheme then L.ApplyTheme() end
+    return true
+end
+
+L.RandomCustom = function()
+    -- One hue, four steps along it. Random per channel gives mud; a single hue
+    -- ramped dark to light gives something that actually reads as a theme.
+    local h = math.random()
+    for i = 1, CUSTOM_SLOTS do
+        local t = (i - 1) / (CUSTOM_SLOTS - 1)
+        local c = hsv(h, 0.85 - t * 0.45, 0.35 + t * 0.65)
+        CUSTOM.colors[i] = c
+    end
+    CUSTOM.accent = CUSTOM.colors[3]
+    invalidate(CUSTOM)
+    saveCustom()
+    if refreshCustomUI then refreshCustomUI() end
+    if L.Theme == "Custom" and L.ApplyTheme then L.ApplyTheme() end
+    return true
+end
+
 local repaintPicker
+L.ApplyTheme = function()
+    local t = currentTheme()
+    applyPalette(t)
+    paintStatic()
+    if repaintPicker then repaintPicker() end
+end
+
 L.SetTheme = function(name)
     local t = byName[tostring(name)]
     if not t then
@@ -525,7 +633,10 @@ local function buildPicker()
     local gui = themedGui
     if not gui then return end
 
-    local W, H = 214, 232
+    local ROWS = math.ceil(#THEMES / 2)
+    local LIST_H = 12 + ROWS * 36
+    local EDIT_H = 118
+    local W, H = 214, 40 + LIST_H + EDIT_H
     local root = Instance.new("Frame")
     root.Name = "LuckThemePicker"
     root.Size = UDim2.new(0, W, 0, H)
@@ -611,11 +722,13 @@ local function buildPicker()
     Instance.new("UICorner", hideBtn).CornerRadius = UDim.new(0, 6)
 
     local minimized = false
+    local editorOpen = function() return L.Theme == "Custom" end
     local function applyMin()
         minBtn.Text = minimized and "+" or "-"
         body.Visible = not minimized
         nameLabel.Visible = not minimized
-        root.Size = minimized and UDim2.new(0, W, 0, 28) or UDim2.new(0, W, 0, H)
+        root.Size = minimized and UDim2.new(0, W, 0, 28)
+            or UDim2.new(0, W, 0, editorOpen() and H or (40 + LIST_H))
     end
     L.MinimizeThemePanel = function(on)
         if on == nil then on = not minimized end
@@ -729,6 +842,184 @@ local function buildPicker()
         rows[i] = {button = b, label = lbl, theme = theme}
     end
 
+    -- ----------------------------------------------------------------
+    -- Custom editor
+    --
+    -- Four slots and three sliders, rather than twelve sliders: pick the slot,
+    -- then move R/G/B. The slots run dark to light because that is the order the
+    -- ramp flows through, so slot 1 is the shadow and slot 4 the highlight.
+    -- ----------------------------------------------------------------
+    local editor = Instance.new("Frame")
+    editor.Name = "CustomEditor"
+    editor.Size = UDim2.new(1, 0, 0, EDIT_H)
+    editor.Position = UDim2.new(0, 0, 0, LIST_H)
+    editor.BackgroundTransparency = 1
+    editor.Visible = false
+    editor.Parent = body
+
+    local slotTag = Instance.new("TextLabel")
+    slotTag.Size = UDim2.new(1, -24, 0, 11)
+    slotTag.Position = UDim2.new(0, 12, 0, 0)
+    slotTag.BackgroundTransparency = 1
+    slotTag.Text = "SLOT  ·  dark to light"
+    slotTag.TextColor3 = (L.Palette and L.Palette.MUTED) or rgb(108, 148, 120)
+    slotTag.Font = Enum.Font.GothamSemibold
+    slotTag.TextSize = 8
+    slotTag.TextXAlignment = Enum.TextXAlignment.Left
+    slotTag.Parent = editor
+
+    local activeSlot = 3
+    local slotBtns, sliders = {}, {}
+
+    for i = 1, L.CustomSlots do
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0, 44, 0, 20)
+        b.Position = UDim2.new(0, 12 + (i - 1) * 48, 0, 14)
+        b.BackgroundColor3 = CUSTOM.colors[i]
+        b.Text = ""
+        b.AutoButtonColor = false
+        b.BorderSizePixel = 0
+        b.Parent = editor
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+        local ring = Instance.new("UIStroke", b)
+        ring.Thickness = 2
+        ring.Transparency = 1
+        b.MouseButton1Click:Connect(function()
+            activeSlot = i
+            if refreshCustomUI then refreshCustomUI() end
+        end)
+        slotBtns[i] = {button = b, ring = ring}
+    end
+
+    -- One shared InputChanged, connected while a knob is held and dropped on
+    -- release. Three permanent mouse-move handlers for three sliders is exactly
+    -- what the base script went to the trouble of collapsing.
+    local function makeSlider(y, label, tint, channel)
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0, 14, 0, 14)
+        lbl.Position = UDim2.new(0, 12, 0, y)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = label
+        lbl.TextColor3 = tint
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 10
+        lbl.Parent = editor
+
+        local track = Instance.new("Frame")
+        track.Size = UDim2.new(1, -84, 0, 6)
+        track.Position = UDim2.new(0, 30, 0, y + 4)
+        track.BackgroundColor3 = (L.Palette and L.Palette.RAISED) or rgb(17, 36, 23)
+        track.BorderSizePixel = 0
+        track.Parent = editor
+        Instance.new("UICorner", track).CornerRadius = UDim.new(0, 3)
+
+        local fill = Instance.new("Frame")
+        fill.Size = UDim2.new(0, 0, 1, 0)
+        fill.BackgroundColor3 = tint
+        fill.BorderSizePixel = 0
+        fill.Parent = track
+        Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 3)
+
+        local val = Instance.new("TextLabel")
+        val.Size = UDim2.new(0, 30, 0, 14)
+        val.Position = UDim2.new(1, -42, 0, y)
+        val.BackgroundTransparency = 1
+        val.Text = "0"
+        val.TextColor3 = (L.Palette and L.Palette.TEXT) or rgb(228, 246, 233)
+        val.Font = Enum.Font.GothamSemibold
+        val.TextSize = 9
+        val.TextXAlignment = Enum.TextXAlignment.Right
+        val.Parent = editor
+
+        -- Taller than the track so it can actually be grabbed.
+        local grab = Instance.new("TextButton")
+        grab.Size = UDim2.new(1, 0, 0, 18)
+        grab.Position = UDim2.new(0, 0, 0, -6)
+        grab.BackgroundTransparency = 1
+        grab.Text = ""
+        grab.AutoButtonColor = false
+        grab.Parent = track
+
+        local function fromX(x)
+            local origin = track.AbsolutePosition.X
+            local width = track.AbsoluteSize.X
+            if width <= 0 then return 0 end
+            return math.clamp((x - origin) / width, 0, 1)
+        end
+        local function push(alpha)
+            local r, g, b = L.GetCustomColor(activeSlot)
+            if not r then return end
+            local v = floor(alpha * 255 + 0.5)
+            if channel == "R" then r = v elseif channel == "G" then g = v else b = v end
+            L.SetCustomColor(activeSlot, r, g, b)
+        end
+
+        pcall(function()
+            local moveConn
+            local function release()
+                if moveConn then
+                    pcall(function() moveConn:Disconnect() end)
+                    moveConn = nil
+                end
+            end
+            grab.InputBegan:Connect(function(i)
+                if i.UserInputType ~= Enum.UserInputType.MouseButton1
+                    and i.UserInputType ~= Enum.UserInputType.Touch then return end
+                push(fromX(i.Position.X))
+                release()
+                moveConn = UIS.InputChanged:Connect(function(m)
+                    if m.UserInputType ~= Enum.UserInputType.MouseMovement
+                        and m.UserInputType ~= Enum.UserInputType.Touch then return end
+                    push(fromX(m.Position.X))
+                end)
+                i.Changed:Connect(function()
+                    if i.UserInputState == Enum.UserInputState.End then release() end
+                end)
+            end)
+            if grab.InputEnded then
+                grab.InputEnded:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1
+                        or i.UserInputType == Enum.UserInputType.Touch then release() end
+                end)
+            end
+        end)
+
+        sliders[channel] = {fill = fill, value = val}
+    end
+
+    makeSlider(42, "R", rgb(255, 110, 120), "R")
+    makeSlider(62, "G", rgb(120, 235, 140), "G")
+    makeSlider(82, "B", rgb(120, 175, 255), "B")
+
+    local randBtn = Instance.new("TextButton")
+    randBtn.Size = UDim2.new(1, -24, 0, 20)
+    randBtn.Position = UDim2.new(0, 12, 0, 100)
+    randBtn.BackgroundColor3 = (L.Palette and L.Palette.RAISED) or rgb(17, 36, 23)
+    randBtn.Text = "RANDOM"
+    randBtn.TextColor3 = (L.Palette and L.Palette.ACCENT) or rgb(74, 222, 128)
+    randBtn.Font = Enum.Font.GothamBold
+    randBtn.TextSize = 10
+    randBtn.AutoButtonColor = false
+    randBtn.BorderSizePixel = 0
+    randBtn.Parent = editor
+    Instance.new("UICorner", randBtn).CornerRadius = UDim.new(0, 6)
+    randBtn.MouseButton1Click:Connect(function() L.RandomCustom() end)
+
+    refreshCustomUI = function()
+        for i, sb in ipairs(slotBtns) do
+            sb.button.BackgroundColor3 = CUSTOM.colors[i]
+            sb.ring.Transparency = (i == activeSlot) and 0.1 or 1
+            sb.ring.Color = (L.Palette and L.Palette.HIGH) or rgb(165, 255, 198)
+        end
+        local r, g, b = L.GetCustomColor(activeSlot)
+        if not r then return end
+        local vals = {R = r, G = g, B = b}
+        for ch, sl in pairs(sliders) do
+            sl.fill.Size = UDim2.new(vals[ch] / 255, 0, 1, 0)
+            sl.value.Text = tostring(vals[ch])
+        end
+    end
+
     repaintPicker = function()
         nameLabel.Text = L.Theme
         for _, r in ipairs(rows) do
@@ -736,6 +1027,11 @@ local function buildPicker()
             r.button.BackgroundColor3 = on and rgb(31, 60, 41) or rgb(17, 36, 23)
             r.label.TextColor3 = on and r.theme.accent or rgb(160, 190, 170)
         end
+        -- The editor is only in the way when a fixed palette is picked.
+        editor.Visible = (L.Theme == "Custom")
+        root.Size = minimized and UDim2.new(0, W, 0, 28)
+            or UDim2.new(0, W, 0, editor.Visible and H or (40 + LIST_H))
+        refreshCustomUI()
     end
     repaintPicker()
 

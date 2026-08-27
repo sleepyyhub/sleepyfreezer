@@ -17,7 +17,7 @@ print("PRIVATE THEME ENGINE")
 print("================================================================")
 
 check("this is the private build", L.Private == true)
-check("ten themes", L.Themes and #L.Themes == 10,
+check("ten fixed themes plus Custom", L.Themes and #L.Themes == 11,
     "got " .. tostring(L.Themes and #L.Themes))
 check("Rainbow is one of them", L.Themes and L.Themes[1].name == "Rainbow")
 
@@ -116,11 +116,13 @@ end
 check("an unknown theme is refused", select(1, L.SetTheme("NotAThing")) == false)
 check("and leaves the current one alone", L.Theme == "Ice", tostring(L.Theme))
 
--- cycling walks the list and wraps
-L.SetTheme("Lava")
-check("Lava is last in the list", L.Themes[#L.Themes].name == "Lava")
+-- cycling walks the list and wraps, off whatever is genuinely last rather than a
+-- name written down here that stops being last the moment one is added
+local lastName = L.Themes[#L.Themes].name
+L.SetTheme(lastName)
+check("the last theme can be selected", L.Theme == lastName, tostring(L.Theme))
 L.NextTheme()
-check("cycling past the end wraps to the first", L.Theme == "Rainbow",
+check("cycling past the end wraps to the first", L.Theme == L.Themes[1].name,
     tostring(L.Theme))
 
 -- ThemeOn freezes it
@@ -331,4 +333,113 @@ check("a code still redeems exactly once", R.invokeCount() - before == 1,
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end
 print(("runtime errors: %d"):format(H.errors and #H.errors or 0))
+end
+
+do
+-- The Custom theme: four slots driven by sliders, saved, and actually painting
+-- the UI when it is the one selected.
+local R = RIG
+local H = R.H
+local L = R.genvTable.LUCK
+local fails, checks = {}, 0
+local function check(n, c, d)
+    checks += 1
+    if not c then fails[#fails + 1] = n .. (d and ("  -- " .. d) or "") end
+end
+local function key(c)
+    if not c then return "nil" end
+    return ("%d,%d,%d"):format(math.floor(c.R * 255 + 0.5),
+        math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+end
+
+print("")
+print("CUSTOM THEME")
+print("----------------------------------------------------------------")
+
+check("Custom is an eleventh theme", #L.Themes == 11, tostring(#L.Themes))
+check("it is named Custom", L.Themes[11] and L.Themes[11].name == "Custom")
+check("four slots", L.CustomSlots == 4, tostring(L.CustomSlots))
+check("the setter is exposed", type(L.SetCustomColor) == "function")
+check("the getter is exposed", type(L.GetCustomColor) == "function")
+
+-- setting a slot takes
+check("a slot can be set", L.SetCustomColor(3, 255, 40, 90) == true)
+local r, g, b = L.GetCustomColor(3)
+check("and reads back", r == 255 and g == 40 and b == 90,
+    ("%d,%d,%d"):format(r, g, b))
+
+-- out of range is clamped, not accepted blindly
+L.SetCustomColor(1, 999, -20, 30)
+local r1, g1, b1 = L.GetCustomColor(1)
+check("values are clamped to 0-255", r1 == 255 and g1 == 0 and b1 == 30,
+    ("%d,%d,%d"):format(r1, g1, b1))
+check("a bad slot number is refused", L.SetCustomColor(9, 1, 2, 3) == false)
+check("slot 0 is refused", L.SetCustomColor(0, 1, 2, 3) == false)
+
+-- selecting Custom paints the UI with those colours
+L.SetTheme("Custom")
+RENDER(4, 1 / 30)
+check("Custom can be selected", L.Theme == "Custom", tostring(L.Theme))
+check("the accent follows slot 3", key(L.Palette.ACCENT) == "255,40,90",
+    key(L.Palette.ACCENT))
+
+-- and moving a slider repaints, rather than showing the colour you left
+L.SetCustomColor(3, 40, 120, 255)
+RENDER(4, 1 / 30)
+check("changing a slot repaints the live theme",
+    key(L.Palette.ACCENT) == "40,120,255", key(L.Palette.ACCENT))
+
+-- the gradient itself follows it
+local gui
+for _, d in ipairs((L.GuiParent or R.RepS):GetChildren()) do
+    if d:IsA("ScreenGui") and tostring(d.Name):match("^LUCK_%d+$") then gui = d end
+end
+local grad
+for _, d in ipairs(gui:GetDescendants()) do
+    if d.Name == "LuckThemeGradient" then grad = d break end
+end
+local function firstColour(gr)
+    local seq = gr and gr.Color
+    local kp = seq and seq.Keypoints and seq.Keypoints[2]
+    return kp and kp.Value or nil
+end
+L.SetCustomColor(1, 255, 0, 0)
+L.SetCustomColor(2, 255, 0, 0)
+L.SetCustomColor(3, 255, 0, 0)
+L.SetCustomColor(4, 255, 0, 0)
+RENDER(10, 1 / 30)
+local allRed = firstColour(grad)
+check("an all-red custom palette makes a red gradient",
+    allRed and allRed.R > 0.8 and allRed.G < 0.2 and allRed.B < 0.2,
+    allRed and key(allRed) or "no colour")
+
+-- random gives something different, and something coherent
+L.SetCustomColor(1, 10, 10, 10)
+local beforeRand = key(L.Themes[11].colors[3])
+L.RandomCustom()
+check("random changes the palette", key(L.Themes[11].colors[3]) ~= beforeRand,
+    beforeRand .. " -> " .. key(L.Themes[11].colors[3]))
+check("random keeps four slots", #L.Themes[11].colors == 4)
+
+-- the editor only shows on Custom
+local picker = gui and gui:FindFirstChild("LuckThemePicker")
+local body = picker and picker:FindFirstChild("Body")
+local editor = body and body:FindFirstChild("CustomEditor")
+check("the slider editor exists", editor ~= nil)
+if editor then
+    L.SetTheme("Custom")
+    check("it shows on Custom", editor.Visible == true)
+    L.SetTheme("Ice")
+    check("and hides on a fixed palette", editor.Visible == false)
+    local sliders = 0
+    for _, d in ipairs(editor:GetDescendants()) do
+        if d:IsA("TextLabel") and (d.Text == "R" or d.Text == "G" or d.Text == "B") then
+            sliders += 1
+        end
+    end
+    check("three sliders", sliders == 3, tostring(sliders))
+end
+
+print(("checks: %d   failures: %d"):format(checks, #fails))
+for _, f in ipairs(fails) do print("  FAIL  " .. f) end
 end

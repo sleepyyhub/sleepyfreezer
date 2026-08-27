@@ -241,6 +241,14 @@ local function newInstance(class, name)
     self.MouseLeave = sig("MouseLeave")
     self.InputBegan = sig("InputBegan")
     self.InputEnded = sig("InputEnded")
+    -- Sounds report themselves loaded; a test that wants a dead one sets
+    -- IsLoaded=false and TimeLength=0 on the instance by hand.
+    if props.ClassName == "Sound" then
+        props.IsLoaded = true
+        props.TimeLength = 1
+        function self:Play() props.Playing = true; props.PlayCount = (props.PlayCount or 0) + 1 end
+        function self:Stop() props.Playing = false end
+    end
     self.FocusLost = sig("FocusLost")
     self.Changed = sig("Changed")
 
