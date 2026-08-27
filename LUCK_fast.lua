@@ -864,11 +864,6 @@ L.AutoOn = L.Settings.AutoOn == true
 -- The check lives on the idle path only -- the path that is bound precisely when
 -- Auto Redeem is off. With it on there is nothing to arm, so the hot handler
 -- never sees a single instruction of this.
--- The Sender panel drives a real redeem even with Auto Redeem off, because
--- pressing Send is something you did on purpose. False makes it announce without
--- redeeming, for checking detection without spending an attempt.
-L.SenderRedeems = true
-
 L.AutoArm = L.Settings.AutoArm == true
 L.AutoArmPhrases = {"use code", "code is", "code:", "redeem code", "new code",
                     "codigo", "free code"}
@@ -1695,9 +1690,9 @@ do
         BUSY[i] = false
         W[i] = coroutine.create(function()
             while true do
-                local m, forced = coroutine.yield()
+                local m = coroutine.yield()
                 BUSY[i] = true
-                handle(m, forced)
+                handle(m)
                 BUSY[i] = false
             end
         end)
@@ -1705,11 +1700,7 @@ do
     end
     for i = 1, WN do spawnWorker(i) end
 
-    -- `forced` means a person asked for this one by hand -- the Sender panel. It
-    -- skips the Auto Redeem gate and nothing else: the buffer, the threshold, the
-    -- repeat guard and the cooldown all still apply, because the point is to
-    -- exercise the real path rather than to get a private one.
-    L.Dispatch = function(msg, forced)
+    L.Dispatch = function(msg)
         -- The single place every non-fast surface funnels through, so the arm is
         -- checked here and nowhere else. Two table reads and out when there is
         -- nothing to arm, and this is the idle path regardless -- with Auto
@@ -1719,11 +1710,11 @@ do
         end
         for i = 1, WN do
             if not BUSY[i] and coroutine.status(W[i]) == "suspended" then
-                if not coroutine.resume(W[i], msg, forced) then spawnWorker(i) end
+                if not coroutine.resume(W[i], msg) then spawnWorker(i) end
                 return
             end
         end
-        task.spawn(handle, msg, forced)
+        task.spawn(handle, msg)
     end
 
     local payload = L.PayloadText
@@ -1734,7 +1725,7 @@ do
         protected(claimOurs, text)
     end
 
-    handle = function(msg, forced)
+    handle = function(msg)
         local t0 = clock()
         local text = msg
         if type(text) ~= "string" then
@@ -1746,7 +1737,7 @@ do
             L.NotifyHandler(text)
             return
         end
-        if not (hotAuto or hotGuess or forced) then
+        if not (hotAuto or hotGuess) then
             defer(logHeard, t0, L.NotifyRemoteName, text)
             return
         end
@@ -4387,26 +4378,7 @@ local function buildUI()
         -- The bound handler is the path a real announcement takes anyway, it fires
         -- once, and it does not need firesignal to exist at all -- which several
         -- executors do not provide.
-        -- With Auto Redeem on, the bound handler IS the real path -- threshold,
-        -- buffer, guess mode and the send all already work through it.
-        --
-        -- With Auto Redeem off that handler is the idle one, so a fake went in and
-        -- nothing came out: no send, and the parts did not even reach the buffer.
-        -- Pressing Send is an explicit act, so it is forced through instead. Auto
-        -- Redeem is about reacting to announcements on its own, not about a button
-        -- you pressed. LUCK.SenderRedeems = false puts the old behaviour back for
-        -- testing detection without spending an attempt.
         local fast = L.FastNotify
-        if fast and L.AutoOn then
-            pcall(fast, txt, 5.5, "Sounds.Sfx.Blop", "Top")
-            L.Notify("sent fake: " .. txt, T.MUTED)
-            return
-        end
-        if L.SenderRedeems ~= false and L.Dispatch then
-            pcall(L.Dispatch, txt, true)
-            L.Notify("sent fake: " .. txt .. "  (auto off, forced)", T.MUTED)
-            return
-        end
         if fast then
             pcall(fast, txt, 5.5, "Sounds.Sfx.Blop", "Top")
             L.Notify("sent fake: " .. txt, T.MUTED)
