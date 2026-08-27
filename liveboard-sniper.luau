@@ -105,9 +105,109 @@ end
 
 L.Net = safe(function() return RepS:WaitForChild("Packages", 10):WaitForChild("Net", 10) end)
 
-L.NewEntry   = L.Net and L.Net:FindFirstChild("RE/Liveboard/NewEntry")
-L.ClaimEntry = L.Net and L.Net:FindFirstChild("RE/Liveboard/ClaimEntry")
-L.GetEntries = L.Net and L.Net:FindFirstChild("RF/Liveboard/GetEntries")
+----------------------------------------------------------------
+-- resolving the Liveboard remotes
+--
+-- Their names are hashed and rotate per server, so nothing can be
+-- hardcoded. Three strategies, cheapest first:
+--
+--   1. upvalues of LiveboardController.Start, which closes over all three
+--   2. identity by listener: find the RemoteEvent whose OnClientEvent
+--      handler is a function *defined inside* LiveboardController, using
+--      debug.getinfo(fn).short_src. Two handlers live there, so they are
+--      told apart by parameter count -- NewEntry takes 1 arg (the entry
+--      table), ClaimEntry takes 3 (uid, ownerUserId, ownerDisplayName).
+--   3. plaintext names, for servers that still expose them
+----------------------------------------------------------------
+
+local getinfo = debug and (debug.getinfo or debug.info)
+
+-- how many parameters does this function declare?
+local function paramCount(fn)
+    if not getinfo then return nil end
+    local ok, a = pcall(getinfo, fn, "a")          -- debug.info style
+    if ok and type(a) == "number" then return a end
+    local ok2, info = pcall(getinfo, fn)           -- debug.getinfo style
+    if ok2 and type(info) == "table" then return info.numparams or info.nparams end
+    return nil
+end
+
+local function sourceOf(fn)
+    if not getinfo then return "" end
+    local ok, a = pcall(getinfo, fn, "s")
+    if ok and type(a) == "string" then return a end
+    local ok2, info = pcall(getinfo, fn)
+    if ok2 and type(info) == "table" then
+        return tostring(info.short_src or info.source or "")
+    end
+    return ""
+end
+
+-- strategy 1: the controller's own closure
+function L.ResolveFromController()
+    local ok, LC = pcall(require, RepS.Controllers.LiveboardController)
+    if not ok or type(LC) ~= "table" or typeof(LC.Start) ~= "function" then return end
+    local oku, ups = pcall(debug.getupvalues, LC.Start)
+    if not oku then return end
+
+    local events, funcs = {}, {}
+    -- getupvalues returns a keyed table; walk it in index order so the
+    -- declaration order (NewEntry before ClaimEntry) is preserved
+    for i = 1, 60 do
+        local v = ups[i]
+        if typeof(v) == "Instance" then
+            if v:IsA("RemoteEvent") then events[#events + 1] = v
+            elseif v:IsA("RemoteFunction") then funcs[#funcs + 1] = v end
+        end
+    end
+    return events[1], events[2], funcs[1]
+end
+
+-- strategy 2: identity by who is listening
+function L.ResolveByListener()
+    if not (getconnections and getinfo and L.Net) then return end
+    local newEntry, claimEntry
+    for _, d in ipairs(L.Net:GetDescendants()) do
+        if d:IsA("RemoteEvent") then
+            local ok, conns = pcall(getconnections, d.OnClientEvent)
+            if ok then
+                for _, c in ipairs(conns) do
+                    local okf, fn = pcall(function() return c.Function end)
+                    if okf and type(fn) == "function" then
+                        if sourceOf(fn):find("LiveboardController", 1, true) then
+                            local n = paramCount(fn)
+                            if n == 1 and not newEntry then newEntry = d
+                            elseif n == 3 and not claimEntry then claimEntry = d end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return newEntry, claimEntry
+end
+
+do
+    local a, b, c = L.ResolveFromController()
+    L.NewEntry, L.ClaimEntry, L.GetEntries = a, b, c
+    L.ResolvedVia = (a and "controller") or nil
+
+    if not L.NewEntry then
+        local n, cl = L.ResolveByListener()
+        if n then
+            L.NewEntry = n
+            L.ClaimEntry = L.ClaimEntry or cl
+            L.ResolvedVia = "listener"
+        end
+    end
+
+    if not L.NewEntry and L.Net then
+        L.NewEntry   = L.Net:FindFirstChild("RE/Liveboard/NewEntry")
+        L.ClaimEntry = L.ClaimEntry or L.Net:FindFirstChild("RE/Liveboard/ClaimEntry")
+        L.GetEntries = L.GetEntries or L.Net:FindFirstChild("RF/Liveboard/GetEntries")
+        if L.NewEntry then L.ResolvedVia = "plaintext" end
+    end
+end
 
 L.InviteRF   = nil
 L.SearchRF   = nil
@@ -1549,7 +1649,7 @@ task.spawn(function()
 
     local steps = {
         "loading modules",
-        L.NewEntry and "connecting to feed" or "feed unavailable",
+        L.NewEntry and ("feed connected (" .. tostring(L.ResolvedVia) .. ")") or "feed unavailable",
         L.InviteRF and "preparing trades" or "trading unavailable",
         "arming filters",
         "ready",
