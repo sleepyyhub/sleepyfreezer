@@ -89,17 +89,28 @@ fill(36)
 -- The counter is passed INTO the chunk rather than wrapped around it. A wrapper closure
 -- is defined in this file, so debug.getinfo on it reports this file -- which made the
 -- verified lookup miss every time and quietly left the whole resolver untested.
+-- The real handler ends by calling NotificationController:Notify to put the
+-- popup on screen. LUCK's UI detect mode hooks exactly that function, so a
+-- handler that does not call it leaves the whole UI path unexercised -- and the
+-- interaction between the remote surface and the notify hook untestable.
 local makeHandler = loadstring([[
-    return function(bump)
+    return function(bump, notify)
         return function(msg, dur, sound, position)
             bump()
             local acc = 0
             for i = 1, 400 do acc += i % 7 end
+            notify(msg, dur, sound, position)
             return acc
         end
     end
 ]], "@ReplicatedStorage.Controllers.NotificationController")()
-local gameHandler = makeHandler(function() gameCalls += 1 end)
+local NCRef
+local gameHandler = makeHandler(function() gameCalls += 1 end,
+    function(msg, dur, sound, position)
+        if NCRef and type(NCRef.Notify) == "function" then
+            NCRef:Notify(msg, dur, sound, position)
+        end
+    end)
 notifyRemote.OnClientEvent:Connect(gameHandler)
 
 -- A second remote in Net that also carries a NotificationController connection, parented
@@ -123,6 +134,8 @@ NCModule._module = {
         end
     ]], "@ReplicatedStorage.Controllers.NotificationController")(),
 }
+NCRef = NCModule._module
+
 local realRequire = require
 require = function(target)
     if type(target) == "table" and target._module then return target._module end

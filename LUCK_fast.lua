@@ -57,6 +57,7 @@ local SETTINGS_DEFAULTS = {
     RainbowStats = true,
     PartTTL = 12,
     DupWindow = 0.15,
+    UiDupWindow = 30,
     ThemeIndex = 1,
     Keybinds = {Auto = "F", ToggleUI = "G", Stealth = "H"},
     DetectMode = "remote",
@@ -107,6 +108,8 @@ local function normalizeSettings(source)
     end
     out.PartTTL = settingInt(source.PartTTL, SETTINGS_DEFAULTS.PartTTL, 2, 30)
     out.DupWindow = math.clamp(tonumber(source.DupWindow) or SETTINGS_DEFAULTS.DupWindow, 0, 2)
+    out.UiDupWindow = math.clamp(tonumber(source.UiDupWindow)
+        or SETTINGS_DEFAULTS.UiDupWindow, 0, 120)
     out.Threshold = settingInt(source.Threshold, SETTINGS_DEFAULTS.Threshold, 0, 50)
     local pos = source.PanelPosition
     if type(pos) == "table" then
@@ -536,6 +539,28 @@ do
             end
             pcall(L.ClaimResult, text)
         end
+    end
+
+    -- Standing the remote surface down. Switching to remote already unhooks the
+    -- notify wrapper, but switching to UI never did the reverse -- so in UI mode
+    -- BOTH surfaces were live and every announcement went out twice: once from
+    -- the remote handler, and again when pole redispatched to the game's handler,
+    -- which calls NotificationController:Notify, which is what UI mode hooks.
+    --
+    -- Pole goes with it. Pole works by disabling the game's own handlers and
+    -- re-dispatching them from ours; with our connection gone there is nothing
+    -- left to re-dispatch, so the game's notifications would stop appearing at
+    -- all -- and UI mode, which reads those notifications, would detect nothing.
+    L.DisconnectNotifyRemote = function()
+        local G = (getgenv and getgenv()) or shared
+        if G.__LUCKNotifyConn then
+            pcall(function() G.__LUCKNotifyConn:Disconnect() end)
+            G.__LUCKNotifyConn = nil
+        end
+        L.RemoteDetectOn = false
+        if L.PoleOn and L.DropPole then pcall(L.DropPole) end
+        if L.SyncFast then L.SyncFast() end
+        return true
     end
 
     L.ConnectNotifyRemote = function()
@@ -1008,9 +1033,28 @@ L.FIRED_TTL = 30
 local fanSeen = {}
 L.FanSeen = fanSeen
 L.FanWindow = tonumber(L.Settings.DupWindow) or 0.15
-L.SeenRecently = function(key, now)
+
+-- The label surface needs a much longer memory than the fan-out does, and it is
+-- a different question. A remote packet arriving twice is two announcements. A
+-- LABEL holding the same text twice is one announcement being looked at twice --
+-- the popup re-rendering, being re-laid-out, or the game recycling its rows so
+-- the old text lands in the row below when a new one arrives. None of those are
+-- new drops, and at 0.15s every one of them came back through as another redeem.
+-- That is the "duplicates countless times" in UI mode.
+--
+-- Sliding, not fixed: while a label keeps showing the same text the clock keeps
+-- being pushed out, so a notification sitting on screen for six seconds cannot
+-- age past the window and fire again. Nothing is lost by it -- a code can only
+-- be redeemed once, so a repeat on this surface is never worth sending.
+L.UiRepeatWindow = tonumber(L.Settings.UiDupWindow) or 30
+
+L.SeenRecently = function(key, now, window, slide)
+    window = window or L.FanWindow
     local prev = fanSeen[key]
-    if prev and (now - prev) < L.FanWindow then return true end
+    if prev and (now - prev) < window then
+        if slide then fanSeen[key] = now end
+        return true
+    end
     fanSeen[key] = now
     return false
 end
@@ -1029,8 +1073,17 @@ task.spawn(function()
         if sentCodes then table.clear(sentCodes) end
         local raceSeen = L.RaceSeen
         if raceSeen then table.clear(raceSeen) end
+        -- Pruned by age rather than cleared. A flat clear every 30s would let a
+        -- notification that is still on screen slip past the UI repeat window
+        -- and redeem itself a second time.
         local fanSeen = L.FanSeen
-        if fanSeen then table.clear(fanSeen) end
+        if fanSeen then
+            local fanCutoff = clock()
+                - math.max(L.FanWindow or 0.15, L.UiRepeatWindow or 30) * 2
+            for key, at in pairs(fanSeen) do
+                if at < fanCutoff then fanSeen[key] = nil end
+            end
+        end
     end
 end)
 
@@ -2907,7 +2960,9 @@ do
         end
 
         local now = os.clock()
-        if L.SeenRecently(t, now) then return end
+        -- Long and sliding, because this is a label -- see the note at
+        -- L.UiRepeatWindow. The remote surface keeps its own short window.
+        if L.SeenRecently(t, now, L.UiRepeatWindow, true) then return end
 
         local fast = L.FastNotify
         if fast then return fast(t, nil, nil, "Top") end
@@ -3589,6 +3644,36 @@ do
     end
 end
 
+-- Detection is a choice of ONE surface, and this is the single place that makes
+-- that true. It used to be two half-rules living in SetDetectMode: picking remote
+-- unhooked the notify wrapper, picking UI did not disconnect the remote, so UI
+-- mode ran both and doubled every send.
+L.ApplyDetectMode = function()
+    if L.DetectMode == "remote" then
+        if L.ConnectNotifyRemote then pcall(L.ConnectNotifyRemote) end
+        L.NotifyRemoteName = L.RemoteDetectOn and "remote"
+            or (L.NotifyHooked and "notify" or "gui")
+        return "remote"
+    end
+
+    if L.HookNotify then pcall(L.HookNotify) end
+    if L.HookGui and not L.GuiHooked then pcall(L.HookGui) end
+    -- Only stand the remote down once a UI surface is actually in place.
+    -- Disconnecting first and finding the hook failed leaves no detection at all.
+    if (L.NotifyHooked or L.GuiHooked) and L.RemoteDetectOn then
+        if L.DisconnectNotifyRemote then pcall(L.DisconnectNotifyRemote) end
+    end
+    L.NotifyRemoteName = L.NotifyHooked and "notify" or "gui"
+    return "ui"
+end
+
+-- Applied once at boot too. Discovery connects the remote on the way to being
+-- ready -- that is how it knows detection works -- so UI mode has to be settled
+-- afterwards rather than assumed from the saved setting.
+if L.WhenReady then
+    L.WhenReady(function() pcall(L.ApplyDetectMode) end)
+end
+
 local function buildUI()
     local function New(cls, props)
         local i = Instance.new(cls)
@@ -4226,13 +4311,7 @@ local function buildUI()
         L.DetectMode = (m == "remote") and "remote" or "ui"
         L.Settings.DetectMode = L.DetectMode
         L.SaveSettings()
-        if L.DetectMode == "remote" then
-            L.ConnectNotifyRemote()
-        elseif L.HookNotify then
-            L.HookNotify()
-        end
-        L.NotifyRemoteName = (L.DetectMode == "remote" and L.RemoteDetectOn)
-            and "remote" or (L.NotifyHooked and "notify" or "gui")
+        if L.ApplyDetectMode then L.ApplyDetectMode() end
         paintModes()
     end
     L.SetRedeemPath = function(m)
