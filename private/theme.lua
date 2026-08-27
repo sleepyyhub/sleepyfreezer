@@ -371,6 +371,10 @@ local function attach(inst)
     if parent ~= themedGui and (parent == nil or parent.Parent ~= themedGui) then
         return
     end
+    -- An opt-out for containers that only exist to hold other things. A gradient
+    -- on an invisible holder paints nothing and still costs a write every tick.
+    local ok, skip = pcall(function() return inst:GetAttribute("LuckNoTheme") end)
+    if ok and skip then return end
     if inst:IsA("UIStroke") then
         strokes[#strokes + 1] = inst
         return
@@ -489,6 +493,27 @@ local function applyPalette(theme)
                          L.PaintCooldown, L.PaintSwitches, L.PaintSpeed}) do
         if type(fn) == "function" then pcall(fn) end
     end
+end
+
+-- Deliberate, bounded registration for things built outside this file -- the
+-- redeem cards, which come and go. The tick drops any entry whose Parent has
+-- gone, so a card being destroyed takes its registration with it; that is what
+-- keeps this from being the growing-list mistake all over again.
+L.ThemeRegister = function(inst)
+    if typeof(inst) ~= "Instance" then return false end
+    if inst:IsA("UIGradient") then
+        gradients[#gradients + 1] = inst
+        return true
+    end
+    if inst:IsA("UIStroke") then
+        strokes[#strokes + 1] = inst
+        return true
+    end
+    if inst:IsA("TextLabel") or inst:IsA("TextButton") then
+        flowText[#flowText + 1] = inst
+        return true
+    end
+    return false
 end
 
 local function attachAll()

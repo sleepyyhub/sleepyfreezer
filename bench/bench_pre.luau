@@ -177,6 +177,8 @@ Players.GetPlayers = function()
     for i = 1, 40 do
         local p = new("Folder", "Player" .. i)
         p.DisplayName = "Player" .. i
+        -- Real players have one, and anything building a headshot url needs it.
+        p.UserId = 1000000 + i
         out[i] = p
     end
     return out
