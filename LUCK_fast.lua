@@ -2256,6 +2256,11 @@ do
         if inRedispatch then return end
         local taken = L.PoleTaken
         if not taken then return end
+        -- The sound argument is what makes the game play its own announcement
+        -- chime. Dropping it is how the private build replaces that chime with
+        -- one of its own rather than stacking two. This runs on the deferred
+        -- drain, well after the packet has gone.
+        if L.MuteGameSound then sound = nil end
         inRedispatch = true
         for i = 1, #taken do
             protected(taken[i], msg, dur, sound, position)
