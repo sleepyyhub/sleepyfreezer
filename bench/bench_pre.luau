@@ -133,6 +133,8 @@ Animals._module = {
     ["small secret"]= {DisplayName = "Small Secret", Rarity = "Secret", Generation = 5000000},
     ["og pet"]      = {DisplayName = "OG Pet",  Rarity = "OG",      Generation = "1.5B"},
     ["meowl"]       = {DisplayName = "Meowl",   Rarity = "Rare",    Generation = 1200},
+    ["dragon cannelloni"] = {DisplayName = "Dragon Cannelloni",
+                             Rarity = "Secret", Generation = 4200000000},
     ["big common"]  = {DisplayName = "Big Common", Rarity = "Common", Generation = 900000000},
 }
 

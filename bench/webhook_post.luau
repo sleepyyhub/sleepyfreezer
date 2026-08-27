@@ -108,18 +108,45 @@ R.notifyRemote.OnClientEvent:FireAll("WHLOSE1", 5.5, "Sounds.Sfx.Blop", "Top")
 H.pump(300000)
 check("a rejected code posts nothing", #POSTS == 0, tostring(#POSTS))
 
--- and a win posts on its own, through the real path
+-- End to end in the server's own words. It answers "<Animal> spawned!", so
+-- that is what these send -- a test written against invented wording proves
+-- nothing about the real thing.
 clear()
-R.setInvokeBehaviour(function() return true, "You received a La Vacca!" end)
+R.setInvokeBehaviour(function() return true, "La Vacca spawned!" end)
 R.notifyRemote.OnClientEvent:FireAll("WHWIN1", 5.5, "Sounds.Sfx.Blop", "Top")
 H.pump(300000)
 check("a win posts by itself", #POSTS >= 1, tostring(#POSTS))
 if POSTS[1] then
-    check("with the prize the server named",
-        tostring(POSTS[1].body):find("La Vacca", 1, true) ~= nil,
+    check("the suffix is stripped off the name",
+        tostring(POSTS[1].body):find("La Vacca", 1, true) ~= nil
+            and tostring(POSTS[1].body):find("spawned", 1, true) == nil,
         tostring(POSTS[1].body):sub(1, 240))
     check("and it routed as rare", wentTo(L.HookRare))
 end
+
+-- a two word name has to survive the same trip
+clear()
+R.setInvokeBehaviour(function() return true, "Dragon Cannelloni spawned!" end)
+R.notifyRemote.OnClientEvent:FireAll("WHWIN2", 5.5, "Sounds.Sfx.Blop", "Top")
+H.pump(300000)
+check("a two word name posts", #POSTS >= 1, tostring(#POSTS))
+if POSTS[1] then
+    check("with both words and no suffix",
+        tostring(POSTS[1].body):find("Dragon Cannelloni", 1, true) ~= nil
+            and tostring(POSTS[1].body):find("spawned", 1, true) == nil,
+        tostring(POSTS[1].body):sub(1, 240))
+    check("routed as rare on its generation", wentTo(L.HookRare))
+end
+
+-- an ordinary one in the same wording goes the other way
+clear()
+R.setInvokeBehaviour(function() return true, "Meowl spawned!" end)
+R.notifyRemote.OnClientEvent:FireAll("WHWIN3", 5.5, "Sounds.Sfx.Blop", "Top")
+H.pump(300000)
+check("a common one posts to the normal channel", wentTo(L.HookNormal))
+check("named without the suffix", POSTS[1]
+    and tostring(POSTS[1].body):find("Meowl", 1, true) ~= nil
+    and tostring(POSTS[1].body):find("spawned", 1, true) == nil)
 
 -- Everything below forces failures, and a failure rests that url. os.clock
 -- barely moves in here, so a rested url stays rested for the rest of the run --

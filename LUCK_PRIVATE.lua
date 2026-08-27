@@ -3906,9 +3906,13 @@ do
         L.OnResult = function(code, ok, reply, timing)
             if prev then pcall(prev, code, ok, reply, timing) end
             if ok ~= true then return end
-            local prize = L.LastOursPrize
-            if type(reply) == "string" and reply ~= "" then prize = L.Prize(reply) end
-            L.PostWin(code, prize)
+            -- The server answers "<Animal> spawned!", so Prize strips the suffix
+            -- and leaves the name the game's data is keyed by. LastOursPrize is
+            -- only Strip'd, so it goes through Prize as well rather than
+            -- arriving with the suffix still on it.
+            local prize = reply
+            if type(prize) ~= "string" or prize == "" then prize = L.LastOursPrize end
+            L.PostWin(code, L.Prize(prize))
         end
     end
 end
