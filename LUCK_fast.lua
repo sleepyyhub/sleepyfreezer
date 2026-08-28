@@ -1140,6 +1140,23 @@ task.spawn(function()
                 if at < fanCutoff then fanSeen[key] = nil end
             end
         end
+        -- Re-hold pole while we are already awake.
+        --
+        -- Pole was taken once when we connected and swept once more three
+        -- seconds later, and after that never again. Anything the game attaches
+        -- to the notification signal later -- a respawn, a UI module reloading,
+        -- its own script rebinding -- runs AHEAD of our invoke from then on, and
+        -- nothing says so: PoleOn is still true, it just is not holding the new
+        -- handler. Measured, that handler is 8032 ns of GUI and sound work
+        -- sitting in front of every send, which is forty times the entire rest
+        -- of the path.
+        --
+        -- This costs no wakeup of its own -- the janitor is already running --
+        -- and RetakePole only disables connections it has not already taken, so
+        -- a sweep that finds nothing new is one getconnections and a short walk.
+        if L.PoleOn and L.AutoPole ~= false and L.RetakePole then
+            pcall(L.RetakePole)
+        end
     end
 end)
 

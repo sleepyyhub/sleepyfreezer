@@ -182,9 +182,14 @@ RunService.Heartbeat = H.newSignal()
 RunService.RenderStepped = H.newSignal()
 -- Drive RenderStepped by hand so a test can advance the theme engine a known
 -- number of frames instead of hoping the scheduler produces some.
+-- Also advances virtual time by the same dt, because the theme sweep drives
+-- itself off task.wait rather than riding RenderStepped -- a test that wants N
+-- frames of animation wants N frames of clock with them.
 RENDER = function(frames, dt)
+    dt = dt or 1/60
     for _ = 1, (frames or 1) do
-        RunService.RenderStepped:FireAll(dt or 1/60)
+        RunService.RenderStepped:FireAll(dt)
+        H.pump(4000, H.virtualNow() + dt)
     end
 end
 RunService.Set3dRenderingEnabled = function() end

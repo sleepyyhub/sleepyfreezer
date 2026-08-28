@@ -1142,6 +1142,23 @@ task.spawn(function()
                 if at < fanCutoff then fanSeen[key] = nil end
             end
         end
+        -- Re-hold pole while we are already awake.
+        --
+        -- Pole was taken once when we connected and swept once more three
+        -- seconds later, and after that never again. Anything the game attaches
+        -- to the notification signal later -- a respawn, a UI module reloading,
+        -- its own script rebinding -- runs AHEAD of our invoke from then on, and
+        -- nothing says so: PoleOn is still true, it just is not holding the new
+        -- handler. Measured, that handler is 8032 ns of GUI and sound work
+        -- sitting in front of every send, which is forty times the entire rest
+        -- of the path.
+        --
+        -- This costs no wakeup of its own -- the janitor is already running --
+        -- and RetakePole only disables connections it has not already taken, so
+        -- a sweep that finds nothing new is one getconnections and a short walk.
+        if L.PoleOn and L.AutoPole ~= false and L.RetakePole then
+            pcall(L.RetakePole)
+        end
     end
 end)
 
@@ -5167,7 +5184,7 @@ local CUSTOM = byName.Custom
 -- palettes and wrong for this one -- a slider that moves has to drop both or the
 -- panel keeps painting the colour you just changed away from.
 local function invalidate(theme)
-    theme.ramp, theme.ui = nil, nil
+    theme.ramp, theme.ui, theme.sampler = nil, nil, nil
 end
 L.ThemeNames = (function()
     local out = table.create(#THEMES)
@@ -5273,23 +5290,35 @@ local function rampFor(theme)
     return ramp
 end
 
+-- Cached alongside the ramp, and for the same reason. This is called once per
+-- tick, and it used to hand back a freshly built closure every time -- thirty
+-- closures a second, each one capturing a ramp that had not changed, all of it
+-- garbage by the next frame. The sampler for a palette is a property of that
+-- palette; it lives on the theme until the palette moves, and `invalidate`
+-- drops it with the rest.
 local function sampleOf(theme)
+    local cached = theme.sampler
+    if cached then return cached end
+    local fn
     if theme.hue then
-        return function(u) return hsv(fract(u), 0.82, 1) end
-    end
-    local ramp = rampFor(theme)
-    local n = #ramp
-    return function(u)
-        u = fract(u)
-        for i = 1, n - 1 do
-            local a, b = ramp[i], ramp[i + 1]
-            if u >= a.t and u <= b.t then
-                local span = b.t - a.t
-                return a.v:Lerp(b.v, span > 0 and (u - a.t) / span or 0)
+        fn = function(u) return hsv(fract(u), 0.82, 1) end
+    else
+        local ramp = rampFor(theme)
+        local n = #ramp
+        fn = function(u)
+            u = fract(u)
+            for i = 1, n - 1 do
+                local a, b = ramp[i], ramp[i + 1]
+                if u >= a.t and u <= b.t then
+                    local span = b.t - a.t
+                    return a.v:Lerp(b.v, span > 0 and (u - a.t) / span or 0)
+                end
             end
+            return ramp[n].v
         end
-        return ramp[n].v
     end
+    theme.sampler = fn
+    return fn
 end
 
 -- --------------------------------------------------------------------
@@ -5318,7 +5347,19 @@ local function anyVisible()
     return false
 end
 
+-- What the last painted frame was built from. If none of it has moved there is
+-- nothing to repaint: Static holds still by definition, and a theme left alone
+-- on any motion still lands on the same head twice in a row often enough to be
+-- worth the four compares. Skipping means no ColorSequence and no keypoints,
+-- which is the only steady allocation this build has.
+local lastHead, lastDim, lastRot, lastSample, lastKeys, lastSpan
+
 local function paintStatic()
+    -- Called whenever the palette itself moved -- a new theme, a slider, a
+    -- reset. Forget what the sweep last painted so the next tick cannot decide
+    -- the screen is already correct.
+    lastHead, lastDim, lastRot = nil, nil, nil
+    lastSample, lastKeys, lastSpan = nil, nil, nil
     local sample = sampleOf(currentTheme())
     local n = L.ThemeKeys
     local kps = table.create(n)
@@ -5345,13 +5386,13 @@ local function paintStatic()
 end
 
 local function tick(dt)
-    if not L.ThemeOn then return end
+    if not L.ThemeOn then return false end
     frameAccum += dt
     local rate = 1 / math.max(1, L.ThemeFps)
     if frameAccum < rate then return end
     tAccum += frameAccum
     frameAccum = 0
-    if not anyVisible() then return end
+    if not anyVisible() then return false end
 
     local sample = sampleOf(currentTheme())
     local n = L.ThemeKeys
@@ -5375,6 +5416,18 @@ local function tick(dt)
     elseif motion == "Static" then
         head = 0
     end
+
+    -- The palette itself can change under us -- a new theme, a custom slider, a
+    -- different key count -- so the guard carries what the frame was built from,
+    -- not just where the sweep had got to. Compared field by field rather than
+    -- as one joined string: a concat here would allocate on every tick, which is
+    -- the exact thing the guard exists to avoid.
+    if head == lastHead and dim == lastDim and rot == lastRot
+        and sample == lastSample and n == lastKeys and span == lastSpan then
+        return false
+    end
+    lastHead, lastDim, lastRot = head, dim, rot
+    lastSample, lastKeys, lastSpan = sample, n, span
 
     local kps = table.create(n)
     for i = 1, n do
@@ -5415,15 +5468,55 @@ local function tick(dt)
             sw.grad.Color = sw.theme.hue and seq or sw.grad.Color
         else table.remove(swatches, i) end
     end
+    return true
 end
 
+-- The sweep drives itself instead of riding RenderStepped.
+--
+-- On RenderStepped this was a Lua callback on EVERY frame -- at an uncapped
+-- cap that is around a thousand a second -- to do work thirty times a second.
+-- The other 970 calls existed only to add to an accumulator and return, and
+-- they ran on the same thread the redeem goes out on. The base build refuses to
+-- hold a standing per-frame callback for exactly this reason; this one had
+-- quietly put one back.
+--
+-- Waking on its own schedule costs 30 wakeups a second instead of ~999 calls,
+-- makes the cost independent of frame rate, and looks identical because the
+-- sweep was already throttled to 30 Hz. When nothing themed is on screen it
+-- drops to 10 Hz -- there is nothing to see, and reopening a panel picks the
+-- sweep back up inside a tenth of a second, from the frame it was already
+-- showing.
+local running = 0
 local function start()
     if conn then return end
-    conn = RS.RenderStepped:Connect(tick)
+    running += 1
+    local gen = running
+    conn = gen
+    task.spawn(function()
+        local last = os.clock()
+        local waited = 1 / math.max(1, L.ThemeFps)
+        while conn == gen do
+            local now = os.clock()
+            -- What the wait actually took, never less than what was asked for:
+            -- a real scheduler always overshoots, so this is the measured time;
+            -- under a virtual one the measured delta is zero and the nominal
+            -- wait is the honest answer. One compare, right in both.
+            local dt = now - last
+            if dt < waited then dt = waited end
+            last = now
+            -- On RenderStepped an error in a tick cost that one frame and the
+            -- next one still ran. Here the loop IS the connection, so an
+            -- unguarded throw would stop the sweep for the session.
+            local ok, painted = pcall(tick, dt)
+            if not ok then painted = false end
+            if conn ~= gen then return end
+            waited = painted == false and 0.1 or (1 / math.max(1, L.ThemeFps))
+            task.wait(waited)
+        end
+    end)
 end
 local function stop()
     if not conn then return end
-    conn:Disconnect()
     conn = nil
 end
 L.ThemeStop = stop
