@@ -3773,7 +3773,7 @@ do
     end
 
     local function loadAnimals()
-        if loaded then return end
+        if loaded then return true end
         local ok = pcall(function()
             local datas = RepS:FindFirstChild("Datas")
             local mod = datas and datas:FindFirstChild("Animals")
@@ -3891,12 +3891,17 @@ do
         return true
     end
 
-    -- Prewarm, so the first win does not pay for the module read.
+    -- Prewarm, so the first win does not pay for the module read. It sleeps on
+    -- the tree instead of waking to look: WaitForChild parks the thread on
+    -- ChildAdded, so a client that already has the data reads it once and a
+    -- client that does not costs nothing until the folder actually appears.
     task.spawn(function()
-        for _ = 1, 60 do
-            if loadAnimals() then return end
-            task.wait(0.5)
-        end
+        if loadAnimals() then return end
+        local ok, datas = pcall(RepS.WaitForChild, RepS, "Datas", 30)
+        if not (ok and datas) then return end
+        if loadAnimals() then return end
+        pcall(datas.WaitForChild, datas, "Animals", 30)
+        loadAnimals()
     end)
 
     do
