@@ -644,6 +644,56 @@ def dump_strings_at(img, rva, length=0x400, minlen=3):
     print(f"\n  {count} strings.")
 
 
+def dump_pointers_at(img, rva, length=0x100):
+    """Read a region as 64-bit pointers and resolve each into the image.
+
+    A dumped-from-memory image stores absolute VAs, so a qword inside
+    [image_base, image_base+size) is a pointer to somewhere in this same
+    file. Where it lands on a string, the string is printed.
+
+    This is how you read a pointer TABLE — e.g. Luau's metamethod name array
+    hands you every entry in order, including ones a string scan missed.
+    """
+    print()
+    print("=" * 68)
+    print(f"  POINTERS IN 0x{rva:X} .. 0x{rva + length:X}")
+    print("=" * 68)
+    blob = img.read(rva, length)
+    if blob is None:
+        print(f"  [!] 0x{rva:X}+0x{length:X} is not readable in this image.")
+        return
+
+    base = getattr(img, "image_base", 0) or 0
+    size = getattr(img, "size_of_image", len(img.data))
+    resolved = 0
+    for i in range(0, len(blob) - 7, 8):
+        q = struct.unpack_from("<Q", blob, i)[0]
+        here = rva + i
+        if q == 0:
+            print(f"    0x{here:X}  0x{q:016X}")
+            continue
+
+        target = None
+        if base and base <= q < base + size:
+            target = q - base
+        elif 0 < q < size:
+            target = q                    # stored as a plain RVA
+
+        if target is None:
+            print(f"    0x{here:X}  0x{q:016X}")
+            continue
+
+        note = f"-> 0x{target:X}"
+        raw = img.read(target, 64)
+        if raw:
+            end = raw.find(b"\x00")
+            if end > 0 and all(32 <= c < 127 for c in raw[:end]):
+                note += f"  {raw[:end].decode('ascii')!r}"
+                resolved += 1
+        print(f"    0x{here:X}  0x{q:016X}  {note}")
+    print(f"\n  {resolved} pointers landed on strings.")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -668,6 +718,17 @@ def main():
                                              and not args[i + 2].startswith("--")) else 0x400
         except (IndexError, ValueError):
             print("[!] --at needs an address, e.g. --at 0x6D45300 0x400")
+            return 1
+
+    ptr_rva = ptr_len = None
+    if "--ptrs" in args:
+        i = args.index("--ptrs")
+        try:
+            ptr_rva = int(args[i + 1], 0)
+            ptr_len = int(args[i + 2], 0) if (i + 2 < len(args)
+                                              and not args[i + 2].startswith("--")) else 0x100
+        except (IndexError, ValueError):
+            print("[!] --ptrs needs an address, e.g. --ptrs 0x6D45420 0x100")
             return 1
     if "--sigs" in args:
         i = args.index("--sigs")
@@ -695,6 +756,9 @@ def main():
 
             if at_rva is not None:
                 dump_strings_at(img, at_rva, at_len)
+
+            if ptr_rva is not None:
+                dump_pointers_at(img, ptr_rva, ptr_len)
 
             if want_discover:
                 discover(img, out_disc)
