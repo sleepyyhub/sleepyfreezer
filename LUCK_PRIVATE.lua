@@ -863,6 +863,11 @@ do
     end)
 end
 
+-- Forward declarations. The reader lives further down because it needs
+-- payloadText, which is defined after this; both are assigned at load and only
+-- ever called at runtime, so the order on the page does not matter.
+local readReply, answered
+
 L.FireFast = function(code)
     local path = L.RedeemPath
     if path ~= "ui" then
@@ -884,7 +889,10 @@ L.FireFast = function(code)
             else
                 local pok, a, b = pcall(inv, r, code)
                 if pok then
-                    if a == nil then return true, true, "sent", true end
+                    -- "Nothing came back" is both of them being nil. Testing
+                    -- only the first filed `nil, "This code is out of stock"`
+                    -- as a fire-and-forget and threw the message away.
+                    if a == nil and b == nil then return true, true, "sent", true end
                     return true, a, b, false
                 end
             end
@@ -896,10 +904,18 @@ end
 
 L.RedeemViaRemote = function(code)
     local pok, r1, r2, fireOnly = L.FireFast(code)
-    local ok
-    if pok then ok = fireOnly and true or (r1 == true) end
-    return ok, pok and (r2 or "sent") or "redeem failed",
-        {client = 0, server = 0, fireOnly = fireOnly}
+    if not pok then
+        return nil, "redeem failed", {client = 0, server = 0, fireOnly = fireOnly}
+    end
+    if fireOnly then
+        return true, r2 or "sent", {client = 0, server = 0, fireOnly = true}
+    end
+    -- Read the same way the fast path reads it. This used to demand r1 == true
+    -- and take r2 verbatim, so a remote answering with a bare message reported
+    -- "not ok" and the message "sent" -- which is what the manual box and the
+    -- cleaned-code retry both showed.
+    local ok, reply = readReply(r1, r2)
+    return ok, reply or "sent", {client = 0, server = 0, fireOnly = false}
 end
 
 L.Warming = false
@@ -1262,6 +1278,13 @@ L.ResultNotify = function(code, ok, reply)
         text = L.PayloadText and L.PayloadText(reply, 0) or nil
     end
     text = text and (L.Strip and L.Strip(text) or tostring(text)) or ""
+    -- A remote can answer with a bare true or false and no wording at all. That
+    -- is still an answer, and showing nothing for it reads as the script having
+    -- missed the redeem entirely -- so it gets a line of its own rather than
+    -- falling through the empty-text guard below.
+    if text == "" and type(ok) == "boolean" then
+        text = ok and "redeemed" or "rejected"
+    end
     -- "sent" is the placeholder for a fire-and-forget, not an answer
     if text == "" or text:lower() == "sent" then return false end
 
@@ -1321,6 +1344,89 @@ L.CooldownLeft = function()
     if ends <= 0 then return 0 end
     local left = ends - os.clock()
     return left > 0 and left or 0
+end
+
+-- ---------------------------------------------------------------------------
+-- What the remote actually answered
+--
+-- Everything downstream -- the notification, the preview verdict, the history
+-- row, the cooldown, the webhook -- was written against one shape: the invoke
+-- returns (boolean, string). A RemoteFunction is under no obligation to do
+-- that, and this one does not always. Measured against the shapes it can hand
+-- back, the old reading dropped five of eight on the floor:
+--
+--   (false, "This code is out of stock")   read fine
+--   ("This code is out of stock")          ok = the message, reply = nil
+--   {success = false, message = "..."}     ok = the table,   reply = nil
+--   {Message = "..."}                      ok = the table,   reply = nil
+--   (false)                                ok = false,       reply = nil
+--   ("Meowl spawned!")                     ok = the message, reply = nil
+--
+-- With reply nil the notification has nothing to print and bails, which is the
+-- "it says nothing when the code is out of stock" report -- and the same hole
+-- swallowed a WIN returned as a bare string: no notification, no card, no
+-- webhook post. So the answer gets read into a known shape once, here, before
+-- anything reads it. This is all post-send: the packet left before any of it.
+local OK_FLAGS = {"success", "Success", "ok", "Ok", "OK",
+                  "redeemed", "Redeemed", "valid", "Valid", "granted", "Granted"}
+
+-- Checked before the win words on purpose: "You have already redeemed this
+-- code" carries both, and the rejection is the true reading.
+local FAIL_WORDS = {"out of stock", "no longer", "not found", "already", "expired",
+                    "invalid", "cannot", "can't", "unable", "failed", "fail",
+                    "sold out", "limit", "denied", "not valid", "wait", "error",
+                    "does not exist", "doesn't exist", "no such"}
+local WIN_WORDS  = {"spawned", "received", "granted", "claimed", "congrat",
+                    "unlocked", "awarded", "success", "enjoy", "you got"}
+
+local function classifyReply(text)
+    if type(text) ~= "string" or text == "" then return nil end
+    local t = text:lower()
+    for i = 1, #FAIL_WORDS do
+        if t:find(FAIL_WORDS[i], 1, true) then return false end
+    end
+    for i = 1, #WIN_WORDS do
+        if t:find(WIN_WORDS[i], 1, true) then return true end
+    end
+    return nil
+end
+L.ClassifyReply = classifyReply
+
+-- nil means "the remote said nothing either way", which is not the same as a
+-- rejection and must not be coloured like one.
+function readReply(a, b)
+    local ok, reply
+    local ta = type(a)
+
+    if ta == "boolean" then
+        ok = a
+    elseif ta == "table" then
+        for i = 1, #OK_FLAGS do
+            local v = a[OK_FLAGS[i]]
+            if type(v) == "boolean" then ok = v break end
+        end
+        reply = payloadTextImpl(a, 0)
+    elseif ta == "string" then
+        reply = a
+    end
+
+    if reply == nil then
+        if type(b) == "string" then reply = b
+        elseif type(b) == "table" then reply = payloadTextImpl(b, 0) end
+    end
+    if ok == nil and type(b) == "boolean" then ok = b end
+    -- Only when the remote gave no flag of its own. A stated false stands even
+    -- if the wording sounds cheerful.
+    if ok == nil then ok = classifyReply(reply) end
+    return ok, reply
+end
+L.ReadReply = readReply
+
+-- Did the remote answer at all? A RemoteEvent never does, and a RemoteFunction
+-- that returns nothing is the same story -- but one that returns a bare message
+-- and no flag HAS answered, and used to be filed as silence.
+function answered(a, b)
+    return a ~= nil or b ~= nil
 end
 
 local function isCooldownReply(reply)
@@ -1675,12 +1781,15 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
         end)
         return
     else
-        ok, reply = r1, r2
-        L.LastReply = {ok = r1, message = r2}
+        ok, reply = readReply(r1, r2)
+        L.LastReply = {ok = ok, message = reply, raw1 = r1, raw2 = r2}
         L.OursPending = nil
         if ok == true and L.GuessCode then L.ResetBuf() end
 
-        if ok ~= true then
+        -- Only when the remote actually turned it down. `ok == nil` is "it
+        -- answered something we could not classify", and re-sending on that
+        -- burned the cooldown window on a code that may well have landed.
+        if ok == false then
             local cleaned = codeFrom(text)
             if cleaned and cleaned ~= code then
                 ok, reply = L.RedeemViaRemote(cleaned, t0, true)
@@ -1948,6 +2057,40 @@ do
 
     L.SentCodes = sent
     L.InFlight = function() return fly1, fly2 end
+
+    -- Saying the code is out, while it is still out.
+    --
+    -- The preview only learned a code existed from postRedeemBody, which runs
+    -- off the back of the invoke -- and InvokeServer parks this thread for the
+    -- whole round trip. So the panel sat on "waiting for code…" for the entire
+    -- hundred-odd milliseconds the redeem was actually in flight, then filled
+    -- in code and verdict together. It read as if nothing had happened.
+    --
+    -- Anything queued AFTER the invoke inherits that same delay, so the paint
+    -- has to be queued before it. task.defer does not run the callback, it puts
+    -- it on the queue -- and the queue is drained at the next resumption point,
+    -- which is the yield we are about to take. The paint therefore lands during
+    -- the round trip rather than in front of the packet.
+    --
+    -- The argument goes in a slot instead of through defer's varargs: passing it
+    -- would pack a table on the send path, and the whole point is to spend as
+    -- close to nothing as possible here. One slot, single-buffered, because a
+    -- preview shows the newest code by definition -- there is nothing to lose.
+    -- Cleared as it is read, so whichever drain gets there first paints and any
+    -- other that was also queued finds nothing to do. That is what lets the
+    -- pole path hang the paint off the redispatch it was already queueing while
+    -- the standalone senders keep a defer of their own, without the two ever
+    -- painting the same code twice.
+    local pendingCode
+    local function paintSent()
+        local code = pendingCode
+        if code == nil then return end
+        pendingCode = nil
+        L.SendingCode = code
+        L.LastPreviewCode = code
+        if L.PreviewSending then L.PreviewSending(code) end
+    end
+    L.SendingCode = nil
     L.Solo = true
     L.RawFire = true
     L.Instrument = false
@@ -1998,7 +2141,12 @@ do
             if not L.BestFloorUs or us < L.BestFloorUs then L.BestFloorUs = us end
         end
         if fastIsEvent then a, b = true, "sent" end
-        if a == nil then
+        -- "It told us nothing" is both slots empty, not just the first. A remote
+        -- that answers `nil, "This code is out of stock"` HAS answered, and
+        -- testing only `a` filed it as a fire-and-forget: pending until the
+        -- OURS_WINDOW timeout, and the message dropped on the floor.
+        local quiet = not answered(a, b)
+        if quiet then
             L.OursPending, L.OursAt = code, t0 ~= 0 and t0 or clock()
         end
         -- Straight through, like everything else on this path. t0 is passed in either
@@ -2006,7 +2154,7 @@ do
         -- ever changed was when it appeared.
         if L.Note then L.Note(L.NotifyRemoteName or "remote", code, t0) end
         if L.NotifyRedeem then killFeed(text) end
-        rawFire(t0, tCall, tDone, text, raw, pok, a, b, fastIsEvent or a == nil)
+        rawFire(t0, tCall, tDone, text, raw, pok, a, b, fastIsEvent or quiet)
     end
 
     local soloSlow
@@ -2199,14 +2347,23 @@ do
         end
         if L.PoleOn and L.Handlers and L.Handlers.pole then
             poleInner = want
-            if L.EagerRedispatch == false and L.Handlers.poleLate then
-                -- The fused single-frame version, when the configuration is exactly
-                -- the one it was written for. Otherwise the generic composition.
-                if want == soloRaw and L.Handlers.poleLateRaw then
-                    want, name = L.Handlers.poleLateRaw, "poleLateRaw"
+            -- Either flag asks for the same thing -- work on the queue before
+            -- the invoke instead of after it -- so either one selects it.
+            local eager = L.PreviewLive ~= false or L.EagerRedispatch == true
+            -- The fused single-frame versions, when the configuration is
+            -- exactly the one they were written for. Otherwise the generic
+            -- wrapper-over-inner composition, which is still correct and still
+            -- works, it just pays a call frame and a repeated compare.
+            if want == soloRaw and L.Handlers.poleLateRaw then
+                if eager then
+                    want, name = L.Handlers.poleEagerRaw, "poleEagerRaw"
                 else
-                    want, name = L.Handlers.poleLate, "poleLate"
+                    want, name = L.Handlers.poleLateRaw, "poleLateRaw"
                 end
+            elseif eager then
+                want, name = L.Handlers.pole, "pole"
+            elseif L.Handlers.poleLate then
+                want, name = L.Handlers.poleLate, "poleLate"
             else
                 want, name = L.Handlers.pole, "pole"
             end
@@ -2409,6 +2566,9 @@ do
     local rdMsg, rdDur, rdSound, rdPos
     local function drainRedispatch()
         drainQueued = false
+        -- Before the game's handlers, not after: theirs build GUI and play a
+        -- sound, and the preview should not queue behind that.
+        paintSent()
         redispatch(rdMsg, rdDur, rdSound, rdPos)
     end
 
@@ -2432,6 +2592,11 @@ do
         -- that round trip finished -- so the game's "new code" popup appeared ~150ms
         -- late, every time. Pole was making the game look laggy, and that is most of
         -- what "it doesn't feel instant" was. It never affected the redeem itself.
+        --
+        -- The preview paint rides the same drain, for the same reason: this is
+        -- the only thing queued ahead of the invoke, so it is the only chance to
+        -- put anything on screen while the code is actually out.
+        pendingCode = msg
         queueRedispatch(msg, dur, sound, position)
         poleInner(msg, dur, sound, position)
     end
@@ -2474,6 +2639,47 @@ do
         if L.OursPending then return side(msg) end
     end
 
+    -- The same path with the queueing moved in front of the invoke.
+    --
+    -- Two things want to happen while we are parked on the round trip rather
+    -- than after it: the game's own popup, which otherwise appears ~100ms late,
+    -- and the preview saying which code is currently out. Both need something
+    -- on the deferred queue BEFORE the invoke, because the invoke yields for
+    -- the whole trip and anything queued after it inherits that delay.
+    --
+    -- Measured, that costs about 400ns of detect->send -- the queueing itself,
+    -- which the late variant also pays, just later where the measurement cannot
+    -- see it. Total client work per announcement is identical; only its
+    -- position moved. Against a network step of ~1ms at the fps cap, 400ns is
+    -- 0.04% of one step, so the odds it costs a step at all are about one in
+    -- 2500 -- but it is not nothing, and this script does not pretend that any
+    -- work in front of the packet is nothing.
+    --
+    -- So it is a bound variant like everything else here, and L.PreviewLive
+    -- picks. Off, the floor is exactly what it was and the preview goes back to
+    -- filling in when the server answers. This is also the fused version of
+    -- what EagerRedispatch used to select: that fell through to the generic
+    -- wrapper-over-inner composition, paying an extra call frame and a repeated
+    -- position compare on top.
+    local poleEagerRaw = function(msg, dur, sound, position)
+        if position == "Top" then
+            fly2 = fly1; fly1 = msg
+            pendingCode = msg
+            queueRedispatch(msg, dur, sound, position)
+            local a, b = fastInvoke(fastRemote, msg)
+            sent[msg] = true
+            defer(tail, 0, 0, 0, msg, msg, true, a, b)
+            return
+        end
+        queueRedispatch(msg, dur, sound, position)
+        if L.OursPending then return side(msg) end
+    end
+
+    -- On: the preview says a code is out while it is still out, and the game's
+    -- own popup is not held back by our round trip. Off: the send path returns
+    -- to its measured floor. See the note on poleEagerRaw for the price.
+    L.PreviewLive = true
+
     -- Default off: the send stays at its floor. Turning it on hands the game's own
     -- handlers to the scheduler before our invoke so their popup is not held back by
     -- our round trip -- it costs about 360 ns on the send to save ~150 ms of visible
@@ -2495,7 +2701,7 @@ do
             local fn
             pcall(function() fn = c.Function end)
             if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate
-                and fn ~= poleLateRaw
+                and fn ~= poleLateRaw and fn ~= poleEagerRaw
                 and not (L.IsOurHandler and L.IsOurHandler(fn)) then
                 local okd = pcall(function() c:Disable() end)
                 if okd then
@@ -2512,6 +2718,7 @@ do
         L.Handlers.pole = pole
         L.Handlers.poleLate = poleLate
         L.Handlers.poleLateRaw = poleLateRaw
+        L.Handlers.poleEagerRaw = poleEagerRaw
         L.SyncFast()
         return true, #taken
     end
@@ -2548,7 +2755,7 @@ do
             local fn
             pcall(function() fn = c.Function end)
             if fn and fn ~= L.FastNotify and fn ~= pole and fn ~= poleLate
-                and fn ~= poleLateRaw
+                and fn ~= poleLateRaw and fn ~= poleEagerRaw
                 and not (L.IsOurHandler and L.IsOurHandler(fn)) then
                 local known = false
                 for i = 1, #taken do
@@ -4678,8 +4885,36 @@ local function buildUI()
             L.BufN or 0, L.Threshold or 1,
             L.Mode and L.Mode.name or "?", L.NotifyRemoteName or "?")
     end
+
+    -- Queued before the invoke and drained while the round trip is in flight,
+    -- so this is what the panel shows for the whole time the code is actually
+    -- out -- rather than nothing at all until the server gets back to us.
+    L.PreviewSending = function(code)
+        PrevCode.Text = tostring(code)
+        PrevCode.TextColor3 = T.TEXT
+        PrevVerdict.Text = "sent  ·  waiting for the server"
+        PrevVerdict.TextColor3 = T.ORANGE
+        PrevMeta.Text = ("buffer %d/%d  ·  mode %s  ·  source %s"):format(
+            L.BufN or 0, L.Threshold or 1,
+            L.Mode and L.Mode.name or "?", L.NotifyRemoteName or "?")
+        if status then
+            local floorMs = L.FloorUs and (L.FloorUs / 1000) or L.LastGapMs or 0
+            local surface = (L.DetectMode == "remote" and L.RemoteDetectOn)
+                and "  ·  remote"
+                or (L.NotifyHooked and "  ·  notify" or "  ·  label")
+            status.set(("sent  ·  %s  ·  %.3fms detect->send%s")
+                :format(tostring(code), floorMs, surface), T.MUTED)
+        end
+    end
     L.ReportRedeem = function(ok, reply, timing)
-        local t = tostring(reply or (ok == nil and "no result") or "?")
+        -- "?" was what a wordless answer showed. A bare true or false says
+        -- plenty; it just says it without a sentence.
+        local t = reply
+        if type(t) ~= "string" or t == "" then
+            if ok == true then t = "redeemed"
+            elseif ok == false then t = "rejected"
+            else t = "no result" end
+        end
         local ms = ""
         if timing and timing.server and timing.server > 0 then
             ms = ("  ·  %.1fms"):format(timing.server)
