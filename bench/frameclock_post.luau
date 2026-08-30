@@ -49,6 +49,23 @@ local cap = (L.ThemeOn ~= nil) and ((L.ThemeFps or 30) + 5) or 2
 check("idle wakeups stay at the sweep rate", rate <= cap,
     string.format("%.1f/s against a ceiling of %d", rate, cap))
 
+-- The cap is the biggest client-side latency lever there is: the packet waits
+-- for the network send step, which is ~1ms at the cap and ~16ms at 60. It was
+-- set once at load and never checked again.
+check("the cap is set at boot", RIG.fpsCap() == 999, tostring(RIG.fpsCap()))
+check("and the script knows what it asked for", L.FpsCap == 999, tostring(L.FpsCap))
+
+setfpscap(60)
+check("something else can clobber it", RIG.fpsCap() == 60, tostring(RIG.fpsCap()))
+H.pump(300000, H.virtualNow() + 65)
+check("the janitor puts it back", RIG.fpsCap() == 999, tostring(RIG.fpsCap()))
+
+-- But a deliberate lowering is a choice, not drift. Turbo off sets 240.
+L.SetFpsCap(240)
+H.pump(300000, H.virtualNow() + 65)
+check("a deliberate cap survives the sweep", RIG.fpsCap() == 240, tostring(RIG.fpsCap()))
+L.SetFpsCap(999)
+
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end
 print("runtime errors: " .. #(H.errors or {}))

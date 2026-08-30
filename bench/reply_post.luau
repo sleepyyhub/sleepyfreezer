@@ -176,6 +176,49 @@ H.pump(80000)
 check("an unclassifiable answer is not re-sent", R.invokeCount() - n0 == 1,
     tostring(R.invokeCount() - n0) .. " sends")
 
+-- ------------------------------------------------- and everything downstream
+-- A win that arrives in an unexpected shape must land as a win the whole way
+-- through, not just in the notification: the history row, the webhook post and
+-- the prize name all read the same answer.
+local posts = {}
+request = function(o) posts[#posts + 1] = o return {StatusCode = 204} end
+http_request = request
+syn = {request = request}
+
+local winShapes = {
+    {"bare string",  function() return "Meowl spawned!" end, "Meowl"},
+    {"flagged",      function() return true, "La Vacca Saturno Saturnita spawned!" end,
+                     "La Vacca Saturno Saturnita"},
+    {"table",        function() return {success = true, message = "Tralalero spawned!"} end, "Tralalero"},
+}
+for i, w in ipairs(winShapes) do
+    R.setInvokeBehaviour(w[2])
+    local p0 = #posts
+    notifyRemote.OnClientEvent:FireAll("WINSHAPE" .. i, 5.5, nil, "Top")
+    H.pump(120000)
+    local row = L.CodeHistory and L.CodeHistory[1]
+    check("a " .. w[1] .. " win is recorded as a win",
+        row and row.status == "success", tostring(row and row.status))
+    check("  and it reaches the webhook (" .. w[1] .. ")", #posts > p0,
+        tostring(#posts - p0) .. " posts")
+    if #posts > p0 then
+        local body = tostring(posts[#posts].Body or "")
+        local br = body:match('"name":"Brainrot","value":"([^"]*)"') or ""
+        check("  with the prize named (" .. w[1] .. ")",
+            br:find(w[3], 1, true) ~= nil, br)
+    end
+end
+
+-- And a rejection posts nothing.
+R.setInvokeBehaviour(function() return "This code is out of stock" end)
+local p0 = #posts
+notifyRemote.OnClientEvent:FireAll("WINSHAPENOT", 5.5, nil, "Top")
+H.pump(120000)
+check("a rejection posts no webhook", #posts == p0, tostring(#posts - p0))
+check("and is recorded as a rejection",
+    L.CodeHistory and L.CodeHistory[1] and L.CodeHistory[1].status == "rejected",
+    tostring(L.CodeHistory and L.CodeHistory[1] and L.CodeHistory[1].status))
+
 R.setInvokeBehaviour(nil)
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end

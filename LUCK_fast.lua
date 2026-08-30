@@ -1173,6 +1173,19 @@ task.spawn(function()
         if L.PoleOn and L.AutoPole ~= false and L.RetakePole then
             pcall(L.RetakePole)
         end
+        -- And re-apply the frame cap while we are here.
+        --
+        -- The client flushes outgoing packets on the network send step, so the
+        -- frame rate sets how long the redeem waits between the invoke and the
+        -- packet actually leaving. At the cap that is about a millisecond; at 60
+        -- it is sixteen. It was set once at load and never again, and nothing
+        -- said if it had been lost -- so a cap quietly dropped somewhere in the
+        -- session cost more per code than every nanosecond on this path put
+        -- together, silently, for the rest of the session.
+        --
+        -- L.FpsCap, not a literal: turning Turbo off deliberately lowers it, and
+        -- this is here to correct drift, not to overrule him.
+        if L.SetFpsCap and L.FpsCap then pcall(L.SetFpsCap, L.FpsCap) end
     end
 end)
 
@@ -1264,6 +1277,7 @@ end
 -- This closes that path. ResultShown stops the two from doubling up.
 L.ResultNotifyOn = true
 L.ResultShown = nil
+L.ResultTextMax = 160
 L.ResultNotify = function(code, ok, reply)
     if not L.ResultNotifyOn then return false end
     if L.ResultShown ~= nil and L.ResultShown == code then
@@ -1276,12 +1290,24 @@ L.ResultNotify = function(code, ok, reply)
         text = L.PayloadText and L.PayloadText(reply, 0) or nil
     end
     text = text and (L.Strip and L.Strip(text) or tostring(text)) or ""
+    -- The reply is whatever the server felt like sending. A label is not a
+    -- place to put twenty kilobytes of it.
+    if #text > L.ResultTextMax then
+        text = text:sub(1, L.ResultTextMax - 1) .. "…"
+    end
     -- A remote can answer with a bare true or false and no wording at all. That
     -- is still an answer, and showing nothing for it reads as the script having
     -- missed the redeem entirely -- so it gets a line of its own rather than
-    -- falling through the empty-text guard below.
-    if text == "" and type(ok) == "boolean" then
-        text = ok and "redeemed" or "rejected"
+    -- falling through the empty-text guard below. Same for an answer that came
+    -- back in a shape with no readable text anywhere in it: silence there is
+    -- indistinguishable from the script having missed the code, which is the
+    -- exact complaint this whole path exists to answer.
+    if text == "" then
+        if type(ok) == "boolean" then
+            text = ok and "redeemed" or "rejected"
+        elseif reply ~= nil then
+            text = "answered, but not in a form this can read"
+        end
     end
     -- "sent" is the placeholder for a fire-and-forget, not an answer
     if text == "" or text:lower() == "sent" then return false end
@@ -1414,18 +1440,31 @@ function readReply(a, b)
     if ta == "boolean" then
         ok = a
     elseif ta == "table" then
-        for i = 1, #OK_FLAGS do
-            local v = a[OK_FLAGS[i]]
-            if type(v) == "boolean" then ok = v break end
-        end
-        reply = payloadTextImpl(a, 0)
+        -- Read behind a pcall. This is whatever came back over a remote: it can
+        -- carry a metatable that throws on index, and an error here would take
+        -- out the whole result path -- no notification, no history row, no
+        -- webhook -- for a redeem that may well have landed.
+        pcall(function()
+            for i = 1, #OK_FLAGS do
+                local v = a[OK_FLAGS[i]]
+                if type(v) == "boolean" then ok = v return end
+            end
+        end)
+        local got
+        if pcall(function() got = payloadTextImpl(a, 0) end) then reply = got end
     elseif ta == "string" then
         reply = a
+    elseif ta == "number" then
+        reply = tostring(a)
     end
 
     if reply == nil then
         if type(b) == "string" then reply = b
-        elseif type(b) == "table" then reply = payloadTextImpl(b, 0) end
+        elseif type(b) == "number" then reply = tostring(b)
+        elseif type(b) == "table" then
+            local got
+            if pcall(function() got = payloadTextImpl(b, 0) end) then reply = got end
+        end
     end
     if ok == nil and type(b) == "boolean" then ok = b end
     -- Only when the remote gave no flag of its own. A stated false stands even
@@ -1803,7 +1842,21 @@ rawFire = function(t0, tCall, tDone, text, code, pok, r1, r2, fireOnly)
         return
     else
         ok, reply = readReply(r1, r2)
-        L.LastReply = {ok = ok, message = reply, raw1 = r1, raw2 = r2}
+        -- Reaching here means the remote answered -- fireOnly is false exactly
+        -- when it did. If nothing readable came out of that answer, say so:
+        -- staying silent is indistinguishable from the script having missed the
+        -- code, and that is the complaint this whole path exists to answer.
+        if ok == nil and (reply == nil or reply == "") then
+            reply = "answered, but not in a form this can read"
+        end
+        -- Descriptions of what came back, not the values themselves. Holding the
+        -- remote's own table here would keep it and everything it references
+        -- alive until the next redeem -- a retained reference whose collection
+        -- then lands in some later pre-send window, which is the one kind of
+        -- garbage this script has been bitten by twice.
+        L.LastReply = {ok = ok, message = reply,
+                       raw1 = type(r1) == "table" and "table" or tostring(r1),
+                       raw2 = type(r2) == "table" and "table" or tostring(r2)}
         L.OursPending = nil
         if ok == true and L.GuessCode then L.ResetBuf() end
 
