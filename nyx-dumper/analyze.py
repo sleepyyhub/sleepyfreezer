@@ -521,8 +521,14 @@ KNOWN_STRINGS = {
 }
 
 
-def _all_string_hits(data, s, cap=8):
-    """Every NUL-terminated occurrence of `s`, as file offsets."""
+def _all_string_hits(data, s, cap=8, anchored=True):
+    """Every NUL-terminated occurrence of `s`, as file offsets.
+
+    anchored=True also requires the match to START a string — the preceding
+    byte must be NUL (or non-printable). Without this, "vector" matches
+    inside "__vector" and "number" inside "lua_number", which buries the
+    real hit in noise.
+    """
     needle = s.encode("ascii") + b"\x00"
     hits = []
     i = 0
@@ -530,7 +536,8 @@ def _all_string_hits(data, s, cap=8):
         i = data.find(needle, i)
         if i < 0:
             break
-        hits.append(i)
+        if not anchored or i == 0 or not (32 <= data[i - 1] < 127):
+            hits.append(i)
         i += 1
     return hits
 
@@ -604,6 +611,39 @@ def discover(img, out_path=None):
     return results
 
 
+def dump_strings_at(img, rva, length=0x400, minlen=3):
+    """List every printable C string in [rva, rva+length).
+
+    Use this to inspect a literal pool — when a string you expected is
+    missing, look at the neighbourhood of one that resolved and read what is
+    actually there.
+    """
+    print()
+    print("=" * 68)
+    print(f"  STRINGS IN 0x{rva:X} .. 0x{rva + length:X}")
+    print("=" * 68)
+    blob = img.read(rva, length)
+    if blob is None:
+        print(f"  [!] 0x{rva:X}+0x{length:X} is not readable in this image.")
+        return
+    count = 0
+    i = 0
+    n = len(blob)
+    while i < n:
+        if 32 <= blob[i] < 127:
+            j = i
+            while j < n and 32 <= blob[j] < 127:
+                j += 1
+            if j - i >= minlen and j < n and blob[j] == 0:
+                text = blob[i:j].decode("ascii")
+                print(f"    0x{rva + i:X}  ({j - i:>3})  {text!r}")
+                count += 1
+            i = j + 1
+        else:
+            i += 1
+    print(f"\n  {count} strings.")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -619,6 +659,16 @@ def main():
         args = args[1:]
     force_raw = "--raw" in args
     want_discover = "--discover" in args
+    at_rva = at_len = None
+    if "--at" in args:
+        i = args.index("--at")
+        try:
+            at_rva = int(args[i + 1], 0)
+            at_len = int(args[i + 2], 0) if (i + 2 < len(args)
+                                             and not args[i + 2].startswith("--")) else 0x400
+        except (IndexError, ValueError):
+            print("[!] --at needs an address, e.g. --at 0x6D45300 0x400")
+            return 1
     if "--sigs" in args:
         i = args.index("--sigs")
         out_sigs = args[i + 1] if i + 1 < len(args) else "signatures.py"
@@ -642,6 +692,9 @@ def main():
                 print("    image (RVA == file offset). Normal for a .bin dump.\n")
 
             usable = verify_image(img)
+
+            if at_rva is not None:
+                dump_strings_at(img, at_rva, at_len)
 
             if want_discover:
                 discover(img, out_disc)
