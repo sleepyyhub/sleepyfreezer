@@ -18,12 +18,23 @@ have one, an existing offsets header, and it will:
      the exact format dumper.py's SIGNATURES table wants, uniqueness-tested
      against the whole image.
 
-USAGE
-    python3 analyze.py RobloxPlayerBeta.exe
-    python3 analyze.py RobloxPlayerBeta.exe step1_discontinue.h
-    python3 analyze.py RobloxPlayerBeta.exe step1_discontinue.h --sigs out.py
+  4. DISCOVER offsets in a build you have NO header for. String contents
+     survive Roblox updates even though addresses move, so a string scan
+     yields a fresh, real offset table for the image in front of you.
 
-The image is memory-mapped, so a few hundred MB costs nothing.
+USAGE
+    python analyze.py client.exe
+    python analyze.py client.bin --discover new_offsets.h
+    python analyze.py client.exe old_offsets.h
+    python analyze.py client.exe old_offsets.h --sigs signatures.py
+
+FLAGS
+    --discover [out.h]   scan for known strings, write an offsets header
+    --sigs [out.py]      emit AOB signatures for dumper.py
+    --raw                force flat-image mode (skip PE parsing)
+
+Accepts a .exe or a headerless .bin memory dump. The file is memory-mapped,
+so size is not a concern.
 """
 
 import os
@@ -112,6 +123,54 @@ class PE:
         hits = sum(1 for s in self.sections
                    if s["rsize"] and s["roff"] == s["vaddr"])
         return hits >= max(1, len(self.sections) // 2)
+
+
+class RawImage:
+    """Fallback for a headerless blob (a .bin 'decrypt dump', typically the
+    module copied straight out of memory).
+
+    With no section table we cannot say what is code and what is data, so the
+    whole file is treated as one readable+executable span and RVA == file
+    offset. Classification gets less precise; string finding is unaffected,
+    which is the part that matters for cross-version work.
+    """
+
+    def __init__(self, data):
+        self.data = data
+        self.machine = 0x8664
+        self.is_64 = True
+        self.entry_rva = 0
+        self.image_base = 0
+        self.size_of_image = len(data)
+        self.sections = [{
+            "name": "<raw>", "vaddr": 0, "vsize": len(data),
+            "roff": 0, "rsize": len(data), "chars": 0,
+            "exec": True, "read": True, "write": False,
+        }]
+
+    def section_of(self, rva):
+        return self.sections[0] if 0 <= rva < len(self.data) else None
+
+    def rva_to_off(self, rva):
+        return rva if 0 <= rva < len(self.data) else None
+
+    def read(self, rva, n):
+        if rva < 0 or rva + n > len(self.data):
+            return None
+        return self.data[rva:rva + n]
+
+    def is_flat(self):
+        return True
+
+
+def load_image(data, force_raw=False):
+    """Return (image, kind). Falls back to RawImage for headerless dumps."""
+    if not force_raw:
+        try:
+            return PE(data), "pe"
+        except ValueError:
+            pass
+    return RawImage(data), "raw"
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -401,6 +460,150 @@ def gen_signatures(pe, offsets, buckets, out_path=None):
         print(f"  Written to {out_path}")
 
 
+# ─────────────────────────────────────────────────────────────────────────
+#  Discovery — find offsets with no prior header to compare against
+# ─────────────────────────────────────────────────────────────────────────
+#
+#  String contents survive Roblox updates even though addresses move, so a
+#  string scan yields a usable offset table for a build you have nothing for.
+#  Anything that resolves here is real: it was found in THIS image, not
+#  carried over from an older dump.
+
+KNOWN_STRINGS = {
+    # metamethods
+    "TM___index":        "__index",
+    "TM___newindex":     "__newindex",
+    "TM___namecall":     "__namecall",
+    "TM___call":         "__call",
+    "TM___concat":       "__concat",
+    "TM___tostring":     "__tostring",
+    "TM___metatable":    "__metatable",
+    "TM___mode":         "__mode",
+    "TM___len":          "__len",
+    "TM___eq":           "__eq",
+    "TM___iter":         "__iter",
+    # type names
+    "T_boolean":         "boolean",
+    "T_number":          "number",
+    "T_vector":          "vector",
+    "T_thread":          "thread",
+    "T_userdata":        "userdata",
+    "T_buffer":          "buffer",
+    # VM error strings — high-value anchors, each referenced by one function
+    "S_StackOverflow":       "stack overflow",
+    "S_ReadonlyTable":       "Attempt to modify a readonly table",
+    "S_TableIndexIsNil":     "table index is nil",
+    "S_TableIndexIsNaN":     "table index is NaN",
+    "S_CannotResumeDead":    "cannot resume dead coroutine",
+    "S_AttemptYieldBoundary": "attempt to yield across metamethod/C-call boundary",
+    "S_ScriptTimeout":       "script exhausted",
+    # bytecode / loader
+    "BytecodeVersionMismatch": "Unsupported bytecode version",
+    "BytecodeCorrupted":       "Bytecode corrupted",
+    # scheduler job names
+    "JobName_Heartbeat":     "Heartbeat",
+    "JobName_Simulation":    "Simulation",
+    "JobName_FrameStart":    "FrameStart",
+    "JobName_FrameEnd":      "FrameEnd",
+    "JobName_PostRender":    "PostRender",
+    # services / instances
+    "Svc_Workspace":         "Workspace",
+    "Svc_ReplicatedStorage": "ReplicatedStorage",
+    "Svc_HttpService":       "HttpService",
+    "Svc_UserInputService":  "UserInputService",
+    "Svc_RunService":        "RunService",
+    "Cls_RemoteEvent":       "RemoteEvent",
+    "Cls_RemoteFunction":    "RemoteFunction",
+    "Cls_ClickDetector":     "ClickDetector",
+    "Cls_ProximityPrompt":   "ProximityPrompt",
+    # anti-cheat surface
+    "Hyperion_Untrusted":    "PlayerUntrusted",
+}
+
+
+def _all_string_hits(data, s, cap=8):
+    """Every NUL-terminated occurrence of `s`, as file offsets."""
+    needle = s.encode("ascii") + b"\x00"
+    hits = []
+    i = 0
+    while len(hits) < cap:
+        i = data.find(needle, i)
+        if i < 0:
+            break
+        hits.append(i)
+        i += 1
+    return hits
+
+
+def discover(img, out_path=None):
+    print()
+    print("=" * 68)
+    print("  STRING DISCOVERY")
+    print("=" * 68)
+    print("  Finding known strings in THIS image. Version-independent —")
+    print("  works on a build you have no offsets for.\n")
+
+    data = img.data
+    results = {}
+    ambiguous = 0
+    for name, text in sorted(KNOWN_STRINGS.items()):
+        hits = _all_string_hits(data, text)
+        if not hits:
+            print(f"    [MISS]  {name:<26} \"{text}\"")
+            results[name] = None
+        elif len(hits) == 1:
+            print(f"    [ok]    {name:<26} 0x{hits[0]:X}")
+            results[name] = hits[0]
+        else:
+            ambiguous += 1
+            locs = ", ".join(f"0x{h:X}" for h in hits[:4])
+            more = "..." if len(hits) > 4 else ""
+            print(f"    [multi] {name:<26} {len(hits)} hits: {locs}{more}")
+            results[name] = hits[0]   # first occurrence, verify before trusting
+
+    found = sum(1 for v in results.values() if v is not None)
+    print(f"\n  Resolved {found}/{len(KNOWN_STRINGS)}"
+          f"   ({ambiguous} had multiple matches — verify those)")
+
+    if found == 0:
+        print("\n  [BAD] Nothing found. Either this is not a Roblox image, or")
+        print("        it is still encrypted/packed.")
+        return results
+
+    if out_path:
+        lines = [
+            "/*",
+            " *  Discovered by analyze.py --discover",
+            " *  String offsets found in this image. Entries marked (multi)",
+            " *  matched more than once — confirm which occurrence you want.",
+            " */",
+            "#pragma once",
+            "#include <cstdint>",
+            "#include <Windows.h>",
+            "",
+            "inline std::uintptr_t rbx_rebase(std::uintptr_t rva) {",
+            "    static std::uintptr_t base ="
+            " reinterpret_cast<std::uintptr_t>(GetModuleHandleA(nullptr));",
+            "    return rva ? (rva + base) : 0;",
+            "}",
+            "#define REBASE(x) (rbx_rebase(x))",
+            "",
+            "namespace Offsets {",
+        ]
+        width = max(len(k) for k in results)
+        for name, rva in results.items():
+            if rva is None:
+                lines.append(f"    // {name:<{width}} = (not found)")
+            else:
+                lines.append(
+                    f"    inline const uintptr_t {name:<{width}} = REBASE(0x{rva:X});")
+        lines.append("}")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"  Written to {out_path}")
+    return results
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -409,27 +612,39 @@ def main():
     exe = sys.argv[1]
     header = None
     out_sigs = None
+    out_disc = None
     args = sys.argv[2:]
     if args and not args[0].startswith("--"):
         header = args[0]
         args = args[1:]
+    force_raw = "--raw" in args
+    want_discover = "--discover" in args
     if "--sigs" in args:
         i = args.index("--sigs")
         out_sigs = args[i + 1] if i + 1 < len(args) else "signatures.py"
+    if want_discover:
+        i = args.index("--discover")
+        nxt = args[i + 1] if i + 1 < len(args) else None
+        out_disc = nxt if (nxt and not nxt.startswith("--")) else "discovered.h"
 
     if not os.path.isfile(exe):
         print(f"[!] no such file: {exe}")
         return 1
 
+    size_mb = os.path.getsize(exe) / (1024 * 1024)
+    print(f"[*] {os.path.basename(exe)}  ({size_mb:.1f} MB)\n")
+
     with open(exe, "rb") as f:
         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
-            try:
-                pe = PE(data)
-            except ValueError as e:
-                print(f"[!] {e}")
-                return 1
+            img, kind = load_image(data, force_raw)
+            if kind == "raw":
+                print("[*] No usable PE header — treating as a flat memory")
+                print("    image (RVA == file offset). Normal for a .bin dump.\n")
 
-            usable = verify_image(pe)
+            usable = verify_image(img)
+
+            if want_discover:
+                discover(img, out_disc)
 
             if header:
                 if not os.path.isfile(header):
@@ -441,12 +656,12 @@ def main():
                 if not offsets:
                     print("[!] none matched the REBASE(0x...) pattern")
                     return 1
-                buckets = check_offsets(pe, offsets)
+                buckets = check_offsets(img, offsets)
                 if usable:
-                    gen_signatures(pe, offsets, buckets, out_sigs)
-            else:
-                print("\n[*] Pass an offsets header as the 2nd argument to")
-                print("    classify offsets and generate signatures.")
+                    gen_signatures(img, offsets, buckets, out_sigs)
+            elif not want_discover:
+                print("\n[*] Next: pass an offsets header to classify it, or")
+                print("    --discover to find offsets in this image directly.")
     return 0
 
 
