@@ -69,6 +69,79 @@ if type(read) == "function" then
     check("nothing at all stays unknown", read(nil, nil) == nil)
 end
 
+-- ------------------------------------------------ wording, including nasty names
+-- The win reads "<ANIMAL> spawned!" and an animal is named whatever the game
+-- feels like naming it, so a prize whose name carries a rejection word must
+-- still read as a win.
+local classify = L.ClassifyReply
+check("the classifier is exposed", type(classify) == "function")
+if type(classify) == "function" then
+    local wording = {
+        {"Meowl spawned!", true},
+        {"Dragon Cannelloni spawned!", true},
+        {"Limit Breaker spawned!", true},
+        {"No Longer Human spawned!", true},
+        {"Error 404 spawned!", true},
+        {"Already Dead spawned!", true},
+        {"You received a La Vacca!", true},
+        {"Congratulations! You got Tralalero", true},
+        {"This code is out of stock", false},
+        {"This code has expired", false},
+        {"You have already redeemed this code", false},
+        {"Invalid code", false},
+        {"Code not found", false},
+        {"Please wait before trying to redeem another Code", false},
+        {"This code is no longer available", false},
+        {"Sold out", false},
+        {"You have reached the limit", false},
+        {"", nil},
+        {"asdfgh", nil},
+    }
+    local bad, first = 0, nil
+    for _, w in ipairs(wording) do
+        if classify(w[1]) ~= w[2] then
+            bad += 1
+            first = first or (w[1] .. " -> " .. tostring(classify(w[1])))
+        end
+    end
+    check("every wording reads correctly", bad == 0,
+        tostring(bad) .. " misread, first: " .. tostring(first))
+end
+
+-- A win is never a rate-limit notice, whatever it is called. Reading one as a
+-- cooldown does not just mislabel it -- it leaves the countdown anchored to the
+-- wrong redeem for the next five seconds.
+local isCd = L.IsCooldownReply
+if type(isCd) == "function" then
+    check("a real rate-limit notice is one",
+        isCd("Please wait before trying to redeem another Code") == true)
+    check("a prize called Waiter is not", isCd("Waiter spawned!") ~= true,
+        "Waiter spawned! read as a cooldown")
+    check("a stated win is never one", isCd("Please wait", true) == false)
+end
+
+-- The prize's name, out of whatever sentence it arrived in.
+local prizes = {
+    {"Meowl spawned!", "Meowl"},
+    {"La Vacca Saturno Saturnita spawned!", "La Vacca Saturno Saturnita"},
+    {"You received a La Vacca!", "La Vacca"},
+    {"Congratulations! You got Tralalero Tralala", "Tralalero Tralala"},
+    {"You have received the Brainrot God!", "Brainrot God"},
+    {"Meowl has been added to your inventory", "Meowl"},
+    {'<font color="#fff">Meowl spawned!</font>', "Meowl"},
+    {"Tung Tung Tung Sahur", "Tung Tung Tung Sahur"},
+}
+local badPrize, firstPrize = 0, nil
+for _, p in ipairs(prizes) do
+    local got = L.Prize(p[1])
+    if got ~= p[2] then
+        badPrize += 1
+        firstPrize = firstPrize or (p[1] .. " -> " .. tostring(got))
+    end
+end
+check("the prize name comes out of the sentence", badPrize == 0,
+    tostring(badPrize) .. " off, first: " .. tostring(firstPrize))
+
 -- --------------------------------------------------------- end to end, on screen
 local seen = {}
 L.Notify = function(text) seen[#seen + 1] = tostring(text) end

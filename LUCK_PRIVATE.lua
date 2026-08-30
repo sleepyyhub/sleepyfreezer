@@ -1370,18 +1370,33 @@ end
 local OK_FLAGS = {"success", "Success", "ok", "Ok", "OK",
                   "redeemed", "Redeemed", "valid", "Valid", "granted", "Granted"}
 
--- Checked before the win words on purpose: "You have already redeemed this
--- code" carries both, and the rejection is the true reading.
-local FAIL_WORDS = {"out of stock", "no longer", "not found", "already", "expired",
-                    "invalid", "cannot", "can't", "unable", "failed", "fail",
-                    "sold out", "limit", "denied", "not valid", "wait", "error",
-                    "does not exist", "doesn't exist", "no such"}
-local WIN_WORDS  = {"spawned", "received", "granted", "claimed", "congrat",
-                    "unlocked", "awarded", "success", "enjoy", "you got"}
+-- Three tiers, and the order is the whole point.
+--
+-- This game's win reads "<ANIMAL> spawned!", and an animal is named whatever
+-- the game feels like naming it. Check the rejection words first and a prize
+-- called "Limit Breaker" or "No Longer Human" reads its own win as a refusal.
+-- So an unambiguous win marker is checked first -- nothing turns a redeem down
+-- by telling you something spawned -- then the rejection words, then the
+-- weaker win words that could plausibly appear in either.
+--
+-- "You have already redeemed this code" carries a weak win word and a rejection
+-- word and no strong marker, so it lands where it should.
+local SURE_WIN  = {"spawned", "you received", "you got", "congrat", "you win",
+                   "has been added", "was added"}
+local FAIL_WORDS = {"out of stock", "no longer available", "not found", "already",
+                    "expired", "invalid", "cannot", "can't", "unable", "failed",
+                    "sold out", "denied", "not valid", "wait", "error",
+                    "does not exist", "doesn't exist", "no such", "ran out",
+                    "reached the limit", "limit reached", "too many"}
+local WIN_WORDS  = {"received", "granted", "claimed", "unlocked", "awarded",
+                    "success", "enjoy", "redeemed successfully"}
 
 local function classifyReply(text)
     if type(text) ~= "string" or text == "" then return nil end
     local t = text:lower()
+    for i = 1, #SURE_WIN do
+        if t:find(SURE_WIN[i], 1, true) then return true end
+    end
     for i = 1, #FAIL_WORDS do
         if t:find(FAIL_WORDS[i], 1, true) then return false end
     end
@@ -1429,9 +1444,17 @@ function answered(a, b)
     return a ~= nil or b ~= nil
 end
 
-local function isCooldownReply(reply)
+-- Same trap as the classifier, and it was already sitting here: "wait" is a
+-- substring of a lot of things a prize could be called, and this game's win
+-- reads "<ANIMAL> spawned!". A brainrot named Waiter would have had its win
+-- filed as a rate-limit notice -- which does not just mislabel it, it leaves
+-- the cooldown window anchored to the wrong redeem and the countdown wrong for
+-- the next five seconds. A redeem that worked is never a cooldown notice.
+local function isCooldownReply(reply, ok)
+    if ok == true then return false end
     if type(reply) ~= "string" then return false end
     local t = reply:lower()
+    if classifyReply(reply) == true then return false end
     return t:find("wait", 1, true) ~= nil
         or t:find("cooldown", 1, true) ~= nil
         or t:find("too fast", 1, true) ~= nil
@@ -1446,7 +1469,7 @@ L.NoteRedeemReply = function(ok, reply, at)
     at = at or os.clock()
     local started = L.CooldownAt
 
-    if isCooldownReply(reply) then
+    if isCooldownReply(reply, ok) then
         -- Did not count. The window is untouched -- no reset, no extension.
         L.CooldownRejects += 1
         L.CooldownWasted += 1
@@ -3889,10 +3912,67 @@ L.Strip = function(t)
     t = t:gsub("<br%s*/>", "\n"):gsub("<[^>]->", "")
     return (t:gsub("^%s+",""):gsub("%s+$",""))
 end
+-- The prize's name, out of whatever sentence the server wrapped it in.
+--
+-- This game says "<ANIMAL> spawned!", which is one suffix and was all this
+-- handled. The other shapes it can come back in put the name in the middle,
+-- and leaving the sentence in means the webhook's Brainrot field reads
+-- "You received a La Vacca!" and the tier lookup has to fall back to scanning.
+-- Everything here is post-send and runs once per win.
+local PRIZE_LEAD = {
+    "^congratulations[!,.]*%s*",
+    "^congrats[!,.]*%s*",
+    "^you%s+have%s+received%s+",
+    "^you%s+have%s+been%s+granted%s+",
+    "^you%s+received%s+",
+    "^you%s+got%s+",
+    "^you%s+won%s+",
+    "^received%s+",
+    "^unlocked%s+",
+    "^granted%s+",
+    "^an%s+",
+    "^a%s+",
+    "^the%s+",
+}
+local PRIZE_TAIL = {
+    "%s*has%s+been%s+added.*$",
+    "%s*was%s+added.*$",
+    "%s*spawned!*%s*$",
+    "%s*redeemed!*%s*$",
+    "%s*unlocked!*%s*$",
+    "%s*granted!*%s*$",
+}
+-- Matched against a lowercased copy and cut from the original, because Lua
+-- patterns are case sensitive and the server writes "You received", not "you
+-- received". Lowercasing the answer itself would hand back a prize name in the
+-- wrong case, which is what goes in the webhook and the card.
 L.Prize = function(msg)
-    local clean = L.Strip(msg)
-    clean = clean:gsub("%s*spawned!?%s*$", ""):gsub("%s*redeemed!?%s*$", "")
-    return clean ~= "" and clean or L.Strip(msg)
+    local full = L.Strip(msg)
+    local clean, low = full, full:lower()
+
+    for i = 1, #PRIZE_TAIL do
+        local s = low:find(PRIZE_TAIL[i])
+        if s then
+            clean, low = clean:sub(1, s - 1), low:sub(1, s - 1)
+            break
+        end
+    end
+    -- Three passes, so "Congratulations! You received a Meowl" loses the
+    -- greeting, then the verb, then the article. Each pass takes at most one.
+    for _ = 1, 3 do
+        local cut = false
+        for i = 1, #PRIZE_LEAD do
+            local _, e = low:find(PRIZE_LEAD[i])
+            if e then
+                clean, low = clean:sub(e + 1), low:sub(e + 1)
+                cut = true
+                break
+            end
+        end
+        if not cut then break end
+    end
+    clean = clean:gsub("[!.,%s]+$", ""):gsub("^%s+", "")
+    return clean ~= "" and clean or full
 end
 
 -- ---------------------------------------------------------------------------
