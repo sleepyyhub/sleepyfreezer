@@ -469,11 +469,16 @@ def gen_signatures(pe, offsets, buckets, out_path=None):
 #  Anything that resolves here is real: it was found in THIS image, not
 #  carried over from an older dump.
 
+#  Entries below are confirmed present in version-f5a60436d48947d3 unless
+#  marked. Guesses that turned out to be substrings of longer literals (the
+#  scheduler job names, "RunService") were removed — with anchoring on they
+#  correctly report MISS, which is noise, not information.
+
 KNOWN_STRINGS = {
-    # metamethods
+    # ---- metamethods: one tight pool, the highest-confidence anchor ----
     "TM___index":        "__index",
     "TM___newindex":     "__newindex",
-    "TM___namecall":     "__namecall",
+    "TM___namecall":     "__namecall",     # absent in f5a60436 — see the gap
     "TM___call":         "__call",
     "TM___concat":       "__concat",
     "TM___tostring":     "__tostring",
@@ -482,41 +487,57 @@ KNOWN_STRINGS = {
     "TM___len":          "__len",
     "TM___eq":           "__eq",
     "TM___iter":         "__iter",
-    # type names
+    "TM___type":         "__type",
+    "TM___lt":           "__lt",
+    "TM___le":           "__le",
+    "TM___add":          "__add",
+    "TM___sub":          "__sub",
+    "TM___mul":          "__mul",
+    "TM___div":          "__div",
+    "TM___idiv":         "__idiv",
+    "TM___mod":          "__mod",
+    "TM___pow":          "__pow",
+    "TM___unm":          "__unm",
+
+    # ---- Luau FastFlags — these name VM features directly ----
+    "FF_NewPointerEncode":    "LuauNewPointerEncode",
+    "FF_ManagedDebugNames":   "LuauManagedDebugNames",
+    "FF_InlineHitsThreshold": "LuauInlineHitsThreshold",
+    "FF_TStringGuardSEU":     "LuauTStringGuardSEU",
+
+    # ---- type names ----
     "T_boolean":         "boolean",
     "T_number":          "number",
     "T_vector":          "vector",
+    "T_integer":         "integer",
     "T_thread":          "thread",
     "T_userdata":        "userdata",
     "T_buffer":          "buffer",
-    # VM error strings — high-value anchors, each referenced by one function
+
+    # ---- VM error strings, verified in this image ----
     "S_StackOverflow":       "stack overflow",
-    "S_ReadonlyTable":       "Attempt to modify a readonly table",
-    "S_TableIndexIsNil":     "table index is nil",
-    "S_TableIndexIsNaN":     "table index is NaN",
+    "S_StackOverflowFmt":    "stack overflow (%s)",
+    "S_CStackOverflow":      "C stack overflow",
     "S_CannotResumeDead":    "cannot resume dead coroutine",
-    "S_AttemptYieldBoundary": "attempt to yield across metamethod/C-call boundary",
-    "S_ScriptTimeout":       "script exhausted",
-    # bytecode / loader
-    "BytecodeVersionMismatch": "Unsupported bytecode version",
-    "BytecodeCorrupted":       "Bytecode corrupted",
-    # scheduler job names
-    "JobName_Heartbeat":     "Heartbeat",
-    "JobName_Simulation":    "Simulation",
-    "JobName_FrameStart":    "FrameStart",
-    "JobName_FrameEnd":      "FrameEnd",
-    "JobName_PostRender":    "PostRender",
-    # services / instances
+    "S_NoValue":             "no value",
+    "S_ErrorInErrorHandling": "error in error handling",
+    "S_BufferTooLarge":      "buffer too large",
+    "S_MissingArgument":     "missing argument #%d",
+    "S_MissingArgumentType": "missing argument #%d (%s expected)",
+    "S_ModuleNameConflict":  "name conflict for module '%s'",
+    "S_NoKeyNamed":          "this %s does not have a key named '%s'",
+    "S_Loaded":              "_LOADED",
+
+    # ---- services / instances ----
     "Svc_Workspace":         "Workspace",
-    "Svc_ReplicatedStorage": "ReplicatedStorage",
     "Svc_HttpService":       "HttpService",
     "Svc_UserInputService":  "UserInputService",
-    "Svc_RunService":        "RunService",
     "Cls_RemoteEvent":       "RemoteEvent",
     "Cls_RemoteFunction":    "RemoteFunction",
     "Cls_ClickDetector":     "ClickDetector",
     "Cls_ProximityPrompt":   "ProximityPrompt",
-    # anti-cheat surface
+
+    # ---- anti-cheat surface ----
     "Hyperion_Untrusted":    "PlayerUntrusted",
 }
 
@@ -644,6 +665,25 @@ def dump_strings_at(img, rva, length=0x400, minlen=3):
     print(f"\n  {count} strings.")
 
 
+def dump_hex_at(img, rva, length=0x100):
+    """Classic hex + ASCII view. Use when --at finds nothing in a gap:
+    a string scan only shows printable, NUL-terminated runs, so padding,
+    encoded data, or a non-terminated literal is invisible to it."""
+    print()
+    print("=" * 68)
+    print(f"  HEX 0x{rva:X} .. 0x{rva + length:X}")
+    print("=" * 68)
+    blob = img.read(rva, length)
+    if blob is None:
+        print(f"  [!] 0x{rva:X}+0x{length:X} is not readable in this image.")
+        return
+    for off in range(0, len(blob), 16):
+        row = blob[off:off + 16]
+        hexs = " ".join(f"{b:02X}" for b in row).ljust(47)
+        text = "".join(chr(b) if 32 <= b < 127 else "." for b in row)
+        print(f"    0x{rva + off:X}  {hexs}  |{text}|")
+
+
 def dump_pointers_at(img, rva, length=0x100):
     """Read a region as 64-bit pointers and resolve each into the image.
 
@@ -730,6 +770,41 @@ def main():
         except (IndexError, ValueError):
             print("[!] --ptrs needs an address, e.g. --ptrs 0x6D45420 0x100")
             return 1
+
+    hex_rva = hex_len = None
+    if "--hex" in args:
+        i = args.index("--hex")
+        try:
+            hex_rva = int(args[i + 1], 0)
+            hex_len = int(args[i + 2], 0) if (i + 2 < len(args)
+                                              and not args[i + 2].startswith("--")) else 0x100
+        except (IndexError, ValueError):
+            print("[!] --hex needs an address, e.g. --hex 0x6D45D90 0x40")
+            return 1
+
+    # Any unknown --flag is almost certainly a stale download (the raw CDN
+    # caches aggressively). Say so rather than silently ignoring it.
+    known_flags = {"--raw", "--discover", "--sigs", "--at", "--ptrs", "--hex"}
+    consumed = set()
+    for f in ("--discover", "--sigs"):
+        if f in args:
+            j = args.index(f)
+            if j + 1 < len(args) and not args[j + 1].startswith("--"):
+                consumed.add(j + 1)
+    for f in ("--at", "--ptrs", "--hex"):
+        if f in args:
+            j = args.index(f)
+            for k in (j + 1, j + 2):
+                if k < len(args) and not args[k].startswith("--"):
+                    consumed.add(k)
+    unknown = [a for k, a in enumerate(args)
+               if a.startswith("--") and a not in known_flags and k not in consumed]
+    if unknown:
+        print(f"[!] Unrecognised flag(s): {' '.join(unknown)}")
+        print("    This build of analyze.py does not have them — you likely")
+        print("    have a cached copy. Re-download with a cache-buster:")
+        print("      curl.exe -o analyze.py \"<raw url>?v=$(Get-Random)\"")
+        return 1
     if "--sigs" in args:
         i = args.index("--sigs")
         out_sigs = args[i + 1] if i + 1 < len(args) else "signatures.py"
@@ -756,6 +831,9 @@ def main():
 
             if at_rva is not None:
                 dump_strings_at(img, at_rva, at_len)
+
+            if hex_rva is not None:
+                dump_hex_at(img, hex_rva, hex_len)
 
             if ptr_rva is not None:
                 dump_pointers_at(img, ptr_rva, ptr_len)
