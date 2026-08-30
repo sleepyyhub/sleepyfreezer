@@ -38,6 +38,13 @@ if type(getgenv) == "function" then
 end
 if genv then genv.LUCK = L end
 
+-- Forward declarations. The reader lives a long way down because it needs
+-- payloadText, which is defined after most of its callers; everything here is
+-- assigned at load and only ever called at runtime, so the order on the page
+-- does not matter. Declared this early so the redeem probe can use the same
+-- reader as the send path -- it is asking the same remote the same question.
+local readReply, answered
+
 local SETTINGS_KEY = "LUCKSettingsV1"
 local SETTINGS_FILE = "LUCK/settings.json"
 local SETTINGS_DEFAULTS = {
@@ -635,10 +642,18 @@ do
         if not r or L.RedeemRemoteIsEvent then return nil end
         local pok, a, b = pcall(r.InvokeServer, r, PROBE_CODE)
         L.RedeemRemoteTested = pok
-        L.RedeemRemoteReply = pok
-            and (tostring(a) .. (b ~= nil and ("/" .. tostring(b)) or ""))
-            or tostring(a)
-        if not pok then return false end
+        if not pok then
+            L.RedeemRemoteReply = tostring(a)
+            return false
+        end
+        -- Read the same way the send path reads it. This used to concatenate
+        -- tostring(a) and tostring(b), which for a table answer gives
+        -- "table: 0x…" -- so a remote that was telling us the code was not found
+        -- read as healthy, and the whole point of this check is to notice
+        -- exactly that.
+        local _, reply = readReply(a, b)
+        L.RedeemRemoteReply = reply
+            or (tostring(a) .. (b ~= nil and ("/" .. tostring(b)) or ""))
         local low = tostring(L.RedeemRemoteReply):lower()
         return low:find(DEAD_REPLY, 1, true) == nil
     end
@@ -862,11 +877,6 @@ do
         L.FireReady("wait ran out")
     end)
 end
-
--- Forward declarations. The reader lives further down because it needs
--- payloadText, which is defined after this; both are assigned at load and only
--- ever called at runtime, so the order on the page does not matter.
-local readReply, answered
 
 L.FireFast = function(code)
     local path = L.RedeemPath
@@ -1413,7 +1423,12 @@ local FAIL_WORDS = {"out of stock", "no longer available", "not found", "already
                     "expired", "invalid", "cannot", "can't", "unable", "failed",
                     "sold out", "denied", "not valid", "wait", "error",
                     "does not exist", "doesn't exist", "no such", "ran out",
-                    "reached the limit", "limit reached", "too many"}
+                    "reached the limit", "limit reached", "too many",
+                    -- These two came from the fire-and-forget claim path, which
+                    -- used to keep its own list. Safe here only because the
+                    -- unambiguous win markers are checked first: "Used Car
+                    -- spawned!" is a win before "used" is ever looked at.
+                    "used", "wrong"}
 local WIN_WORDS  = {"received", "granted", "claimed", "unlocked", "awarded",
                     "success", "enjoy", "redeemed successfully"}
 
@@ -1694,17 +1709,15 @@ L.OURS_WINDOW = 6
 
 local claimOurs
 do
-    local WIN  = {"spawned", "redeemed", "claimed", "received", "granted"}
-    local FAIL = {"invalid", "expired", "already", "sold out", "failed",
-                  "not found", "wrong", "used"}
-
-    local function matchAny(low, list)
-        for k = 1, #list do
-            if low:find(list[k], 1, true) then return true end
-        end
-        return false
-    end
-
+    -- This used to keep its own two word lists and test the win list first, so
+    -- "You have already redeemed this code" matched "redeemed" and was recorded
+    -- as a win -- wrong colour, wrong history row, and on the private build a
+    -- card and a webhook post for a redeem that did not happen.
+    --
+    -- It reads through the same classifier as the remote's own answers now:
+    -- an unambiguous win marker first, so a prize named Limit Breaker still
+    -- wins, then the rejection words, then the weaker win words. One list, one
+    -- ordering, one place to fix it.
     claimOurs = function(text)
         if not L.OursPending then return false end
         if (os.clock() - (L.OursAt or 0)) > L.OURS_WINDOW then
@@ -1712,7 +1725,6 @@ do
             return false
         end
 
-        local low  = text:lower()
         local won, lost
         local tint = L.LastLabelColor
         if tint == "win" then
@@ -1720,8 +1732,11 @@ do
         elseif tint == "fail" then
             lost = true
         else
-            won  = matchAny(low, WIN)
-            lost = (not won) and matchAny(low, FAIL) or false
+            -- nil means the wording did not settle it, and the caller waits for
+            -- a line that does rather than guessing.
+            local verdict = classifyReply(text)
+            won  = verdict == true
+            lost = verdict == false
         end
         if not (won or lost) then return false end
 

@@ -95,6 +95,37 @@ check("and no number is exposed alongside it",
     L.NotifyIndex == nil and L.RedeemIndex == nil,
     tostring(L.NotifyIndex) .. " / " .. tostring(L.RedeemIndex))
 
+
+-- The probe asks the redeem remote a question and reads the answer, so it has
+-- to read it the way the send path does. It used to concatenate tostring(a) and
+-- tostring(b), which for a table answer gives "table: 0x…" -- so a remote that
+-- was telling us the code was not found read as perfectly healthy, and noticing
+-- exactly that is the entire point of this check.
+do
+    local shapes = {
+        {"false and a message", function() return false, "Code not found" end, true},
+        {"a bare message",      function() return "Code not found" end,        true},
+        {"a table",             function() return {message = "Code not found"} end, true},
+        {"a healthy rejection", function() return false, "Invalid code" end,   false},
+        {"a healthy table",     function() return {message = "Invalid code"} end, false},
+    }
+    for _, s2 in ipairs(shapes) do
+        R.setInvokeBehaviour(s2[2])
+        L.RecheckRedeemRemote()
+        H.pump(40000)
+        check("a dead remote answering with " .. s2[1] .. " is noticed",
+            (L.RedeemRemoteBroken == true) == s2[3],
+            "broken=" .. tostring(L.RedeemRemoteBroken) .. " reply=" .. tostring(L.RedeemRemoteReply))
+        check("  and the readout is readable (" .. s2[1] .. ")",
+            tostring(L.RedeemRemoteReply):find("table: ", 1, true) == nil,
+            tostring(L.RedeemRemoteReply))
+        -- back to healthy for the next case
+        R.setInvokeBehaviour(function() return false, "Invalid code" end)
+        L.RecheckRedeemRemote(); H.pump(40000)
+    end
+    R.setInvokeBehaviour(nil)
+end
+
 print("")
 print(("checks: %d   failures: %d"):format(checks, #fails))
 for _, f in ipairs(fails) do print("  FAIL  " .. f) end

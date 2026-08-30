@@ -176,6 +176,44 @@ H.pump(80000)
 check("an unclassifiable answer is not re-sent", R.invokeCount() - n0 == 1,
     tostring(R.invokeCount() - n0) .. " sends")
 
+-- ------------------------------------------- the fire-and-forget claim path
+-- When the remote answers nothing, the result comes from a follow-up
+-- announcement instead. That path kept its own two word lists and tested the
+-- win list first, so "You have already redeemed this code" matched "redeemed"
+-- and was recorded as a win: wrong colour, wrong history row, and on the
+-- private build a card and a webhook post for a redeem that did not happen.
+do
+    local claimCases = {
+        {"Meowl spawned!", true},
+        {"Limit Breaker spawned!", true},
+        {"Used Car spawned!", true},
+        {"You received a La Vacca!", true},
+        {"You have already redeemed this code", false},
+        {"Invalid code", false},
+        {"Code not found", false},
+        {"This code was used", false},
+        {"Wrong code", false},
+        {"random chatter that settles nothing", nil},
+    }
+    local realNotify = L.Notify
+    for _, c in ipairs(claimCases) do
+        L.OursPending, L.OursAt = "CLAIMCODE", os.clock()
+        L.LastLabelColor = nil
+        L.Notify = function() end
+        local claimed, won = L.ClaimOurs(c[1])
+        if c[2] == nil then
+            check("it waits on " .. ('"' .. c[1] .. '"'), claimed == false,
+                "claimed anyway")
+        else
+            check("it claims " .. ('"' .. c[1] .. '"'), claimed == true, "not claimed")
+            check("  as a " .. (c[2] and "win" or "rejection"), won == c[2],
+                "won=" .. tostring(won))
+        end
+    end
+    L.Notify = realNotify
+    L.OursPending = nil
+end
+
 -- ------------------------------------------------- and everything downstream
 -- A win that arrives in an unexpected shape must land as a win the whole way
 -- through, not just in the notification: the history row, the webhook post and
