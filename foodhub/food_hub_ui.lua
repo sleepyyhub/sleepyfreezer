@@ -518,7 +518,7 @@ sectionLabel(RedeemPage, "Sniper", 42)
 switchRow(RedeemPage, "sniper",       "Code Sniper",     58)
 switchRow(RedeemPage, "autoSubmit",   "Auto Submit",     94)
 switchRow(RedeemPage, "retryInvalid", "Retype Invalid", 130)
-switchRow(RedeemPage, "autoRedeem",   "Auto Redeem",    166)
+switchRow(RedeemPage, "autoRedeem",   "Auto Redeem on", 166)
 
 -- redeem amount: 1-5 presets plus a custom stepper
 sectionLabel(RedeemPage, "Amount", 206)
