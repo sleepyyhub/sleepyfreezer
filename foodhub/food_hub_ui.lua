@@ -105,7 +105,7 @@ if not Gui.Parent then
     if not pcall(function() Gui.Parent = game:GetService("CoreGui") end) then Gui.Parent = PGui end
 end
 
-local W, H = 306, 392
+local W, H = 306, 440
 
 -- soft drop shadow behind everything
 local Shadow = Instance.new("ImageLabel")
@@ -166,7 +166,7 @@ tw(Window, SLOW, { BackgroundTransparency = 0 })
 -- ==================================================================
 local Header = Instance.new("Frame")
 Header.Name = "Header"
-Header.Size = UDim2.new(1, 0, 0, 58)
+Header.Size = UDim2.new(1, 0, 0, 44)
 Header.BackgroundColor3 = T.Panel
 Header.BorderSizePixel = 0
 Header.Active = true
@@ -191,8 +191,8 @@ HeaderLine.Parent = Header
 
 -- gold accent block on the left of the title
 local Mark = Instance.new("Frame")
-Mark.Size = UDim2.new(0, 4, 0, 26)
-Mark.Position = UDim2.new(0, 16, 0, 12)
+Mark.Size = UDim2.new(0, 3, 0, 16)
+Mark.Position = UDim2.new(0, 16, 0, 14)
 Mark.BackgroundColor3 = T.Gold
 Mark.BorderSizePixel = 0
 Mark.Parent = Header
@@ -200,68 +200,32 @@ corner(Mark, 2)
 
 local Title = Instance.new("TextLabel")
 Title.Name = "Title"
-Title.Size = UDim2.new(0, 200, 0, 22)
-Title.Position = UDim2.new(0, 28, 0, 11)
+Title.Size = UDim2.new(0, 200, 0, 18)
+Title.Position = UDim2.new(0, 28, 0, 13)
 Title.BackgroundTransparency = 1
-Title.Text = "FOOD HUB"
-Title.TextColor3 = Color3.new(1, 1, 1)
-Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 19
+Title.Text = "Food Hub"
+Title.TextColor3 = T.Gold
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 15
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
--- gold gradient across the wordmark + slow shimmer sweep
-local TitleGrad = Instance.new("UIGradient")
-TitleGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.00, T.GoldDeep),
-    ColorSequenceKeypoint.new(0.45, T.Gold),
-    ColorSequenceKeypoint.new(0.55, Color3.fromRGB(255, 250, 214)),
-    ColorSequenceKeypoint.new(1.00, T.GoldDeep),
-})
-TitleGrad.Parent = Title
-
-task.spawn(function()
-    while Title.Parent do
-        TitleGrad.Offset = Vector2.new(-1, 0)
-        tw(TitleGrad, TweenInfo.new(1.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { Offset = Vector2.new(1, 0) })
-        task.wait(3.2)
-    end
-end)
-
-local Sub = Instance.new("TextLabel")
-Sub.Size = UDim2.new(0, 200, 0, 12)
-Sub.Position = UDim2.new(0, 29, 0, 32)
-Sub.BackgroundTransparency = 1
-Sub.Text = "C O D E   R E D E E M E R"
-Sub.TextColor3 = T.Dim
-Sub.Font = FONT_MED
-Sub.TextSize = 9
-Sub.TextXAlignment = Enum.TextXAlignment.Left
-Sub.Parent = Header
-
--- live pulse dot
-local Pulse = Instance.new("Frame")
-Pulse.Size = UDim2.new(0, 7, 0, 7)
-Pulse.Position = UDim2.new(1, -62, 0, 26)
-Pulse.BackgroundColor3 = T.Gold
-Pulse.BorderSizePixel = 0
-Pulse.Parent = Header
-corner(Pulse, 4)
-
-task.spawn(function()
-    while Pulse.Parent do
-        tw(Pulse, TweenInfo.new(0.8, Enum.EasingStyle.Sine), { BackgroundTransparency = 0.75 })
-        task.wait(0.85)
-        tw(Pulse, TweenInfo.new(0.8, Enum.EasingStyle.Sine), { BackgroundTransparency = 0 })
-        task.wait(0.85)
-    end
-end)
+local Version = Instance.new("TextLabel")
+Version.Size = UDim2.new(0, 60, 0, 12)
+Version.Position = UDim2.new(0, 100, 0, 16)
+Version.BackgroundTransparency = 1
+Version.Text = "v2"
+Version.TextColor3 = T.Dim
+Version.Font = FONT_MED
+Version.TextSize = 10
+Version.TextXAlignment = Enum.TextXAlignment.Left
+Version.Parent = Header
 
 -- window buttons
 local function headerButton(text, xOff, onClick)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(0, 22, 0, 22)
-    b.Position = UDim2.new(1, xOff, 0, 18)
+    b.Position = UDim2.new(1, xOff, 0, 11)
     b.BackgroundColor3 = T.Raised
     b.BorderSizePixel = 0
     b.Text = text
@@ -285,8 +249,8 @@ end
 
 local Body = Instance.new("Frame")
 Body.Name = "Body"
-Body.Size = UDim2.new(1, 0, 1, -58)
-Body.Position = UDim2.new(0, 0, 0, 58)
+Body.Size = UDim2.new(1, 0, 1, -44)
+Body.Position = UDim2.new(0, 0, 0, 44)
 Body.BackgroundTransparency = 1
 Body.ClipsDescendants = true
 Body.Parent = Window
@@ -296,7 +260,7 @@ headerButton("–", -48, function()
     minimized = not minimized
     Body.Visible = true
     if minimized then
-        tw(Window, EASE, { Size = UDim2.new(0, W, 0, 58) })
+        tw(Window, EASE, { Size = UDim2.new(0, W, 0, 44) })
         task.delay(0.22, function() if minimized then Body.Visible = false end end)
     else
         tw(Window, EASE, { Size = UDim2.new(0, W, 0, H) })
@@ -367,8 +331,8 @@ local function makeTab(name, index)
     b.BackgroundTransparency = 1
     b.Text = name
     b.TextColor3 = (index == 1) and T.Black or T.Dim
-    b.Font = FONT
-    b.TextSize = 11
+    b.Font = FONT_MED
+    b.TextSize = 12
     b.AutoButtonColor = false
     b.ZIndex = 2
     b.Parent = TabBar
@@ -386,8 +350,8 @@ local function makeTab(name, index)
     return page
 end
 
-local RedeemPage   = makeTab("REDEEMER",  1)
-local MechanicPage = makeTab("MECHANICS", 2)
+local RedeemPage   = makeTab("Redeemer",  1)
+local MechanicPage = makeTab("Mechanics", 2)
 
 -- ==================================================================
 -- WIDGETS
@@ -398,18 +362,18 @@ local function sectionLabel(parent, text, y)
     l.Position = UDim2.new(0, 2, 0, y)
     l.BackgroundTransparency = 1
     l.Text = text
-    l.TextColor3 = T.GoldDeep
-    l.Font = FONT
-    l.TextSize = 9
+    l.TextColor3 = T.Dim
+    l.Font = FONT_MED
+    l.TextSize = 10
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.Parent = parent
     return l
 end
 
 -- one settings row: label + sliding switch, with hover lift
-local function switchRow(parent, key, label, blurb, y)
+local function switchRow(parent, key, label, y)
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, 40)
+    row.Size = UDim2.new(1, 0, 0, 32)
     row.Position = UDim2.new(0, 0, 0, y)
     row.BackgroundColor3 = T.Panel
     row.BackgroundTransparency = 0.25
@@ -420,7 +384,7 @@ local function switchRow(parent, key, label, blurb, y)
 
     local name = Instance.new("TextLabel")
     name.Size = UDim2.new(1, -68, 0, 13)
-    name.Position = UDim2.new(0, 12, 0, blurb and 8 or 13)
+    name.Position = UDim2.new(0, 12, 0, 9)
     name.BackgroundTransparency = 1
     name.Text = label
     name.TextColor3 = T.Text
@@ -429,36 +393,23 @@ local function switchRow(parent, key, label, blurb, y)
     name.TextXAlignment = Enum.TextXAlignment.Left
     name.Parent = row
 
-    if blurb then
-        local sub = Instance.new("TextLabel")
-        sub.Size = UDim2.new(1, -68, 0, 11)
-        sub.Position = UDim2.new(0, 12, 0, 21)
-        sub.BackgroundTransparency = 1
-        sub.Text = blurb
-        sub.TextColor3 = T.Dim
-        sub.Font = FONT_MED
-        sub.TextSize = 9
-        sub.TextXAlignment = Enum.TextXAlignment.Left
-        sub.Parent = row
-    end
-
     local track = Instance.new("TextButton")
-    track.Size = UDim2.new(0, 38, 0, 20)
-    track.Position = UDim2.new(1, -50, 0.5, -10)
+    track.Size = UDim2.new(0, 34, 0, 18)
+    track.Position = UDim2.new(1, -46, 0.5, -9)
     track.BackgroundColor3 = S[key] and T.Gold or T.Off
     track.BorderSizePixel = 0
     track.Text = ""
     track.AutoButtonColor = false
     track.Parent = row
-    corner(track, 10)
+    corner(track, 9)
 
     local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 14, 0, 14)
-    knob.Position = S[key] and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+    knob.Size = UDim2.new(0, 12, 0, 12)
+    knob.Position = S[key] and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
     knob.BackgroundColor3 = S[key] and T.Black or Color3.fromRGB(150, 150, 158)
     knob.BorderSizePixel = 0
     knob.Parent = track
-    corner(knob, 7)
+    corner(knob, 6)
 
     -- gold bloom that fades in when the switch is on
     local glow = stroke(row, T.Gold, 1, S[key] and 0.55 or 1)
@@ -467,7 +418,7 @@ local function switchRow(parent, key, label, blurb, y)
         S[key] = state
         tw(track, EASE, { BackgroundColor3 = state and T.Gold or T.Off })
         tw(knob, SNAP, {
-            Position = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+            Position = state and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6),
             BackgroundColor3 = state and T.Black or Color3.fromRGB(150, 150, 158),
         })
         tw(glow, EASE, { Transparency = state and 0.55 or 1 })
@@ -493,7 +444,7 @@ end
 -- REDEEMER PAGE
 -- ==================================================================
 local StatusCard = Instance.new("Frame")
-StatusCard.Size = UDim2.new(1, 0, 0, 34)
+StatusCard.Size = UDim2.new(1, 0, 0, 32)
 StatusCard.Position = UDim2.new(0, 0, 0, 0)
 StatusCard.BackgroundColor3 = T.Panel
 StatusCard.BorderSizePixel = 0
@@ -513,7 +464,7 @@ local StatusText = Instance.new("TextLabel")
 StatusText.Size = UDim2.new(1, -80, 1, 0)
 StatusText.Position = UDim2.new(0, 26, 0, 0)
 StatusText.BackgroundTransparency = 1
-StatusText.Text = S.sniper and "ACTIVE" or "IDLE"
+StatusText.Text = S.sniper and "Active" or "Idle"
 StatusText.TextColor3 = S.sniper and T.Gold or T.Dim
 StatusText.Font = FONT
 StatusText.TextSize = 11
@@ -524,22 +475,22 @@ local CodeCount = Instance.new("TextLabel")
 CodeCount.Size = UDim2.new(0, 70, 1, 0)
 CodeCount.Position = UDim2.new(1, -82, 0, 0)
 CodeCount.BackgroundTransparency = 1
-CodeCount.Text = "0 redeemed"
+CodeCount.Text = "0 codes"
 CodeCount.TextColor3 = T.Dim
 CodeCount.Font = FONT_MONO
 CodeCount.TextSize = 10
 CodeCount.TextXAlignment = Enum.TextXAlignment.Right
 CodeCount.Parent = StatusCard
 
-sectionLabel(RedeemPage, "SNIPER", 44)
-switchRow(RedeemPage, "sniper",       "Code Sniper",    "Watch chat for drops",     60)
-switchRow(RedeemPage, "autoSubmit",   "Auto Submit",    "Fire the code on detect", 104)
-switchRow(RedeemPage, "retryInvalid", "Retype Invalid", "Re-send on reject",       148)
+sectionLabel(RedeemPage, "Sniper", 42)
+switchRow(RedeemPage, "sniper",       "Code Sniper",     58)
+switchRow(RedeemPage, "autoSubmit",   "Auto Submit",     94)
+switchRow(RedeemPage, "retryInvalid", "Retype Invalid", 130)
 
 -- delay stepper
 local DelayRow = Instance.new("Frame")
-DelayRow.Size = UDim2.new(1, 0, 0, 34)
-DelayRow.Position = UDim2.new(0, 0, 0, 192)
+DelayRow.Size = UDim2.new(1, 0, 0, 32)
+DelayRow.Position = UDim2.new(0, 0, 0, 170)
 DelayRow.BackgroundColor3 = T.Panel
 DelayRow.BackgroundTransparency = 0.25
 DelayRow.BorderSizePixel = 0
@@ -601,11 +552,11 @@ stepButton("−", 0, -1)
 stepButton("+", 61, 1)
 
 -- console
-sectionLabel(RedeemPage, "CONSOLE", 236)
+sectionLabel(RedeemPage, "Console", 214)
 
 local Console = Instance.new("Frame")
-Console.Size = UDim2.new(1, 0, 0, 60)
-Console.Position = UDim2.new(0, 0, 0, 252)
+Console.Size = UDim2.new(1, 0, 0, 68)
+Console.Position = UDim2.new(0, 0, 0, 230)
 Console.BackgroundColor3 = Color3.fromRGB(9, 9, 11)
 Console.BorderSizePixel = 0
 Console.ClipsDescendants = true
@@ -636,7 +587,7 @@ local function pushLog(text, color)
     local line = Instance.new("TextLabel")
     line.Size = UDim2.new(1, 0, 0, 13)
     line.BackgroundTransparency = 1
-    line.Text = "› " .. tostring(text)
+    line.Text = tostring(text)
     line.TextColor3 = color or Color3.fromRGB(178, 178, 188)
     line.Font = FONT_MONO
     line.TextSize = 11
@@ -662,12 +613,12 @@ local function pushLog(text, color)
     end)
 end
 
-pushLog(S.sniper and "standing by..." or "module disabled", T.Dim)
+pushLog(S.sniper and "waiting for codes" or "sniper off", T.Dim)
 
 -- discord
 local Discord = Instance.new("TextButton")
 Discord.Size = UDim2.new(1, 0, 0, 28)
-Discord.Position = UDim2.new(0, 0, 0, 322)
+Discord.Position = UDim2.new(0, 0, 0, 306)
 Discord.BackgroundColor3 = T.Panel
 Discord.BorderSizePixel = 0
 Discord.Text = "discord.gg/zYgRUCVv7D"
@@ -714,8 +665,8 @@ Discord.MouseButton1Click:Connect(function()
     if setClip then pcall(setClip, "https://discord.gg/zYgRUCVv7D") end
     if discordBusy then return end
     discordBusy = true
-    Discord.Text = "COPIED ✓"
-    pushLog("invite copied to clipboard", T.Gold)
+    Discord.Text = "copied"
+    pushLog("copied invite", T.Gold)
     task.wait(1.2)
     Discord.Text = "discord.gg/zYgRUCVv7D"
     discordBusy = false
@@ -724,7 +675,7 @@ end)
 -- ==================================================================
 -- MECHANICS PAGE
 -- ==================================================================
-sectionLabel(MechanicPage, "PERFORMANCE", 4)
+sectionLabel(MechanicPage, "Performance", 4)
 
 -- live FPS meter
 local FpsCard = Instance.new("Frame")
@@ -740,10 +691,10 @@ local FpsLabel = Instance.new("TextLabel")
 FpsLabel.Size = UDim2.new(0, 120, 0, 12)
 FpsLabel.Position = UDim2.new(0, 12, 0, 9)
 FpsLabel.BackgroundTransparency = 1
-FpsLabel.Text = "FRAMERATE"
+FpsLabel.Text = "Framerate"
 FpsLabel.TextColor3 = T.Dim
-FpsLabel.Font = FONT
-FpsLabel.TextSize = 9
+FpsLabel.Font = FONT_MED
+FpsLabel.TextSize = 10
 FpsLabel.TextXAlignment = Enum.TextXAlignment.Left
 FpsLabel.Parent = FpsCard
 
@@ -777,16 +728,16 @@ local FpsFillGrad = Instance.new("UIGradient")
 FpsFillGrad.Color = ColorSequence.new(T.GoldDeep, T.GoldSoft)
 FpsFillGrad.Parent = FpsFill
 
-switchRow(MechanicPage, "antiLag", "Anti Lag",  "Strip particles, trails, decals", 74)
-switchRow(MechanicPage, "fpsBoost", "FPS Boost", "Drop quality + lighting cost",   118)
+switchRow(MechanicPage, "antiLag",  "Anti Lag",  74)
+switchRow(MechanicPage, "fpsBoost", "FPS Boost", 110)
 
-sectionLabel(MechanicPage, "AUTOMATION", 168)
-switchRow(MechanicPage, "autoBuy", "Auto Buy", "Purchase on stock refresh", 184)
+sectionLabel(MechanicPage, "Automation", 154)
+switchRow(MechanicPage, "autoBuy", "Auto Buy", 170)
 
 -- session readout
 local Stats = Instance.new("Frame")
 Stats.Size = UDim2.new(1, 0, 0, 62)
-Stats.Position = UDim2.new(0, 0, 0, 236)
+Stats.Position = UDim2.new(0, 0, 0, 216)
 Stats.BackgroundColor3 = Color3.fromRGB(9, 9, 11)
 Stats.BorderSizePixel = 0
 Stats.Parent = MechanicPage
@@ -859,7 +810,7 @@ local function applyAntiLag(on)
             end
         end
         if Terrain then Terrain.WaterWaveSize, Terrain.WaterReflectance = 0, 0 end
-        pushLog(("anti-lag on — %d effects culled"):format(#disabledEffects), T.Gold)
+        pushLog(("anti lag on (%d culled)"):format(#disabledEffects), T.Gold)
     else
         for _, inst in ipairs(disabledEffects) do
             pcall(function()
@@ -867,7 +818,7 @@ local function applyAntiLag(on)
             end)
         end
         disabledEffects = {}
-        pushLog("anti-lag off — effects restored", T.Dim)
+        pushLog("anti lag off", T.Dim)
     end
 end
 
@@ -879,7 +830,7 @@ local function applyFpsBoost(on)
         for _, e in ipairs(Lighting:GetChildren()) do
             if e:IsA("PostEffect") then e.Enabled = false end
         end
-        pushLog("fps boost on — quality dropped", T.Gold)
+        pushLog("fps boost on", T.Gold)
     else
         Lighting.GlobalShadows = savedLighting.GlobalShadows
         Lighting.FogEnd = savedLighting.FogEnd
@@ -888,18 +839,18 @@ local function applyFpsBoost(on)
         for _, e in ipairs(Lighting:GetChildren()) do
             if e:IsA("PostEffect") then e.Enabled = true end
         end
-        pushLog("fps boost off — quality restored", T.Dim)
+        pushLog("fps boost off", T.Dim)
     end
 end
 
 userHooks.antiLag  = applyAntiLag
 userHooks.fpsBoost = applyFpsBoost
-userHooks.autoBuy  = function(on) pushLog("auto buy " .. (on and "armed" or "disarmed"), on and T.Gold or T.Dim) end
+userHooks.autoBuy  = function(on) pushLog("auto buy " .. (on and "on" or "off"), on and T.Gold or T.Dim) end
 userHooks.sniper   = function(on)
-    StatusText.Text = on and "ACTIVE" or "IDLE"
+    StatusText.Text = on and "Active" or "Idle"
     tw(StatusText, EASE, { TextColor3 = on and T.Gold or T.Dim })
     tw(StatusDot, EASE, { BackgroundColor3 = on and T.Gold or T.Off })
-    pushLog(on and "sniper armed" or "sniper idle", on and T.Gold or T.Dim)
+    pushLog(on and "sniper on" or "sniper off", on and T.Gold or T.Dim)
 end
 
 -- ==================================================================
@@ -987,7 +938,7 @@ end
 
 function API:Log(text, color) pushLog(text, color) end
 
-function API:SetCount(n) CodeCount.Text = n .. " redeemed" end
+function API:SetCount(n) CodeCount.Text = n .. " codes" end
 
 function API:GetSettings() return S end
 
