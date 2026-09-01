@@ -285,7 +285,9 @@ TabBar.Parent = Body
 corner(TabBar, 8)
 
 local TabGlider = Instance.new("Frame")
-TabGlider.Size = UDim2.new(0.5, -6, 1, -6)
+local TAB_COUNT = 3
+local TAB_W = 1 / TAB_COUNT
+TabGlider.Size = UDim2.new(TAB_W, -6, 1, -6)
 TabGlider.Position = UDim2.new(0, 3, 0, 3)
 TabGlider.BackgroundColor3 = T.Gold
 TabGlider.BorderSizePixel = 0
@@ -307,7 +309,7 @@ local function selectTab(index)
     local old = pageList[activeTab]
     local new = pageList[index]
 
-    tw(TabGlider, EASE, { Position = UDim2.new(0.5 * (index - 1), 3, 0, 3) })
+    tw(TabGlider, EASE, { Position = UDim2.new(TAB_W * (index - 1), 3, 0, 3) })
     for i, b in ipairs(tabButtons) do
         tw(b, EASE, { TextColor3 = (i == index) and T.Black or T.Dim })
     end
@@ -326,13 +328,13 @@ end
 
 local function makeTab(name, index)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0.5, -6, 1, -6)
-    b.Position = UDim2.new(0.5 * (index - 1), 3, 0, 3)
+    b.Size = UDim2.new(TAB_W, -6, 1, -6)
+    b.Position = UDim2.new(TAB_W * (index - 1), 3, 0, 3)
     b.BackgroundTransparency = 1
     b.Text = name
     b.TextColor3 = (index == 1) and T.Black or T.Dim
     b.Font = FONT_MED
-    b.TextSize = 12
+    b.TextSize = 11
     b.AutoButtonColor = false
     b.ZIndex = 2
     b.Parent = TabBar
@@ -352,10 +354,38 @@ end
 
 local RedeemPage   = makeTab("Redeemer",  1)
 local MechanicPage = makeTab("Mechanics", 2)
+local RiddlePage   = makeTab("AI Riddle", 3)
 
 -- ==================================================================
 -- WIDGETS
 -- ==================================================================
+-- flat button with hover fill and gold border
+local function flatButton(parent, text, size, pos, onClick)
+    local b = Instance.new("TextButton")
+    b.Size = size
+    b.Position = pos
+    b.BackgroundColor3 = T.Panel
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = T.Gold
+    b.Font = FONT_MED
+    b.TextSize = 11
+    b.AutoButtonColor = false
+    b.ClipsDescendants = true
+    b.Parent = parent
+    corner(b, 6)
+    local line = stroke(b, T.GoldDeep, 1, 0.55)
+    b.MouseEnter:Connect(function()
+        tw(b, EASE, { BackgroundColor3 = T.Raised })
+        tw(line, EASE, { Transparency = 0.15 })
+    end)
+    b.MouseLeave:Connect(function()
+        tw(b, EASE, { BackgroundColor3 = T.Panel })
+        tw(line, EASE, { Transparency = 0.55 })
+    end)
+    if onClick then b.MouseButton1Click:Connect(onClick) end
+    return b, line
+end
 local function sectionLabel(parent, text, y)
     local l = Instance.new("TextLabel")
     l.Size = UDim2.new(1, 0, 0, 12)
@@ -554,6 +584,9 @@ stepButton("+", 61, 1)
 -- console
 sectionLabel(RedeemPage, "Console", 214)
 
+local ClearBox = flatButton(RedeemPage, "Clear Box", UDim2.new(0, 66, 0, 17), UDim2.new(1, -66, 0, 211))
+ClearBox.TextSize = 10
+
 local Console = Instance.new("Frame")
 Console.Size = UDim2.new(1, 0, 0, 68)
 Console.Position = UDim2.new(0, 0, 0, 230)
@@ -614,6 +647,14 @@ local function pushLog(text, color)
 end
 
 pushLog(S.sniper and "waiting for codes" or "sniper off", T.Dim)
+
+ClearBox.MouseButton1Click:Connect(function()
+    for _, k in ipairs(ConsoleScroll:GetChildren()) do
+        if k:IsA("TextLabel") then k:Destroy() end
+    end
+    logIndex = 0
+    ConsoleScroll.CanvasPosition = Vector2.new(0, 0)
+end)
 
 -- discord
 local Discord = Instance.new("TextButton")
@@ -783,6 +824,199 @@ local StatPing   = statLine("ping",    "-- ms")
 local StatMem    = statLine("memory",  "-- mb")
 
 -- ==================================================================
+-- AI RIDDLE PAGE
+-- ==================================================================
+sectionLabel(RiddlePage, "Riddle", 4)
+
+local RiddleBoxFrame = Instance.new("Frame")
+RiddleBoxFrame.Size = UDim2.new(1, 0, 0, 56)
+RiddleBoxFrame.Position = UDim2.new(0, 0, 0, 20)
+RiddleBoxFrame.BackgroundColor3 = Color3.fromRGB(9, 9, 11)
+RiddleBoxFrame.BorderSizePixel = 0
+RiddleBoxFrame.Parent = RiddlePage
+corner(RiddleBoxFrame, 8)
+local RiddleLine = stroke(RiddleBoxFrame, T.Line, 1, 0.3)
+
+local RiddleInput = Instance.new("TextBox")
+RiddleInput.Size = UDim2.new(1, -16, 1, -12)
+RiddleInput.Position = UDim2.new(0, 8, 0, 6)
+RiddleInput.BackgroundTransparency = 1
+RiddleInput.Text = ""
+RiddleInput.PlaceholderText = "paste a riddle, or let it capture the announcement"
+RiddleInput.PlaceholderColor3 = Color3.fromRGB(90, 90, 98)
+RiddleInput.TextColor3 = T.Text
+RiddleInput.Font = FONT_MED
+RiddleInput.TextSize = 11
+RiddleInput.TextXAlignment = Enum.TextXAlignment.Left
+RiddleInput.TextYAlignment = Enum.TextYAlignment.Top
+RiddleInput.TextWrapped = true
+RiddleInput.ClearTextOnFocus = false
+RiddleInput.MultiLine = true
+RiddleInput.Parent = RiddleBoxFrame
+
+RiddleInput.Focused:Connect(function() tw(RiddleLine, EASE, { Color = T.GoldDeep, Transparency = 0.1 }) end)
+RiddleInput.FocusLost:Connect(function() tw(RiddleLine, EASE, { Color = T.Line, Transparency = 0.3 }) end)
+
+-- answer panel (declared early so the ask flow can write into it)
+sectionLabel(RiddlePage, "Answer", 128)
+
+local AnswerFrame = Instance.new("Frame")
+AnswerFrame.Size = UDim2.new(1, 0, 0, 120)
+AnswerFrame.Position = UDim2.new(0, 0, 0, 144)
+AnswerFrame.BackgroundColor3 = Color3.fromRGB(9, 9, 11)
+AnswerFrame.BorderSizePixel = 0
+AnswerFrame.ClipsDescendants = true
+AnswerFrame.Parent = RiddlePage
+corner(AnswerFrame, 8)
+local AnswerLine = stroke(AnswerFrame, T.Line, 1, 0.3)
+
+local AnswerScroll = Instance.new("ScrollingFrame")
+AnswerScroll.Size = UDim2.new(1, 0, 1, 0)
+AnswerScroll.BackgroundTransparency = 1
+AnswerScroll.BorderSizePixel = 0
+AnswerScroll.ScrollBarThickness = 2
+AnswerScroll.ScrollBarImageColor3 = T.GoldDeep
+AnswerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+AnswerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+AnswerScroll.Parent = AnswerFrame
+pad(AnswerScroll, 10, 10, 8, 8)
+
+local AnswerText = Instance.new("TextLabel")
+AnswerText.Size = UDim2.new(1, 0, 0, 0)
+AnswerText.AutomaticSize = Enum.AutomaticSize.Y
+AnswerText.BackgroundTransparency = 1
+AnswerText.Text = "nothing asked yet"
+AnswerText.TextColor3 = T.Dim
+AnswerText.Font = FONT_MED
+AnswerText.TextSize = 12
+AnswerText.TextXAlignment = Enum.TextXAlignment.Left
+AnswerText.TextYAlignment = Enum.TextYAlignment.Top
+AnswerText.TextWrapped = true
+AnswerText.Parent = AnswerScroll
+
+local RiddleStatus = Instance.new("TextLabel")
+RiddleStatus.Size = UDim2.new(1, 0, 0, 12)
+RiddleStatus.Position = UDim2.new(0, 2, 0, 112)
+RiddleStatus.BackgroundTransparency = 1
+RiddleStatus.Text = "idle"
+RiddleStatus.TextColor3 = T.Dim
+RiddleStatus.Font = FONT_MONO
+RiddleStatus.TextSize = 10
+RiddleStatus.TextXAlignment = Enum.TextXAlignment.Left
+RiddleStatus.Parent = RiddlePage
+
+local lastAnswer = ""
+local thinking = false
+
+local function setStatus(text, color)
+    RiddleStatus.Text = text
+    tw(RiddleStatus, EASE, { TextColor3 = color or T.Dim })
+end
+
+local function setAnswer(text, color)
+    lastAnswer = tostring(text)
+    AnswerText.Text = lastAnswer
+    AnswerText.TextTransparency = 1
+    tw(AnswerText, EASE, { TextColor3 = color or T.Text })
+    tw(AnswerText, SLOW, { TextTransparency = 0 })
+    tw(AnswerLine, EASE, { Color = T.GoldDeep, Transparency = 0.2 })
+    task.delay(1.2, function() tw(AnswerLine, EASE, { Color = T.Line, Transparency = 0.3 }) end)
+end
+
+-- backend: getgenv().FoodHub_AskAI(riddle) -> answer string
+local function askAI(riddle)
+    riddle = (riddle or ""):match("^%s*(.-)%s*$")
+    if riddle == "" then
+        setStatus("no riddle to ask", T.GoldDeep)
+        return
+    end
+    if thinking then return end
+
+    thinking = true
+    setStatus("thinking", T.Gold)
+    task.spawn(function()
+        local dots = 0
+        while thinking do
+            dots = (dots + 1) % 4
+            RiddleStatus.Text = "thinking" .. string.rep(".", dots)
+            task.wait(0.35)
+        end
+    end)
+
+    task.spawn(function()
+        local backend = getgenv().FoodHub_AskAI
+        local ok, result
+        if backend then
+            ok, result = pcall(backend, riddle)
+        else
+            ok, result = false, "no ai backend bound - set getgenv().FoodHub_AskAI = function(riddle) return answer end"
+        end
+        thinking = false
+        if ok and result and tostring(result) ~= "" then
+            setAnswer(result, T.Text)
+            setStatus("answered", T.Gold)
+            pushLog("riddle answered", T.Gold)
+        else
+            setAnswer(tostring(result or "no response"), T.Dim)
+            setStatus("failed", T.Dim)
+            pushLog("riddle ask failed", T.Dim)
+        end
+    end)
+end
+
+-- Ask + Answer-next-announcement
+local AskBtn = flatButton(RiddlePage, "Ask", UDim2.new(0.5, -4, 0, 30), UDim2.new(0, 0, 0, 84), function()
+    askAI(RiddleInput.Text)
+end)
+AskBtn.Font = FONT
+
+local armed = false
+local ArmBtn, ArmLine = flatButton(RiddlePage, "Answer Next", UDim2.new(0.5, -4, 0, 30), UDim2.new(0.5, 4, 0, 84))
+
+local function setArmed(state)
+    armed = state
+    tw(ArmBtn, EASE, {
+        BackgroundColor3 = armed and T.Gold or T.Panel,
+        TextColor3 = armed and T.Black or T.Gold,
+    })
+    tw(ArmLine, EASE, { Transparency = armed and 0 or 0.55 })
+    ArmBtn.Text = armed and "Listening" or "Answer Next"
+    setStatus(armed and "waiting for announcement" or "idle", armed and T.Gold or T.Dim)
+end
+
+ArmBtn.MouseButton1Click:Connect(function() setArmed(not armed) end)
+
+-- copy the answer out
+flatButton(RiddlePage, "Copy Answer", UDim2.new(1, 0, 0, 28), UDim2.new(0, 0, 0, 274), function()
+    if lastAnswer ~= "" and setClip then
+        pcall(setClip, lastAnswer)
+        setStatus("answer copied", T.Gold)
+    end
+end)
+
+-- announcement intake: feed it manually with API:PushAnnouncement,
+-- or let the TextChatService listener below catch system messages
+local function onAnnouncement(text)
+    text = tostring(text or "")
+    if text == "" then return end
+    RiddleInput.Text = text
+    pushLog("announcement captured", T.Dim)
+    if armed then
+        setArmed(false)
+        askAI(text)
+    end
+end
+
+pcall(function()
+    local TCS = game:GetService("TextChatService")
+    TCS.MessageReceived:Connect(function(msg)
+        if not msg.TextSource then          -- system / announcement, not a player
+            onAnnouncement(msg.Text)
+        end
+    end)
+end)
+
+-- ==================================================================
 -- PERFORMANCE ACTIONS
 -- ==================================================================
 local savedLighting = {
@@ -941,6 +1175,21 @@ function API:Log(text, color) pushLog(text, color) end
 function API:SetCount(n) CodeCount.Text = n .. " codes" end
 
 function API:GetSettings() return S end
+
+function API:ClearBox()
+    for _, k in ipairs(ConsoleScroll:GetChildren()) do
+        if k:IsA("TextLabel") then k:Destroy() end
+    end
+    logIndex = 0
+end
+
+function API:SetRiddle(text) RiddleInput.Text = tostring(text or "") end
+function API:PushAnnouncement(text) onAnnouncement(text) end
+function API:Ask(text) askAI(text or RiddleInput.Text) end
+function API:SetAnswer(text, color) setAnswer(text, color) end
+function API:GetAnswer() return lastAnswer end
+function API:IsArmed() return armed end
+function API:SetArmed(state) setArmed(state and true or false) end
 
 function API:OnToggle(name, fn)
     local existing = userHooks[name]
