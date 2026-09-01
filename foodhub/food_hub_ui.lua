@@ -70,6 +70,8 @@ local S = {
     sniper       = true,
     autoSubmit   = true,
     retryInvalid = false,
+    autoRedeem   = false,
+    redeemAmount = 1,
     sendDelay    = 3,
     antiLag      = false,
     fpsBoost     = false,
@@ -105,7 +107,7 @@ if not Gui.Parent then
     if not pcall(function() Gui.Parent = game:GetService("CoreGui") end) then Gui.Parent = PGui end
 end
 
-local W, H = 306, 440
+local W, H = 306, 560
 
 -- soft drop shadow behind everything
 local Shadow = Instance.new("ImageLabel")
@@ -516,11 +518,142 @@ sectionLabel(RedeemPage, "Sniper", 42)
 switchRow(RedeemPage, "sniper",       "Code Sniper",     58)
 switchRow(RedeemPage, "autoSubmit",   "Auto Submit",     94)
 switchRow(RedeemPage, "retryInvalid", "Retype Invalid", 130)
+switchRow(RedeemPage, "autoRedeem",   "Auto Redeem",    166)
+
+-- redeem amount: 1-5 presets plus a custom stepper
+sectionLabel(RedeemPage, "Amount", 206)
+
+local AMOUNT_PRESETS = { 1, 2, 3, 4, 5 }
+local chipButtons, CustomChip = {}, nil
+
+local AmountRow = Instance.new("Frame")
+AmountRow.Size = UDim2.new(1, 0, 0, 24)
+AmountRow.Position = UDim2.new(0, 0, 0, 222)
+AmountRow.BackgroundTransparency = 1
+AmountRow.Parent = RedeemPage
+
+local AmountBar = Instance.new("Frame")
+AmountBar.Size = UDim2.new(1, 0, 0, 30)
+AmountBar.Position = UDim2.new(0, 0, 0, 252)
+AmountBar.BackgroundColor3 = T.Panel
+AmountBar.BackgroundTransparency = 0.25
+AmountBar.BorderSizePixel = 0
+AmountBar.Parent = RedeemPage
+corner(AmountBar, 8)
+stroke(AmountBar, T.Line, 1, 0.25)
+
+local AmountCaption = Instance.new("TextLabel")
+AmountCaption.Size = UDim2.new(1, -100, 1, 0)
+AmountCaption.Position = UDim2.new(0, 12, 0, 0)
+AmountCaption.BackgroundTransparency = 1
+AmountCaption.Text = "Codes per drop"
+AmountCaption.TextColor3 = T.Text
+AmountCaption.Font = FONT_MED
+AmountCaption.TextSize = 12
+AmountCaption.TextXAlignment = Enum.TextXAlignment.Left
+AmountCaption.Parent = AmountBar
+
+local AmountStepper = Instance.new("Frame")
+AmountStepper.Size = UDim2.new(0, 82, 0, 20)
+AmountStepper.Position = UDim2.new(1, -94, 0.5, -10)
+AmountStepper.BackgroundColor3 = T.Raised
+AmountStepper.BorderSizePixel = 0
+AmountStepper.Parent = AmountBar
+corner(AmountStepper, 6)
+
+local AmountValue = Instance.new("TextLabel")
+AmountValue.Size = UDim2.new(0, 40, 1, 0)
+AmountValue.Position = UDim2.new(0, 21, 0, 0)
+AmountValue.BackgroundTransparency = 1
+AmountValue.Text = tostring(S.redeemAmount)
+AmountValue.TextColor3 = T.Gold
+AmountValue.Font = FONT
+AmountValue.TextSize = 11
+AmountValue.Parent = AmountStepper
+
+local function refreshAmount()
+    AmountValue.Text = tostring(S.redeemAmount)
+    AmountValue.TextTransparency = 0.6
+    tw(AmountValue, EASE, { TextTransparency = 0 })
+
+    local matched
+    for i, v in ipairs(AMOUNT_PRESETS) do
+        if v == S.redeemAmount then matched = i end
+    end
+    for i, b in ipairs(chipButtons) do
+        local on = (i == matched)
+        tw(b, EASE, { BackgroundColor3 = on and T.Gold or T.Panel, TextColor3 = on and T.Black or T.Dim })
+    end
+    if CustomChip then
+        local on = (matched == nil)
+        tw(CustomChip, EASE, { BackgroundColor3 = on and T.Gold or T.Panel, TextColor3 = on and T.Black or T.Dim })
+    end
+end
+
+local function amountButton(text, posX, delta)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 21, 1, 0)
+    b.Position = UDim2.new(0, posX, 0, 0)
+    b.BackgroundTransparency = 1
+    b.Text = text
+    b.TextColor3 = T.Gold
+    b.Font = FONT
+    b.TextSize = 14
+    b.AutoButtonColor = false
+    b.Parent = AmountStepper
+    b.MouseButton1Click:Connect(function()
+        S.redeemAmount = math.clamp(S.redeemAmount + delta, 1, 999)
+        refreshAmount()
+    end)
+    b.MouseEnter:Connect(function() tw(b, EASE, { TextColor3 = T.GoldSoft }) end)
+    b.MouseLeave:Connect(function() tw(b, EASE, { TextColor3 = T.Gold }) end)
+end
+amountButton("−", 0, -1)
+amountButton("+", 61, 1)
+
+-- chips: 1 2 3 4 5 Custom
+local CHIP_N = #AMOUNT_PRESETS + 1
+local CHIP_W = 1 / CHIP_N
+
+local function makeChip(text, index)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(CHIP_W, -3, 1, 0)
+    b.Position = UDim2.new(CHIP_W * (index - 1), 0, 0, 0)
+    b.BackgroundColor3 = T.Panel
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = T.Dim
+    b.Font = FONT_MED
+    b.TextSize = 10
+    b.AutoButtonColor = false
+    b.Parent = AmountRow
+    corner(b, 6)
+    stroke(b, T.Line, 1, 0.35)
+    return b
+end
+
+for i, v in ipairs(AMOUNT_PRESETS) do
+    local b = makeChip(tostring(v), i)
+    b.MouseButton1Click:Connect(function()
+        S.redeemAmount = v
+        refreshAmount()
+    end)
+    chipButtons[i] = b
+end
+
+CustomChip = makeChip("Custom", CHIP_N)
+CustomChip.MouseButton1Click:Connect(function()
+    -- step off the presets so the stepper owns the value
+    if S.redeemAmount <= 5 then S.redeemAmount = 6 end
+    refreshAmount()
+end)
+
+refreshAmount()
 
 -- delay stepper
 local DelayRow = Instance.new("Frame")
 DelayRow.Size = UDim2.new(1, 0, 0, 32)
-DelayRow.Position = UDim2.new(0, 0, 0, 170)
+DelayRow.Position = UDim2.new(0, 0, 0, 292)
 DelayRow.BackgroundColor3 = T.Panel
 DelayRow.BackgroundTransparency = 0.25
 DelayRow.BorderSizePixel = 0
@@ -582,14 +715,14 @@ stepButton("−", 0, -1)
 stepButton("+", 61, 1)
 
 -- console
-sectionLabel(RedeemPage, "Console", 214)
+sectionLabel(RedeemPage, "Console", 336)
 
-local ClearBox = flatButton(RedeemPage, "Clear Box", UDim2.new(0, 66, 0, 17), UDim2.new(1, -66, 0, 211))
+local ClearBox = flatButton(RedeemPage, "Clear Box", UDim2.new(0, 66, 0, 17), UDim2.new(1, -66, 0, 333))
 ClearBox.TextSize = 10
 
 local Console = Instance.new("Frame")
-Console.Size = UDim2.new(1, 0, 0, 68)
-Console.Position = UDim2.new(0, 0, 0, 230)
+Console.Size = UDim2.new(1, 0, 0, 84)
+Console.Position = UDim2.new(0, 0, 0, 352)
 Console.BackgroundColor3 = Color3.fromRGB(9, 9, 11)
 Console.BorderSizePixel = 0
 Console.ClipsDescendants = true
@@ -659,7 +792,7 @@ end)
 -- discord
 local Discord = Instance.new("TextButton")
 Discord.Size = UDim2.new(1, 0, 0, 28)
-Discord.Position = UDim2.new(0, 0, 0, 306)
+Discord.Position = UDim2.new(0, 0, 0, 444)
 Discord.BackgroundColor3 = T.Panel
 Discord.BorderSizePixel = 0
 Discord.Text = "discord.gg/zYgRUCVv7D"
@@ -1079,6 +1212,9 @@ end
 
 userHooks.antiLag  = applyAntiLag
 userHooks.fpsBoost = applyFpsBoost
+userHooks.autoRedeem = function(on)
+    pushLog("auto redeem " .. (on and ("on x" .. S.redeemAmount) or "off"), on and T.Gold or T.Dim)
+end
 userHooks.autoBuy  = function(on) pushLog("auto buy " .. (on and "on" or "off"), on and T.Gold or T.Dim) end
 userHooks.sniper   = function(on)
     StatusText.Text = on and "Active" or "Idle"
@@ -1181,6 +1317,12 @@ function API:ClearBox()
         if k:IsA("TextLabel") then k:Destroy() end
     end
     logIndex = 0
+end
+
+function API:GetAmount() return S.redeemAmount end
+function API:SetAmount(n)
+    S.redeemAmount = math.clamp(math.floor(tonumber(n) or 1), 1, 999)
+    refreshAmount()
 end
 
 function API:SetRiddle(text) RiddleInput.Text = tostring(text or "") end
