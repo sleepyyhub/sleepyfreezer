@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "roblox-studio": {
+      "type": "http",
+      "url": "${ROBLOX_MCP_URL}",
+      "headers": { "Authorization": "Bearer ${ROBLOX_MCP_TOKEN}" }
+    }
+  }
+}
